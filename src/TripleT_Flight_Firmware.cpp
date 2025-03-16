@@ -1,7 +1,7 @@
 // TripleT Flight Firmware
 // Current Version: v0.10
 // Current State: Alpha
-// Last Updated: 04/03/2025
+// Last Updated: 16/03/2025
 // **Notes**
 // This code started out life as a remake of the Blip Test Code from Joe Barnard @ BPS.Space
 // Nothing remains of the original code but that's where the concept originated.
@@ -22,6 +22,7 @@
 // We can detect the module and pull some data from it.
 // SparkFun 9DoF IMU (ICM_20948)
 // SparkFun UBlox ZOE-M8Q
+// SparkFun KX134 
 // MS5611 (is detected not 100% sure on the data just yet)
 
 // Include all the needed libraries.
@@ -51,7 +52,7 @@
 // Start creating all of the variables needed to pull data or other info
 // Separate it out into specific blocks for the various sensors
 
-#define TRIPLET_FLIGHT_VERSION 0.01
+#define TRIPLET_FLIGHT_VERSION 0.10
 // Comment out to restrict roll to ±90deg instead - please read: https://www.nxp.com/docs/en/application-note/AN3461.pdf
 // #define RESTRICT_PITCH 
 
@@ -948,10 +949,10 @@ void scan_i2c() {
       Serial.print(address, HEX);
       
       // Try to identify known devices
-      if (address == 0x42) Serial.print(F(" - Possible GPS module"));
-      if (address == 0x77) Serial.print(F(" - Possible MS5611 pressure sensor"));
-      if (address == 0x69) Serial.print(F(" - Possible IMU"));
-      
+      if (address == 0x42) Serial.print(F(" - SparkFun ZOE-M8Q GPS Module"));
+      if (address == 0x77) Serial.print(F(" - MS5611 Barometric Pressure Sensor"));
+      if (address == 0x69) Serial.print(F(" - ICM-20948 9-DOF IMU"));
+      if (address == 0x1F) Serial.print(F(" - SparkFun KX134 Accelerometer"));
       Serial.println();
       nDevices++;
     }
@@ -1827,14 +1828,14 @@ void loop() {
   // Read IMU data at IMU_POLL_INTERVAL
   if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
-    ICM_20948_read();
+  ICM_20948_read();
     sensorsUpdated = true;
   }
   
   // Read accelerometer data at ACCEL_POLL_INTERVAL
   if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
-    kx134_read();
+  kx134_read();
     sensorsUpdated = true;
   }
   

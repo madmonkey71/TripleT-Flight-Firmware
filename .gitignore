@@ -1,0 +1,21 @@
+# Build artifacts
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.d
+
+# Editor temp files
+*.swp
+*~
+.DS_Store
+
+# Arduino/Teensy build directory
+build/
+.pioenvs/
+.pio/
+
+# IDE configuration
+.vscode/
+.idea/

@@ -6,7 +6,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0 microcontr
 
 TripleT Flight Firmware is an open-source flight controller software built for Teensy 4.0. It provides robust sensor integration, multi-target data logging, and a command-driven interface to configure and interact with your flight computer.
 
-**Current Version**: v0.01 (Alpha)
+**Current Version**: v0.10 (Alpha)
 
 ## Hardware Requirements
 
@@ -121,7 +121,7 @@ After a flight, you can retrieve the data using:
 
 - Flight state detection (launch, apogee, descent)
 - Parachute deployment control
-- Thrust vector control implementation
+- Flight stabilisation via a thrust vector control implementation
 - Enhanced telemetry and wireless data transmission
 - Improved power management and battery monitoring
 - User-configurable settings saved to flash
@@ -130,7 +130,7 @@ After a flight, you can retrieve the data using:
 
 This project was inspired by:
 - BPS.Space flight computer designs by Joe Barnard
-- Contributions from @LabRatMatt
+- He makes awesome rocketry content so you should go and support him https://www.youtube.com/@BPSspace
 
 ## License
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0) - a copyleft license that requires anyone who distributes this code or a derivative work to make the source available under the same terms.
@@ -143,4 +143,4 @@ When contributing:
 - Fork the repository
 - Create a feature branch
 - Make your changes
-- Submit a pull request with a clear description of the changes 
+- Submit a pull request with a clear description of the changes

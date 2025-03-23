@@ -19,3 +19,6 @@ build/
 # IDE configuration
 .vscode/
 .idea/
+
+#
+ChatLog.md

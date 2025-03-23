@@ -1119,76 +1119,43 @@ void scan_i2c() {
   Serial.println(F("\nI2C Scanner"));
   Serial.println(F("Scanning..."));
 
-  byte error, address;
-  int nDevices = 0;
-
-  for(address = 1; address < 127; address++) {
-    // The i2c_scanner uses the return value of
-    // the Wire.endTransmission to see if
-    // a device acknowledged the address.
+  byte nDevices = 0;
+  for (byte address = 1; address < 127; address++) {
     Wire.beginTransmission(address);
-    error = Wire.endTransmission();
+    byte error = Wire.endTransmission();
 
     if (error == 0) {
-      Serial.print(F("I2C device found at address 0x"));
-      if (address < 16) 
+      Serial.print(F("Device found at address 0x"));
+      if (address < 16) {
         Serial.print("0");
+      }
       Serial.print(address, HEX);
-      
-      // Try to identify known devices
-      if (address == 0x42) Serial.print(F(" - SparkFun ZOE-M8Q GPS Module"));
-      if (address == 0x77) Serial.print(F(" - MS5611 Barometric Pressure Sensor"));
-      if (address == 0x69) Serial.print(F(" - ICM-20948 9-DOF IMU"));
-      if (address == 0x1F) Serial.print(F(" - SparkFun KX134 Accelerometer"));
       Serial.println();
       nDevices++;
     }
-    else if (error == 4) {
-      Serial.print(F("Unknown error at address 0x"));
-      if (address < 16) 
-        Serial.print("0");
-      Serial.println(address, HEX);
-    }
   }
-  
+
   if (nDevices == 0)
     Serial.println(F("No I2C devices found\n"));
   else
     Serial.println(F("I2C scan complete\n"));
 }
 
-// Function to initialize the SD card
-bool initSDCard() {
-  Serial.println(F("Initializing SD card..."));
+bool checkGPSConnection() {
+  // Check if we can communicate with the GPS module
+  // Query the navigation rate to see if we get a valid response
+  byte rate = myGNSS.getNavigationFrequency();
   
-  #if defined(BOARD_STM32_THING_PLUS)
-    // STM32 SD card initialization - may need special handling
-    pinMode(SD_CS_PIN, OUTPUT);
-    digitalWrite(SD_CS_PIN, HIGH); // Ensure CS is high initially
-    
-    // Initialize SD card with explicit parameters
-    if (!SD.begin(SD_CS_PIN, SPI_HALF_SPEED)) {
-      Serial.println(F("SD Card initialization failed!"));
-      return false;
-    }
-  #else
-    // Standard Teensy/Arduino SD card initialization
-    if (!SD.begin(SDchipSelect)) {
-      Serial.println(F("SD Card initialization failed!"));
-      return false;
-    }
-  #endif
-  
-  Serial.println(F("SD Card initialized."));
-  return true;
+  if (rate > 0) {
+    // We got a response
+    Serial.print(F("GPS communication success! Nav rate: "));
+    Serial.println(rate);
+    return true;
+  } else {
+    Serial.println(F("WARNING: No response from GPS when querying navigation rate."));
+    return false;
+  }
 }
-
-// Function to initialize the Serial Flash memory
-bool initSerialFlash() {
-  Serial.println(F("Initializing Serial Flash..."));
-  
-  #if defined(BOARD_STM32_THING_PLUS)
-    // STM32 may need a different approach for external flash
     // SerialFlash library is Teensy-specific
     Serial.println(F("SerialFlash not supported on STM32 yet"));
     Serial.println(F("Using internal LittleFS instead"));

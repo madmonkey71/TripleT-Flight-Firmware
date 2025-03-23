@@ -1,0 +1,2 @@
+#define GPS_DEBUG_ENABLED  1   // Set to 1 to enable GPS debugging output, 0 to disable
+#define GPS_DEBUG_VERBOSE  0   // Set to 1 for extremely detailed UBX message debugging

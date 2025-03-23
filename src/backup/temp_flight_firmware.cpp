@@ -41,7 +41,6 @@
 #include <LittleFS.h>
 // Add this near the top where other includes are
 #include "gps_config.h"
-#include "gps_functions.h"  // Include GPS functions header
 
 // Board Configuration
 // Uncomment the board you're using and comment out others
@@ -192,14 +191,25 @@
 // #define RESTRICT_PITCH 
 
 // MS5611 Sensor
-// This correctly creates an instance of the MS5611 class with I2C address 0x77
-MS5611 ms5611Sensor(0x77);
+// For some reason this throws an error but it still works
+// Needs investigation
+MS5611 MS5611(0x77);
 uint32_t start, stop;
 
 // Sparkfun ZOE-M8Q
 // Put all the GPS variables here
-// GPS variables are now defined in gps_functions.cpp and declared as extern in gps_functions.h
-// ... existing code ...
+SFE_UBLOX_GNSS myGPS;
+long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to Ublox module.
+long GPS_latitude =  0;
+long GPS_longitude =  0;
+long GPS_altitude =  0;
+long GPS_altitudeMSL = 0;
+long GPS_speed =  0;
+long GPS_heading =  0;
+int pDOP =  0;
+byte SIV =  0;
+byte GPS_fixType =  0;
+byte RTK =  0;
 
 // SparkFun_KX134 kxAccel;
 SparkFun_KX134 kxAccel; // For the KX134, uncomment this and comment line above
@@ -393,8 +403,8 @@ bool initInternalFlash() {
   // Generate a new log file name with timestamp or counter
   if (SIV > 0) { // If we have satellite fix
     sprintf(flashLogPath, "/log_%04d%02d%02d_%02d%02d%02d.bin", 
-      myGNSS.getYear(), myGNSS.getMonth(), myGNSS.getDay(),
-      myGNSS.getHour(), myGNSS.getMinute(), myGNSS.getSecond());
+      myGPS.getYear(), myGPS.getMonth(), myGPS.getDay(),
+      myGPS.getHour(), myGPS.getMinute(), myGPS.getSecond());
   } else {
     // Find an unused log file name
     int fileCount = 0;
@@ -529,8 +539,8 @@ void createNewLogFile() {
   // Try to get date/time from GPS if available
   if (SIV > 0) { // If we have satellite fix
     sprintf(fileName, "DATA_%04d%02d%02d_%02d%02d%02d.CSV", 
-      myGNSS.getYear(), myGNSS.getMonth(), myGNSS.getDay(),
-      myGNSS.getHour(), myGNSS.getMinute(), myGNSS.getSecond());
+      myGPS.getYear(), myGPS.getMonth(), myGPS.getDay(),
+      myGPS.getHour(), myGPS.getMinute(), myGPS.getSecond());
   } else {
     // Fallback to numbered files if no GPS time available
     int fileCount = 0;
@@ -617,7 +627,7 @@ void WriteLogData(bool forceLog = false) {
           GPS_fixType, SIV, 
           GPS_latitude, GPS_longitude, GPS_altitude, GPS_altitudeMSL, 
           GPS_speed, GPS_heading, pDOP / 100.0, RTK,
-          ms5611Sensor.getPressure(), ms5611Sensor.getTemperature(),
+          MS5611.getPressure(), MS5611.getTemperature(),
           kx134_x, kx134_y, kx134_z,
           icm_accel_x, icm_accel_y, icm_accel_z,
           icm_gyro_x, icm_gyro_y, icm_gyro_z);
@@ -710,12 +720,12 @@ void WriteLogData(bool forceLog = false) {
     logRecord[19] = (speed >> 8) & 0xFF;
     
     // Pressure (hPa * 10 to keep 1 decimal place)
-    int16_t pressure = constrain((int)(ms5611Sensor.getPressure() * 10), -32768, 32767);
+    int16_t pressure = constrain((int)(MS5611.getPressure() * 10), -32768, 32767);
     logRecord[20] = pressure & 0xFF;
     logRecord[21] = (pressure >> 8) & 0xFF;
     
     // Temperature (°C * 100 to keep 2 decimal places)
-    int16_t temperature = constrain((int)(ms5611Sensor.getTemperature() * 100), -32768, 32767);
+    int16_t temperature = constrain((int)(MS5611.getTemperature() * 100), -32768, 32767);
     logRecord[22] = temperature & 0xFF;
     logRecord[23] = (temperature >> 8) & 0xFF;
     
@@ -805,6 +815,69 @@ void formatNumber(float input, byte columns, byte places)
   Serial.print(buffer); // Print the formatted number to the serial monitor
 }
 
+void gps_print(){
+    Serial.println(F("\n----- GPS Data -----"));
+    
+    // Show fix information first (most important for debugging)
+    Serial.print(F("Fix Type: "));
+    if(GPS_fixType == 0) Serial.println(F("No fix - waiting for position"));
+    else if(GPS_fixType == 1) Serial.println(F("Dead reckoning"));
+    else if(GPS_fixType == 2) Serial.println(F("2D fix"));
+    else if(GPS_fixType == 3) Serial.println(F("3D fix - Valid position"));
+    else if(GPS_fixType == 4) Serial.println(F("GNSS + Dead reckoning"));
+    else Serial.println(GPS_fixType);
+    
+    Serial.print(F("Satellites: "));
+    Serial.println(SIV);
+    
+    Serial.print(F("Positional DOP: "));
+    Serial.println(pDOP / 100.0, 2);
+    
+    // Print position data
+    Serial.print(F("Lat: "));
+    Serial.print(GPS_latitude);
+    Serial.print(F(" Long: "));
+    Serial.print(GPS_longitude);
+    Serial.println(F(" (degrees * 10^-7)"));
+    
+    // For a more human-readable format, optional:
+    Serial.print(F("Position: "));
+    Serial.print(GPS_latitude / 10000000.0, 6);
+    Serial.print(F(", "));
+    Serial.println(GPS_longitude / 10000000.0, 6);
+    
+    Serial.print(F("Altitude: "));
+    Serial.print(GPS_altitude);
+    Serial.print(F(" mm ("));
+    Serial.print(GPS_altitude / 1000.0, 1);
+    Serial.println(F(" m)"));
+    
+    Serial.print(F("AltitudeMSL: "));
+    Serial.print(GPS_altitudeMSL);
+    Serial.print(F(" mm ("));
+    Serial.print(GPS_altitudeMSL / 1000.0, 1);
+    Serial.println(F(" m)"));
+    
+    Serial.print(F("Speed: "));
+    Serial.print(GPS_speed);
+    Serial.print(F(" mm/s ("));
+    Serial.print(GPS_speed * 0.0036, 1); // Convert to km/h
+    Serial.println(F(" km/h)"));
+    
+    Serial.print(F("Heading: "));
+    Serial.print(GPS_heading);
+    Serial.print(F(" (degrees * 10^-5) = "));
+    Serial.print(GPS_heading / 100000.0, 1);
+    Serial.println(F(" degrees"));
+    
+    Serial.print(F("RTK: "));
+    Serial.print(RTK);
+    if (RTK == 1) Serial.println(F(" - Float RTK solution"));
+    else if (RTK == 2) Serial.println(F(" - Fixed RTK solution"));
+    else Serial.println(F(" - No RTK solution"));
+    
+    Serial.println(F("--------------------"));
+}
 void kx134_init(){
   if (kxAccel.softwareReset())
     Serial.println("Reset.");
@@ -1069,7 +1142,7 @@ void ICM_20948_read(){
 }
 int ms5611_read(){
   start = micros();
-  int result = ms5611Sensor.read();
+  int result = MS5611.read();
   stop = micros();
   
   // Don't print debug messages here - they'll be handled in ms5611_print function
@@ -1081,10 +1154,10 @@ void ms5611_init(){
   Serial.print("MS5611_LIB_VERSION: ");
   Serial.println(MS5611_LIB_VERSION);
 
-  if (ms5611Sensor.begin() == true)
+  if (MS5611.begin() == true)
   {
     Serial.print("MS5611 found: ");
-    Serial.println(ms5611Sensor.getAddress());
+    Serial.println(MS5611.getAddress());
   }
   else
   {
@@ -1096,8 +1169,8 @@ void ms5611_init(){
    We are using OSR_HIGH which will take 4.11 millis. OSR_ULTRA_HIGH is roughly double
    Read the Doco if you want to set something different
   */
-  ms5611Sensor.setOversampling(OSR_HIGH);
-  // ms5611Sensor.setOversampling(OSR_ULTRA_HIGH);
+  MS5611.setOversampling(OSR_HIGH);
+  // MS5611.setOversampling(OSR_ULTRA_HIGH);
   int result = ms5611_read();
   if (result != MS5611_READ_OK) {
     Serial.print("MS5611 read error during init: ");
@@ -1110,9 +1183,9 @@ void ms5611_init(){
 void ms5611_print() {
   Serial.print("MS5611 Data\n");
   Serial.print("T: ");
-  Serial.print(ms5611Sensor.getTemperature(), 2);
+  Serial.print(MS5611.getTemperature(), 2);
   Serial.print(" P: ");
-  Serial.print(ms5611Sensor.getPressure(), 2);
+  Serial.print(MS5611.getPressure(), 2);
   Serial.println();
 }
 void scan_i2c() {
@@ -1155,6 +1228,22 @@ void scan_i2c() {
     Serial.println(F("No I2C devices found\n"));
   else
     Serial.println(F("I2C scan complete\n"));
+}
+
+bool checkGPSConnection() {
+  // Check if we can communicate with the GPS module
+  // Query the navigation rate to see if we get a valid response
+  byte rate = myGPS.getNavigationFrequency();
+  
+  if (rate > 0) {
+    // We got a response
+    Serial.print(F("GPS communication success! Nav rate: "));
+    Serial.println(rate);
+    return true;
+  } else {
+    Serial.println(F("WARNING: No response from GPS when querying navigation rate."));
+    return false;
+  }
 }
 
 // Function to initialize the SD card
@@ -1666,7 +1755,7 @@ void printStatusSummary() {
   Serial.println(F("==================================="));
   
   // GPS INFORMATION - Show compact format
-  Serial.println(F("GPS Fix Type: "));
+  Serial.println(F("GPS: "));
   Serial.print(F("  "));
   switch(GPS_fixType) {
     case 0: Serial.print(F("No Fix")); break;
@@ -1681,13 +1770,27 @@ void printStatusSummary() {
   Serial.print(F(" | DOP: "));
   Serial.println(pDOP / 100.0, 1);
   
-  gps_print();
+  if (GPS_fixType >= 2) {
+    Serial.print(F("  Position: "));
+    Serial.print(GPS_latitude / 10000000.0, 6);
+    Serial.print(F(", "));
+    Serial.print(GPS_longitude / 10000000.0, 6);
+    Serial.print(F(" | Alt: "));
+    Serial.print(GPS_altitude / 1000.0, 1);
+    Serial.println(F("m"));
+    
+    Serial.print(F("  Speed: "));
+    Serial.print(GPS_speed * 0.0036, 1);
+    Serial.print(F(" km/h | RTK: "));
+    Serial.println(RTK == 2 ? F("Fixed") : (RTK == 1 ? F("Float") : F("None")));
+  }
+  
   // SENSORS - Combine atmospheric and IMU data in a compact format
   Serial.println(F("SENSORS:"));
   Serial.print(F("  Baro: "));
-  Serial.print(ms5611Sensor.getPressure(), 1);
+  Serial.print(MS5611.getPressure(), 1);
   Serial.print(F(" hPa, "));
-  Serial.print(ms5611Sensor.getTemperature(), 1);
+  Serial.print(MS5611.getTemperature(), 1);
   Serial.println(F("°C"));
   
   // KX134 Accelerometer data
@@ -1973,17 +2076,17 @@ void setup() {
   }
   
   Serial.println();
-  Serial.print(myGNSS.getYear());
+  Serial.print(myGPS.getYear());
   Serial.print("-");
-  Serial.print(myGNSS.getMonth());
+  Serial.print(myGPS.getMonth());
   Serial.print("-");
-  Serial.print(myGNSS.getDay());
+  Serial.print(myGPS.getDay());
   Serial.print(" ");
-  Serial.print(myGNSS.getHour());
+  Serial.print(myGPS.getHour());
   Serial.print(":");
-  Serial.print(myGNSS.getMinute());
+  Serial.print(myGPS.getMinute());
   Serial.print(":");
-  Serial.print(myGNSS.getSecond());
+  Serial.print(myGPS.getSecond());
 
   while (Serial.available()) // Make sure the serial RX buffer is empty
     Serial.read();
@@ -2218,5 +2321,6 @@ void loop() {
     ICM_20948_print();
   }
 }
+
 
 

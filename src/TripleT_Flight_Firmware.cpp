@@ -963,11 +963,8 @@ void ICM_20948_init(){
     Serial.print(F("startupMagnetometer returned: "));
     Serial.println(myICM.statusString());
   }
-
   Serial.println();
   Serial.println(F("Configuration complete!"));
-
-
   }
   // After successful ICM initialization
   delay(500); // Wait for sensor to stabilize
@@ -1275,7 +1272,6 @@ void printRawAGMT(ICM_20948_AGMT_t agmt)
   Serial.println();
 }
 
-
 // Function to print ICM_20948 data to serial
 void ICM_20948_print() {
   if (myICM.dataReady())
@@ -1290,8 +1286,6 @@ void ICM_20948_print() {
     Serial.println("Waiting for data");
     delay(500);
   }
-
-
 
   Serial.println(F("-------------------"));
 }
@@ -1428,9 +1422,7 @@ String dumpInternalFlashData() {
   
   while (logFile.available() >= 46) {
     logFile.read(recordBytes, 46);
-    
-    // Extract record data
-    
+
     // Timestamp (4 bytes)
     unsigned long timestamp = 0;
     timestamp |= (unsigned long)recordBytes[0];
@@ -1575,8 +1567,9 @@ void handleFlashDataCheck() {
     
     Serial.println(F("\nFlash data options:"));
     Serial.println(F("1. Dump and delete next log file"));
-    Serial.println(F("2. Continue without dumping"));
-    Serial.println(F("Enter choice (1-2) [waiting 10 seconds]:"));
+    Serial.println(F("2. Delete next log file without dumping"));
+    Serial.println(F("3. Continue without action"));
+    Serial.println(F("Enter choice (1-3) [waiting 30 seconds]:"));
     
     // Wait for response with timeout
     unsigned long startTime = millis();
@@ -1599,9 +1592,9 @@ void handleFlashDataCheck() {
       }
     }
     
-    if (!responseReceived || response == '2') {
+    if (!responseReceived || response == '3') {
       // No response or user chose to continue
-      Serial.println(F("Continuing without dumping files."));
+      Serial.println(F("Continuing without action."));
       pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
       pixels.show();
       delay(1000);
@@ -1630,22 +1623,59 @@ void handleFlashDataCheck() {
         
         delay(1000); // Pause to show deletion indication
       }
+    } else if (response == '2') {
+      // Delete without dumping
+      pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for deleting
+      pixels.show();
       
-      // Check if there are more files
-      hasMoreFiles = checkInternalFlashData();
-      if (!hasMoreFiles) {
-        Serial.println(F("No more log files remaining."));
-        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
-        pixels.show();
-        delay(1000);
+      // List all log files to get the first one
+      File root = flashFS.open("/");
+      if (root && root.isDirectory()) {
+        File file = root.openNextFile();
+        String fileToDelete = "";
+        
+        // Get the first log file
+        while (file) {
+          if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
+            fileToDelete = String(file.name());
+            break;
+          }
+          file = root.openNextFile();
+        }
+        
+        root.close();
+        
+        if (fileToDelete.length() > 0) {
+          Serial.print(F("Deleting file without dumping: "));
+          Serial.println(fileToDelete);
+          
+          if (flashFS.remove(("/" + fileToDelete).c_str())) {
+            Serial.println(F("File deleted successfully."));
+          } else {
+            Serial.println(F("Failed to delete file!"));
+          }
+        } else {
+          Serial.println(F("No files found to delete!"));
+        }
       }
+      
+      delay(1000); // Pause to show deletion indication
     } else {
       // Invalid response
-      Serial.println(F("Invalid choice, continuing without dumping."));
+      Serial.println(F("Invalid choice, continuing without action."));
       pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
       pixels.show();
       delay(1000);
       break;
+    }
+    
+    // Check if there are more files
+    hasMoreFiles = checkInternalFlashData();
+    if (!hasMoreFiles) {
+      Serial.println(F("No more log files remaining."));
+      pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
+      pixels.show();
+      delay(1000);
     }
   }
 }

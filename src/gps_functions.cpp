@@ -47,8 +47,12 @@ bool checkGPSConnection() {
 void gps_init() {
   Serial.println(F("Initializing GPS module..."));
   
+
   // Try to connect to the GPS module - be explicit that we're using I2C
-  Wire.begin();
+  Wire.begin(4000000);
+  
+  // myGNSS.factoryDefault();
+  // delay(1000);
   
   // Try multiple times to connect
   int attempts = 0;

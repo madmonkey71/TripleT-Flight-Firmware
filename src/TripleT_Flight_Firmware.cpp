@@ -42,6 +42,7 @@
 // Add this near the top where other includes are
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
+#include "kx134_functions.h"
 
 // Board Configuration
 // Uncomment the board you're using and comment out others
@@ -193,7 +194,7 @@
 
 // MS5611 Sensor
 // This correctly creates an instance of the MS5611 class with I2C address 0x77
-// MS5611 ms5611Sensor(0x77);
+MS5611 ms5611Sensor(0x77);
 uint32_t start, stop;
 
 // Sparkfun ZOE-M8Q
@@ -201,12 +202,7 @@ uint32_t start, stop;
 // GPS variables are now defined in gps_functions.cpp and declared as extern in gps_functions.h
 // ... existing code ...
 
-// SparkFun_KX134 kxAccel;
-SparkFun_KX134 kxAccel; // For the KX134, uncomment this and comment line above
-outputData kx134AccelData; // Struct for the accelerometer's data
-float kx134_x = 0;
-float kx134_y = 0;
-float kx134_z = 0;
+// KX134 variables are now defined in kx134_functions.cpp and declared as extern in kx134_functions.h
 
 // SparkFun 9DOF
 // The value of the last bit of the I2C address.
@@ -810,47 +806,6 @@ void formatNumber(float input, byte columns, byte places)
   Serial.print(buffer); // Print the formatted number to the serial monitor
 }
 
-void kx134_init(){
-  if (kxAccel.softwareReset())
-    Serial.println("Reset.");
-  // Give some time for the accelerometer to reset.
-  // It needs two, but give it five for good measure.
-  delay(50);
-  // Many settings for KX13X can only be
-  // applied when the accelerometer is powered down.
-  // However there are many that can be changed "on-the-fly"
-  // check datasheet for more info, or the comments in the
-  // "...regs.h" file which specify which can be changed when.
-  // So we disable the accelerometer
-  kxAccel.enableAccel(false);
-  // Do stuff
-  // kxAccel.setRange(SFE_KX132_RANGE16G); // 16g Range
-  kxAccel.setRange(SFE_KX134_RANGE64G);         // 64g for the KX134
-  kxAccel.enableDataEngine(); // Enables the bit that indicates data is ready.
-  kxAccel.setOutputDataRate(50); // Default is 50Hz
-  // Re-enable the accelerometer
-  kxAccel.enableAccel(); 
-  kxAccel.begin();
-}
-void kx134_read(){
-  // Query the KX134
-  if (kxAccel.dataReady())
-  {
-    kxAccel.getAccelData(&kx134AccelData);
-    kx134_x = kx134AccelData.xData;
-    kx134_y = kx134AccelData.yData;
-    kx134_z = kx134AccelData.zData;
-  }
-}
-void kx134_print(){
-  Serial.print(F("  KX134: X:"));
-  Serial.print(kx134_x, 2);
-  Serial.print(F("g Y:"));
-  Serial.print(kx134_y, 2);
-  Serial.print(F("g Z:"));
-  Serial.print(kx134_z, 2);
-  Serial.println(F("g"));
-}
 void ICM_20948_init(){
     // Sparkfun 9DOF sensor setup then wait for use input
   Serial.println(F("ICM-20948 Example"));

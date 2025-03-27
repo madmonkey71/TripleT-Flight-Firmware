@@ -1,5 +1,5 @@
-#include "kx134_functions.h"
 #include <Arduino.h>
+#include "kx134_functions.h" // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
 
 // Global variable definitions
 SparkFun_KX134 kxAccel;

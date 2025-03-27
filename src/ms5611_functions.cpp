@@ -2,8 +2,6 @@
 
 MS5611 ms5611Sensor(0x77);
 
-
-
 int ms5611_read() {
     return ms5611Sensor.read();
 }

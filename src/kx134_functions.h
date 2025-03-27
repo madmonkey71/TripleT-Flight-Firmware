@@ -1,7 +1,8 @@
 #ifndef KX134_FUNCTIONS_H
 #define KX134_FUNCTIONS_H
 
-#include <SparkFun_KX134_1211_Arduino_Library.h>
+#include <Wire.h>
+#include <SparkFun_KX13X.h>
 
 // Global variables
 extern SparkFun_KX134 kxAccel;

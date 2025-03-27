@@ -42,7 +42,18 @@
 // Add this near the top where other includes are
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
-#include "kx134_functions.h"
+
+// Libraries for all of the sensor hardware
+// KX134 Accelerometer
+#include <SparkFun_KX13X.h> // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
+// Ublox M8Q GPS Module
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
+// MS5611 Barometric Pressure Sensor
+#include "MS5611.h"
+#include "ms5611_functions.h"
+#include "ICM_20948.h" // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
+
+#include "kx134_functions.h" // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
 
 // Board Configuration
 // Uncomment the board you're using and comment out others
@@ -80,6 +91,8 @@
   // Include STM32 specific headers
   #include <STM32_GPIO.h>
   // Define Arduino pin numbers for STM32 ports
+  #define PIN_PA0 A0
+  #define PIN_PA1 A1
   #define PIN_PA4 A4
   #define PIN_PA5 A5
   #define PIN_PA6 A6
@@ -89,22 +102,10 @@
   #define PIN_PB3 4
   #define PIN_PB4 5
   #define PIN_PB5 8
+  #define PIN_PB12 7
   #define PIN_PB6 21
   #define PIN_PB7 20
-  #define PIN_PB8 9
-  #define PIN_PB12 7
-  #define PIN_PA0 A0
-  #define PIN_PA1 A1
 #endif
-
-// Libraries for all of the sensor hardware
-// KX134 Accelerometer
-#include <SparkFun_KX13X.h> // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
-// Ublox M8Q GPS Module
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
-// MS5611 Barometric Pressure Sensor
-#include "ms5611_functions.h"
-#include "ICM_20948.h" // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
 
 // Include the appropriate servo library based on the board
 #if defined(USE_STD_SERVO_LIB)
@@ -192,17 +193,12 @@
 // Comment out to restrict roll to ±90deg instead - please read: https://www.nxp.com/docs/en/application-note/AN3461.pdf
 // #define RESTRICT_PITCH 
 
-// MS5611 Sensor
-// This correctly creates an instance of the MS5611 class with I2C address 0x77
-MS5611 ms5611Sensor(0x77);
 uint32_t start, stop;
 
 // Sparkfun ZOE-M8Q
 // Put all the GPS variables here
 // GPS variables are now defined in gps_functions.cpp and declared as extern in gps_functions.h
 // ... existing code ...
-
-// KX134 variables are now defined in kx134_functions.cpp and declared as extern in kx134_functions.h
 
 // SparkFun 9DOF
 // The value of the last bit of the I2C address.
@@ -549,7 +545,7 @@ void createNewLogFile() {
     if (LogDataFile) {
       // Write CSV header
       LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
-                          "Pressure,Temperature,BaroAlt,"
+                          "Pressure,Temperature,"
                           "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                           "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
                           "ICM_GyroX,ICM_GyroY,ICM_GyroZ"));
@@ -575,7 +571,7 @@ void createNewLogFile() {
       if (flashFile) {
         // Write header
         flashFile.write("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
-                       "Pressure,Temperature,BaroAlt,"
+                       "Pressure,Temperature,"
                        "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                        "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
                        "ICM_GyroX,ICM_GyroY,ICM_GyroZ\n", 180);
@@ -607,13 +603,13 @@ void WriteLogData(bool forceLog = false) {
   char dataString[320]; // Make sure this is large enough
   int milliseconds = millis() % 1000;
   
-  // Format: timestamp,fixType,sats,lat,long,alt,altMSL,speed,heading,pDOP,RTK,pressure,temp,baroAlt,kx_ax,kx_ay,kx_az,icm_ax,icm_ay,icm_az,icm_gx,icm_gy,icm_gz
-  sprintf(dataString, "%lu.%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+  // Format: timestamp,fixType,sats,lat,long,alt,altMSL,speed,heading,pDOP,RTK,pressure,temp,kx_ax,kx_ay,kx_az,icm_ax,icm_ay,icm_az,icm_gx,icm_gy,icm_gz
+  sprintf(dataString, "%lu.%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
           millis() / 1000, milliseconds,
           GPS_fixType, SIV, 
           GPS_latitude, GPS_longitude, GPS_altitude, GPS_altitudeMSL, 
           GPS_speed, GPS_heading, pDOP / 100.0, RTK,
-          ms5611Sensor.getPressure(), ms5611Sensor.getTemperature(), ms5611_get_altitude(),
+          ms5611Sensor.getPressure(), ms5611Sensor.getTemperature(),
           kx134_x, kx134_y, kx134_z,
           icm_accel_x, icm_accel_y, icm_accel_z,
           icm_gyro_x, icm_gyro_y, icm_gyro_z);
@@ -715,62 +711,57 @@ void WriteLogData(bool forceLog = false) {
     logRecord[22] = temperature & 0xFF;
     logRecord[23] = (temperature >> 8) & 0xFF;
     
-    // Barometric altitude (mm * 10 to keep 1 decimal place)
-    int16_t baroAltitude = constrain((int)(ms5611_get_altitude() * 10), -32768, 32767);
-    logRecord[24] = baroAltitude & 0xFF;
-    logRecord[25] = (baroAltitude >> 8) & 0xFF;
-    
     // KX134 Accelerometer data (g * 1000 to keep 3 decimal places)
     int16_t kx_accelX = constrain((int)(kx134_x * 1000), -32768, 32767);
     int16_t kx_accelY = constrain((int)(kx134_y * 1000), -32768, 32767);
     int16_t kx_accelZ = constrain((int)(kx134_z * 1000), -32768, 32767);
     
-    logRecord[26] = kx_accelX & 0xFF;
-    logRecord[27] = (kx_accelX >> 8) & 0xFF;
-    logRecord[28] = kx_accelY & 0xFF;
-    logRecord[29] = (kx_accelY >> 8) & 0xFF;
-    logRecord[30] = kx_accelZ & 0xFF;
-    logRecord[31] = (kx_accelZ >> 8) & 0xFF;
+    logRecord[24] = kx_accelX & 0xFF;
+    logRecord[25] = (kx_accelX >> 8) & 0xFF;
+    logRecord[26] = kx_accelY & 0xFF;
+    logRecord[27] = (kx_accelY >> 8) & 0xFF;
+    logRecord[28] = kx_accelZ & 0xFF;
+    logRecord[29] = (kx_accelZ >> 8) & 0xFF;
     
     // ICM-20948 Accelerometer data (g * 1000 to keep 3 decimal places)
     int16_t icm_accelX = constrain((int)(icm_accel_x * 1000), -32768, 32767);
     int16_t icm_accelY = constrain((int)(icm_accel_y * 1000), -32768, 32767);
     int16_t icm_accelZ = constrain((int)(icm_accel_z * 1000), -32768, 32767);
     
-    logRecord[32] = icm_accelX & 0xFF;
-    logRecord[33] = (icm_accelX >> 8) & 0xFF;
-    logRecord[34] = icm_accelY & 0xFF;
-    logRecord[35] = (icm_accelY >> 8) & 0xFF;
-    logRecord[36] = icm_accelZ & 0xFF;
-    logRecord[37] = (icm_accelZ >> 8) & 0xFF;
+    logRecord[30] = icm_accelX & 0xFF;
+    logRecord[31] = (icm_accelX >> 8) & 0xFF;
+    logRecord[32] = icm_accelY & 0xFF;
+    logRecord[33] = (icm_accelY >> 8) & 0xFF;
+    logRecord[34] = icm_accelZ & 0xFF;
+    logRecord[35] = (icm_accelZ >> 8) & 0xFF;
     
     // ICM-20948 Gyroscope data (deg/s * 10 to keep 1 decimal place)
     int16_t icm_gyroX = constrain((int)(icm_gyro_x * 10), -32768, 32767);
     int16_t icm_gyroY = constrain((int)(icm_gyro_y * 10), -32768, 32767);
     int16_t icm_gyroZ = constrain((int)(icm_gyro_z * 10), -32768, 32767);
     
-    logRecord[38] = icm_gyroX & 0xFF;
-    logRecord[39] = (icm_gyroX >> 8) & 0xFF;
-    logRecord[40] = icm_gyroY & 0xFF;
-    logRecord[41] = (icm_gyroY >> 8) & 0xFF;
-    logRecord[42] = icm_gyroZ & 0xFF;
-    logRecord[43] = (icm_gyroZ >> 8) & 0xFF;
+    logRecord[36] = icm_gyroX & 0xFF;
+    logRecord[37] = (icm_gyroX >> 8) & 0xFF;
+    logRecord[38] = icm_gyroY & 0xFF;
+    logRecord[39] = (icm_gyroY >> 8) & 0xFF;
+    logRecord[40] = icm_gyroZ & 0xFF;
+    logRecord[41] = (icm_gyroZ >> 8) & 0xFF;
     
     // Reserved bytes
-    logRecord[44] = 0;
-    logRecord[45] = 0;
+    logRecord[42] = 0;
+    logRecord[43] = 0;
     
     // Simple checksum (sum of all bytes)
     uint16_t checksum = 0;
     for (int i = 0; i < 44; i++) {
       checksum += logRecord[i];
     }
-    logRecord[46] = checksum & 0xFF;
-    logRecord[47] = (checksum >> 8) & 0xFF;
+    logRecord[44] = checksum & 0xFF;
+    logRecord[45] = (checksum >> 8) & 0xFF;
     
     // Write to the log file (with updated record size)
     if (flashLogFile) {
-      flashLogFile.write(logRecord, 48);
+      flashLogFile.write(logRecord, 46);
       flashLogFile.flush();
       recordCount++;
       
@@ -923,8 +914,11 @@ void ICM_20948_init(){
     Serial.print(F("startupMagnetometer returned: "));
     Serial.println(myICM.statusString());
   }
+
   Serial.println();
   Serial.println(F("Configuration complete!"));
+
+
   }
   // After successful ICM initialization
   delay(500); // Wait for sensor to stabilize
@@ -1024,6 +1018,7 @@ void ICM_20948_read(){
   }
 
 }
+
 void scan_i2c() {
   Serial.println(F("\nI2C Scanner"));
   Serial.println(F("Scanning..."));
@@ -1184,6 +1179,7 @@ void printRawAGMT(ICM_20948_AGMT_t agmt)
   Serial.println();
 }
 
+
 // Function to print ICM_20948 data to serial
 void ICM_20948_print() {
   if (myICM.dataReady())
@@ -1198,6 +1194,8 @@ void ICM_20948_print() {
     Serial.println("Waiting for data");
     delay(500);
   }
+
+
 
   Serial.println(F("-------------------"));
 }
@@ -1326,7 +1324,7 @@ String dumpInternalFlashData() {
   Serial.println();
   
   // Print column headers for CSV format
-  Serial.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,Speed,Pressure,Temp,BaroAlt,KX134_AccelX,KX134_AccelY,KX134_AccelZ,ICM_AccelX,ICM_AccelY,ICM_AccelZ,ICM_GyroX,ICM_GyroY,ICM_GyroZ,Checksum"));
+  Serial.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,Speed,Pressure,Temp,KX134_AccelX,KX134_AccelY,KX134_AccelZ,ICM_AccelX,ICM_AccelY,ICM_AccelZ,ICM_GyroX,ICM_GyroY,ICM_GyroZ,Checksum"));
   
   // Dump each 46-byte record
   uint8_t recordBytes[46];
@@ -1334,7 +1332,9 @@ String dumpInternalFlashData() {
   
   while (logFile.available() >= 46) {
     logFile.read(recordBytes, 46);
-
+    
+    // Extract record data
+    
     // Timestamp (4 bytes)
     unsigned long timestamp = 0;
     timestamp |= (unsigned long)recordBytes[0];
@@ -1382,48 +1382,43 @@ String dumpInternalFlashData() {
     temperature |= (int16_t)recordBytes[22];
     temperature |= (int16_t)recordBytes[23] << 8;
     
-    // Barometric altitude (2 bytes) - stored as mm * 10
-    int16_t baroAltitude = 0;
-    baroAltitude |= (int16_t)recordBytes[24];
-    baroAltitude |= (int16_t)recordBytes[25] << 8;
-    
     // KX134 Accelerometer values (6 bytes) - stored as g * 1000
     int16_t kx_accelX = 0, kx_accelY = 0, kx_accelZ = 0;
-    kx_accelX |= (int16_t)recordBytes[26];
-    kx_accelX |= (int16_t)recordBytes[27] << 8;
-    kx_accelY |= (int16_t)recordBytes[28];
-    kx_accelY |= (int16_t)recordBytes[29] << 8;
-    kx_accelZ |= (int16_t)recordBytes[30];
-    kx_accelZ |= (int16_t)recordBytes[31] << 8;
+    kx_accelX |= (int16_t)recordBytes[24];
+    kx_accelX |= (int16_t)recordBytes[25] << 8;
+    kx_accelY |= (int16_t)recordBytes[26];
+    kx_accelY |= (int16_t)recordBytes[27] << 8;
+    kx_accelZ |= (int16_t)recordBytes[28];
+    kx_accelZ |= (int16_t)recordBytes[29] << 8;
     
     // ICM-20948 Accelerometer values (6 bytes) - stored as g * 1000
     int16_t icm_accelX = 0, icm_accelY = 0, icm_accelZ = 0;
-    icm_accelX |= (int16_t)recordBytes[32];
-    icm_accelX |= (int16_t)recordBytes[33] << 8;
-    icm_accelY |= (int16_t)recordBytes[34];
-    icm_accelY |= (int16_t)recordBytes[35] << 8;
-    icm_accelZ |= (int16_t)recordBytes[36];
-    icm_accelZ |= (int16_t)recordBytes[37] << 8;
+    icm_accelX |= (int16_t)recordBytes[30];
+    icm_accelX |= (int16_t)recordBytes[31] << 8;
+    icm_accelY |= (int16_t)recordBytes[32];
+    icm_accelY |= (int16_t)recordBytes[33] << 8;
+    icm_accelZ |= (int16_t)recordBytes[34];
+    icm_accelZ |= (int16_t)recordBytes[35] << 8;
     
     // ICM-20948 Gyroscope values (6 bytes) - stored as deg/s * 10
     int16_t icm_gyroX = 0, icm_gyroY = 0, icm_gyroZ = 0;
-    icm_gyroX |= (int16_t)recordBytes[38];
-    icm_gyroX |= (int16_t)recordBytes[39] << 8;
-    icm_gyroY |= (int16_t)recordBytes[40];
-    icm_gyroY |= (int16_t)recordBytes[41] << 8;
-    icm_gyroZ |= (int16_t)recordBytes[42];
-    icm_gyroZ |= (int16_t)recordBytes[43] << 8;
+    icm_gyroX |= (int16_t)recordBytes[36];
+    icm_gyroX |= (int16_t)recordBytes[37] << 8;
+    icm_gyroY |= (int16_t)recordBytes[38];
+    icm_gyroY |= (int16_t)recordBytes[39] << 8;
+    icm_gyroZ |= (int16_t)recordBytes[40];
+    icm_gyroZ |= (int16_t)recordBytes[41] << 8;
     
-    // Reserved bytes [44-45] are skipped
+    // Reserved bytes [42-43] are skipped
     
     // Checksum (2 bytes)
     uint16_t checksum = 0;
-    checksum |= (uint16_t)recordBytes[46];
-    checksum |= (uint16_t)recordBytes[47] << 8;
+    checksum |= (uint16_t)recordBytes[44];
+    checksum |= (uint16_t)recordBytes[45] << 8;
     
     // Calculate and verify checksum
     uint16_t calculatedChecksum = 0;
-    for (int i = 0; i < 46; i++) {
+    for (int i = 0; i < 44; i++) {
       calculatedChecksum += recordBytes[i];
     }
     
@@ -1439,7 +1434,6 @@ String dumpInternalFlashData() {
             speed,
             pressure / 10.0,    // Convert back to hPa
             temperature / 100.0, // Convert back to °C
-            baroAltitude / 10.0, // Convert back to mm
             kx_accelX / 1000.0,  // Convert back to g
             kx_accelY / 1000.0,
             kx_accelZ / 1000.0,
@@ -1485,9 +1479,8 @@ void handleFlashDataCheck() {
     
     Serial.println(F("\nFlash data options:"));
     Serial.println(F("1. Dump and delete next log file"));
-    Serial.println(F("2. Delete next log file without dumping"));
-    Serial.println(F("3. Continue without action"));
-    Serial.println(F("Enter choice (1-3) [waiting 30 seconds]:"));
+    Serial.println(F("2. Continue without dumping"));
+    Serial.println(F("Enter choice (1-2) [waiting 10 seconds]:"));
     
     // Wait for response with timeout
     unsigned long startTime = millis();
@@ -1510,9 +1503,9 @@ void handleFlashDataCheck() {
       }
     }
     
-    if (!responseReceived || response == '3') {
+    if (!responseReceived || response == '2') {
       // No response or user chose to continue
-      Serial.println(F("Continuing without action."));
+      Serial.println(F("Continuing without dumping files."));
       pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
       pixels.show();
       delay(1000);
@@ -1541,59 +1534,22 @@ void handleFlashDataCheck() {
         
         delay(1000); // Pause to show deletion indication
       }
-    } else if (response == '2') {
-      // Delete without dumping
-      pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for deleting
-      pixels.show();
       
-      // List all log files to get the first one
-      File root = flashFS.open("/");
-      if (root && root.isDirectory()) {
-        File file = root.openNextFile();
-        String fileToDelete = "";
-        
-        // Get the first log file
-        while (file) {
-          if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-            fileToDelete = String(file.name());
-            break;
-          }
-          file = root.openNextFile();
-        }
-        
-        root.close();
-        
-        if (fileToDelete.length() > 0) {
-          Serial.print(F("Deleting file without dumping: "));
-          Serial.println(fileToDelete);
-          
-          if (flashFS.remove(("/" + fileToDelete).c_str())) {
-            Serial.println(F("File deleted successfully."));
-          } else {
-            Serial.println(F("Failed to delete file!"));
-          }
-        } else {
-          Serial.println(F("No files found to delete!"));
-        }
+      // Check if there are more files
+      hasMoreFiles = checkInternalFlashData();
+      if (!hasMoreFiles) {
+        Serial.println(F("No more log files remaining."));
+        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
+        pixels.show();
+        delay(1000);
       }
-      
-      delay(1000); // Pause to show deletion indication
     } else {
       // Invalid response
-      Serial.println(F("Invalid choice, continuing without action."));
+      Serial.println(F("Invalid choice, continuing without dumping."));
       pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
       pixels.show();
       delay(1000);
       break;
-    }
-    
-    // Check if there are more files
-    hasMoreFiles = checkInternalFlashData();
-    if (!hasMoreFiles) {
-      Serial.println(F("No more log files remaining."));
-      pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for completed
-      pixels.show();
-      delay(1000);
     }
   }
 }
@@ -1632,7 +1588,12 @@ void printStatusSummary() {
   gps_print();
   // SENSORS - Combine atmospheric and IMU data in a compact format
   Serial.println(F("SENSORS:"));
-  ms5611_print();
+  Serial.print(F("  Baro: "));
+  Serial.print(ms5611Sensor.getPressure(), 1);
+  Serial.print(F(" hPa, "));
+  Serial.print(ms5611Sensor.getTemperature(), 1);
+  Serial.println(F("°C"));
+  
   // KX134 Accelerometer data
   kx134_print();
 

@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "TripleT_Flight_Firmware",
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"cmath": "cpp"
+		}
+	}
+}

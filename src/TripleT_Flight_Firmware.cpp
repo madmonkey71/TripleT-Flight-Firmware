@@ -1799,9 +1799,9 @@ void setup() {
     // STM32 specific I2C setup
     Wire.setSDA(I2C_SDA_PIN);
     Wire.setSCL(I2C_SCL_PIN);
-    Wire.begin();
-    Wire.setClock(400000);
-    
+  Wire.begin();
+  Wire.setClock(400000);
+  
     Serial.println("STM32 SPI and I2C initialized");
   #else
     // Teensy SPI setup
@@ -1994,14 +1994,14 @@ void loop() {
   // Read IMU data at IMU_POLL_INTERVAL
   if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
-    ICM_20948_read();
+  ICM_20948_read();
     sensorsUpdated = true;
   }
   
   // Read accelerometer data at ACCEL_POLL_INTERVAL
   if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
-    kx134_read();
+  kx134_read();
     sensorsUpdated = true;
   }
   

@@ -1586,13 +1586,7 @@ void printStatusSummary() {
 
   gps_print();
   // SENSORS - Combine atmospheric and IMU data in a compact format
-  Serial.println(F("SENSORS:"));
-  Serial.print(F("  Baro: "));
-  Serial.print(ms5611Sensor.getPressure(), 1);
-  Serial.print(F(" hPa, "));
-  Serial.print(ms5611Sensor.getTemperature(), 1);
-  Serial.println(F("°C"));
-  
+  ms5611_print();
   // KX134 Accelerometer data
   kx134_print();
 
@@ -1884,6 +1878,11 @@ void setup() {
   Serial.print(myGNSS.getMinute());
   Serial.print(":");
   Serial.println(myGNSS.getSecond());
+  
+  // Perform one-time barometric calibration with GPS
+  if (!ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
+    Serial.println("Warning: Barometric calibration timed out");
+  }
 }
 
 void loop() {

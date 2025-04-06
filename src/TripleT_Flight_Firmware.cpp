@@ -56,6 +56,19 @@
 #include "gps_functions.h"  // Include GPS functions header
 #include "ms5611_functions.h"
 #include "kx134_functions.h"
+#include "icm_20948_functions.h"  // Include ICM-20948 functions header
+#include "utility_functions.h"    // Include utility functions header
+#include "data_structures.h"  // Include our data structures
+
+// Define variables declared as extern in utility_functions.h
+String FileDateString;  // For log file naming
+String LogDataString;   // For data logging
+unsigned long currentTime;  // For timestamp
+bool baroCalibrated = false;  // For barometric calibration status
+const char* BOARD_NAME = "Teensy 4.1";
+
+// Define LittleFS filesystem
+LittleFS_Program flashFS;
 
 // External declarations for sensor data
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object
@@ -63,9 +76,36 @@ extern float pressure;
 extern float temperature;
 extern float kx134_accel[3];
 
-// Global arrays for IMU data
-float icm_accel[3];
-float icm_gyro[3];
+// Global variables to store ICM_20948 IMU data
+float icm_accel[3] = {0};  // Accelerometer data (x, y, z)
+float icm_gyro[3] = {0};   // Gyroscope data (x, y, z)
+float icm_mag[3] = {0};    // Magnetometer data (x, y, z)
+bool icm_data_available = false;
+double icm_q1 = 0, icm_q2 = 0, icm_q3 = 0; // Quaternion data
+uint16_t icm_data_header = 0; // To store what data types are available
+
+// Define the structure that matches our binary data format
+struct LogDataStruct {
+  uint32_t timestamp;      // 4 bytes
+  uint8_t fixType;        // 1 byte
+  uint8_t sats;           // 1 byte
+  int32_t latitude;       // 4 bytes
+  int32_t longitude;      // 4 bytes
+  int32_t altitude;       // 4 bytes
+  int32_t altitudeMSL;    // 4 bytes
+  int32_t speed;          // 4 bytes
+  int32_t heading;        // 4 bytes
+  uint16_t pDOP;          // 2 bytes
+  uint8_t rtk;            // 1 byte
+  float pressure;         // 4 bytes
+  float temperature;      // 4 bytes
+  float kx134_x;         // 4 bytes
+  float kx134_y;         // 4 bytes
+  float kx134_z;         // 4 bytes
+  float icm_accel[3];    // 12 bytes (x, y, z)
+  float icm_gyro[3];     // 12 bytes (x, y, z)
+  float icm_mag[3];      // 12 bytes (x, y, z)
+};
 
 // Storage configuration and thresholds
 #define STORAGE_FULL_THRESHOLD 90  // Percentage at which storage is considered full
@@ -74,319 +114,25 @@ float icm_gyro[3];
 #define SD_CARD_TYPE_SDHC 3
 
 // Storage variables
-SdFs SD;        // Global SD card object
-FsVolume volume; // Volume object
-FsFile root;     // Root directory object
-FsFile entry;    // Directory entry object
-uint64_t totalSpace;
-uint64_t usedSpace;
+SdFat SD;
+FsVolume volume;
+bool sdCardAvailable = false;
+bool flashAvailable = false;
+bool internalFlashAvailable = false;
+FsFile root;
+FsFile entry;
 FsFile LogDataFile;
 FsFile IdleDataFile;
 
 // Global storage variables
-// These are already declared above - remove duplicates
-// FsFile root;
-// FsFile entry;
-
-// Define the type of SD card configuration to use (SPI or SDIO)
-#if defined(BOARD_TEENSY40) || defined(BOARD_TEENSY41)
-  // Use SDIO for better performance on Teensy 4.x
-  #define SD_CONFIG SdioConfig(FIFO_SDIO)
-#else
-  // Use standard SPI for other boards
-  const int SD_CS_PIN = 10;  // Adjust this to match your board's CS pin
-  #define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
-#endif
-
-// Libraries for all of the sensor hardware
-// KX134 Accelerometer
-#include <SparkFun_KX13X.h> // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
-// Ublox M8Q GPS Module
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h> //http://librarymanager/All#SparkFun_u-blox_GNSS
-// MS5611 Barometric Pressure Sensor
-#include "MS5611.h"
-#include "ICM_20948.h" // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
-
-// Board Configuration
-// Uncomment the board you're using and comment out others
-#define BOARD_TEENSY40  // Teensy 4.0
-// #define BOARD_STM32_THING_PLUS  // SparkFun STM32 Thing Plus
-// Board define is set via build flags in platformio.ini
-
-// Board-specific pin definitions
-#ifdef BOARD_STM32_THING_PLUS
-  // SparkFun STM32 Thing Plus pin assignments
-  #define SD_CS_PIN      10    // SD Card CS pin
-  #define SD_MOSI_PIN    11    // SD Card MOSI pin
-  #define SD_MISO_PIN    12    // SD Card MISO pin
-  #define SD_SCK_PIN     13    // SD Card SCK pin
-  #define BUZZER_PIN     9     // Buzzer pin
-  #define WLED_PIN       8     // WS2812 LED pin
-  #define FLASH_CS_PIN   7     // External flash CS pin
-  #define INTERNAL_FLASH_SIZE (1024 * 1024)  // 1MB (STM32F405 has 1MB flash)
-  #define I2C_SDA_PIN    20    // I2C SDA pin
-  #define I2C_SCL_PIN    21    // I2C SCL pin
-#elif defined(BOARD_TEENSY40)
-  // Teensy 4.0 pin assignments
-  #define SD_CS_PIN 10
-  #define SD_MOSI_PIN 11
-  #define SD_MISO_PIN 12
-  #define SD_SCK_PIN 13
-  #define BUZZER_PIN 23
-  #define WLED_PIN 7
-  #define FLASH_CS_PIN 5
-  #define INTERNAL_FLASH_SIZE (512 * 1024)  // 512KB
-#endif
-
-// For STM32 boards, include Arduino core headers
-#if defined(BOARD_STM32_THING_PLUS) || defined(STM32_THING_PLUS)
-  // Include STM32 specific headers
-  #include <STM32_GPIO.h>
-  // Define Arduino pin numbers for STM32 ports
-  #define PIN_PA0 A0
-  #define PIN_PA1 A1
-  #define PIN_PA4 A4
-  #define PIN_PA5 A5
-  #define PIN_PA6 A6
-  #define PIN_PA7 A7
-  #define PIN_PB0 2
-  #define PIN_PB1 3
-  #define PIN_PB3 4
-  #define PIN_PB4 5
-  #define PIN_PB5 8
-  #define PIN_PB12 7
-  #define PIN_PB6 21
-  #define PIN_PB7 20
-#endif
-
-// Include the appropriate servo library based on the board
-#if defined(USE_STD_SERVO_LIB)
-  #include <Servo.h>
-#elif defined(USE_TEENSY_SERVO_LIB)
-  #include <PWMServo.h>
-#else
-  #include <PWMServo.h> // Default to PWMServo
-#endif
-
-//=============================================================================
-// BOARD CONFIGURATION
-//=============================================================================
-// Board-specific pin definitions and settings
-// These are controlled by the build flags in platformio.ini
-
-#if defined(BOARD_STM32_THING_PLUS)
-  // SparkFun STM32 Thing Plus pin assignments
-  #define BOARD_NAME "SparkFun STM32 Thing Plus"
-  // SPI pins - use the standard Arduino constants format for STM32
-  #define SD_CS_PIN      10    // SD Card CS pin
-  #define SD_MOSI_PIN    11    // SD Card MOSI pin
-  #define SD_MISO_PIN    12    // SD Card MISO pin
-  #define SD_SCK_PIN     13    // SD Card SCK pin
-  // I2C pins
-  #define I2C_SDA_PIN    20    // I2C SDA pin
-  #define I2C_SCL_PIN    21    // I2C SCL pin
-  // GPIO pins
-  #define BUZZER_PIN     9     // Buzzer pin
-  #define WLED_PIN       8     // WS2812 LED pin
-  #define FLASH_CS_PIN   7     // External flash CS pin
-  #define PYRO1_PIN      PIN_PB0
-  #define PYRO2_PIN      PIN_PB1
-  #define PYRO3_PIN      PIN_PB3
-  #define PYRO4_PIN      PIN_PB4
-  // Servo pins
-  #define TVCXpin        PIN_PA0
-  #define TVCYpin        PIN_PA1
-  // Internal flash settings
-  #define INTERNAL_FLASH_SIZE (1024 * 1024)
-  // STM32 needs different servo library
-  #define USE_STD_SERVO_LIB
-
-#elif defined(BOARD_TEENSY40)
-  // Teensy 4.0 pin assignments (original)
-  #define BOARD_NAME "Teensy 4.0"
-  // SPI pins (handled by Teensy libraries)
-  #define SD_CS_PIN 10
-  // Standard pins
-  #define BUZZER_PIN 23
-  #define WLED_PIN 7
-  #define FLASH_CS_PIN 5
-  #define PYRO1 5
-  #define PYRO2 6
-  #define PYRO3 7
-  #define PYRO4 8
-  // Servo pins remain the same
-  #define TVCXpin 0
-  #define TVCYpin 1
-  // Internal flash settings
-  #define INTERNAL_FLASH_SIZE (512 * 1024)
-  // Keep using Teensy-specific PWMServo
-  #define USE_TEENSY_SERVO_LIB
-
-#else
-  // Default configuration (Teensy 4.0 compatible)
-  #warning "No board defined, using default Teensy 4.0 pin assignments"
-  #define BOARD_NAME "Unknown Board (Teensy compatible)"
-  #define SD_CS_PIN 10
-  #define BUZZER_PIN 23
-  #define WLED_PIN 7
-  #define FLASH_CS_PIN 5
-  #define INTERNAL_FLASH_SIZE (512 * 1024)
-  #define USE_TEENSY_SERVO_LIB
-#endif
-
-#define SDchipSelect SD_CS_PIN
-
-// Comment out to restrict roll to ±90deg instead - please read: https://www.nxp.com/docs/en/application-note/AN3461.pdf
-// #define RESTRICT_PITCH 
-
-uint32_t start, stop;
-
-// Sparkfun ZOE-M8Q
-// Put all the GPS variables here
-// GPS variables are now defined in gps_functions.cpp and declared as extern in gps_functions.h
-// ... existing code ...
-
-// SparkFun 9DOF
-// The value of the last bit of the I2C address.
-// On the SparkFun 9DoF IMU breakout the default is 1, and when the ADR jumper is closed the value becomes 0
-#define AD0_VAL 1
-ICM_20948_I2C myICM; // Otherwise create an ICM_20948_I2C object
-
-// Global variables to store ICM_20948 IMU data
-bool icm_data_available = false;
-double icm_q1 = 0, icm_q2 = 0, icm_q3 = 0; // Quaternion data
-float icm_accel_x = 0, icm_accel_y = 0, icm_accel_z = 0; // Accelerometer data
-float icm_gyro_x = 0, icm_gyro_y = 0, icm_gyro_z = 0; // Gyroscope data
-float icm_mag_x = 0, icm_mag_y = 0, icm_mag_z = 0; // Compass data
-uint16_t icm_data_header = 0; // To store what data types are available
-
-/*If there is no need to calibrate altitude, comment this line*/
-#define CALIBRATE_Altitude
-
-// Define all the Teensy Pins are are using
-// WLED parameters
-#define WLED_PIN 7
-#define NUM_LEDS 2
-
-// Create the WLED instance
-Adafruit_NeoPixel pixels(NUM_LEDS, WLED_PIN, NEO_GRB + NEO_KHZ800);
-
-//These are the output pins for the pyro channels
-#define PYRO1 5
-#define PYRO2 6
-#define PYRO3 7
-#define PYRO4 8
-
-// This is the pin for the BUZZER 
-#define BUZZER 23
-
-// Thrust Vector Control Servo Pins
-#define TVCXpin 0
-#define TVCYpin 1
-
-// Define manual mode button
-#define SDchipSelect SD_CS_PIN
-#define RESET_BUTTON_PIN NRST
-#define MODE_BUTTON_PIN PC15 // the number of the Mode Button Pin
-
-// Initialise the barometric sensor data variables.
-float Temperature = 0;
-float Pressure = 0;
-float baro_altitude = 0;
-float seaLevel = 0;
-
-// Setup parameters for the Servo Library
-#if defined(USE_STD_SERVO_LIB)
-  Servo TVCX;
-  Servo TVCY;
-#else
-PWMServo TVCX;
-PWMServo TVCY;
-#endif
-
-// Used to Test the Servos on startup
-int TVCXpos = 105;    // variable to store the servo position
-int TVCYpos = 105;    // variable to store the servo position
-
-//Position of servos through the startup function
-int TVCXstart = TVCYpos;
-int TVCYstart = TVCXpos;
-
-//The amount the servo moves by in the startup function
-int Startup_Servo_Offset = 45;
-
-//Ratio between servo gear and tvc mount
-float TVCXGearRatio = 8;
-float TVCYGearRatio = 8;
-
-// Setup the SD card stuff
-// Sd2Card card;
-// SdVolume volume;
-// SdFile root;
-
-// Using IdleDataFile defined earlier
-
-String LogDataString; // holds the data to be written to the SD card
-String FileDateString; // Used for creating unique filenames for every run.
-String dataFileName; // Used for building the name of the data file to write.
-
-
-// Setup some operating variables 
-int buttonState = 0;
-int MODE = 0;          // Use the flight mode to run different code depending on what mode we are in
-int timestamp = 0;     // Create timestamp value
-int sampleRate = 20;   // Set specified sampling rate (data points per second) (somewhere between 10-200 is ideal)
-int counter = 0;       // Loop Counter for debugging
-
-//"P" Constants
-float pidX_p = 0;
-float pidY_p = 0;
-
-//"I" Constants
-float pidY_i = 0;
-float pidX_i = 0;
-
-//"D" Constants
-float pidX_d = 0;
-float pidY_d = 0;
-
-//PID Gains
-double kp = 0.11;
-double ki = 0.04;
-double kd = 0.025;
-
-//Offsets for tuning 
-int servoY_offset = 105;
-int servoX_offset = 20;
-
-//Upright Angle of the Flight Computer
-int desired_angleX = 0;//servoY
-int desired_angleY = 0;//servoX
-
-double dt, currentTime, previousTime;
-
-//Ratio between servo gear and tvc mount
-float servoX_gear_ratio = 6;
-float servoY_gear_ratio = 6;
-
-int mode0count = 0;
-int mode1count = 0;
-int mode2count = 0;
-
-uint32_t timer = millis();
-int button_pressed = 0;
+uint64_t totalSpace;
+uint64_t usedSpace;
 
 // Additional global variables for data logging
-bool sdCardAvailable = false;
-bool flashAvailable = false;
-bool internalFlashAvailable = false;
-unsigned long lastLogTime = 0;
-const int LOG_INTERVAL_MS = 100; // Log every 100ms (10Hz)
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS
 char logFileName[32] = ""; // To store the current log file name
 
 // Internal flash memory parameters for Teensy
-#define INTERNAL_FLASH_SIZE (512 * 1024)  // 512KB of internal flash for logging
 #define FLASH_LOG_INTERVAL 250  // Log at 4Hz (every 200ms)
 
 // Sensor polling intervals (in milliseconds)
@@ -399,7 +145,6 @@ char logFileName[32] = ""; // To store the current log file name
 #define STORAGE_CHECK_INTERVAL 30000 // Check storage space every 30 seconds
 
 // Add new LittleFS variables
-LittleFS_Program flashFS; // Uses program flash memory
 File flashLogFile;
 char flashLogPath[32] = "/log.bin";
 unsigned long recordCount = 0;
@@ -562,7 +307,6 @@ bool checkStorageSpace() {
     // SerialFlash has limited API for checking space
     // This would need to be customized for your specific flash chip
   }
-  
   return storageOK;  // Return the storage status
 }
 
@@ -606,10 +350,9 @@ bool createNewLogFile() {
 
 void WriteLogData(bool forceLog = false) {
   static unsigned long lastLogTime = 0;
-  static unsigned long lastInternalLogTime = 0;
   
   // Only log at specified intervals or when forced (after sensor reading)
-  if (!forceLog && millis() - lastLogTime < LOG_INTERVAL_MS) {
+  if (!forceLog && millis() - lastLogTime < FLASH_LOG_INTERVAL) {
     return;
   }
   lastLogTime = millis();
@@ -636,7 +379,10 @@ void WriteLogData(bool forceLog = false) {
                   String(icm_accel[2], 4) + "," +
                   String(icm_gyro[0], 4) + "," +
                   String(icm_gyro[1], 4) + "," +
-                  String(icm_gyro[2], 4);
+                  String(icm_gyro[2], 4) + "," +
+                  String(icm_mag[0], 4) + "," +
+                  String(icm_mag[1], 4) + "," +
+                  String(icm_mag[2], 4);
 
   // Write to SD card if available
   if (LogDataFile) {
@@ -652,10 +398,7 @@ void WriteLogData(bool forceLog = false) {
     }
   }
 
-  // Also write to Serial for debugging
-  // Serial.println(LogDataString);
-
-  // Log to Serial Flash
+  // Write to Serial Flash
   if (flashAvailable && strlen(logFileName) > 0) {
     SerialFlashFile flashFile = SerialFlash.open(logFileName);
     if (flashFile) {
@@ -669,19 +412,6 @@ void WriteLogData(bool forceLog = false) {
       flashFile.close();
     }
   }
-  
-  // Log to internal flash (LittleFS) at a reduced rate (5Hz)
-  if (internalFlashAvailable && flashLogFile && (millis() - lastInternalLogTime >= 200)) { // 5Hz logging
-    lastInternalLogTime = millis();
-    
-    // Write the data record
-    flashLogFile.write((uint8_t*)LogDataString.c_str(), LogDataString.length());
-    char newLine[2] = "\n";
-    flashLogFile.write((uint8_t*)newLine, 1);
-    flashLogFile.flush();
-    
-    recordCount++;
-  }
 }
 
 void formatNumber(float input, byte columns, byte places) 
@@ -689,449 +419,6 @@ void formatNumber(float input, byte columns, byte places)
   char buffer[20]; // Allocate space to store the formatted number string
   dtostrf(input, columns, places, buffer); // Convert float to string with specified columns and decimal places
   Serial.print(buffer); // Print the formatted number to the serial monitor
-}
-
-void ICM_20948_init(){
-    // Sparkfun 9DOF sensor setup then wait for use input
-  Serial.println(F("ICM-20948 Example"));
-  // myICM.enableDebugging(); // Comment this line to disable debug messages on Serial
-  myICM.begin(Wire, AD0_VAL);
-  myICM.enableDebugging();
-    // Now wake the sensor up
-  myICM.sleep(false);
-  myICM.lowPower(false);
-
-  bool ICM_20948_initialized = false;
-  while (!ICM_20948_initialized)
-  {
-    Serial.print(F("Initialization of the sensor returned: "));
-    Serial.println(myICM.statusString());
-    if (myICM.status != ICM_20948_Stat_Ok)
-    {
-      Serial.println(F("Trying again..."));
-      delay(250);
-    }
-    else
-    {
-      ICM_20948_initialized = true;
-    }
-  Serial.println(F("Device connected!"));
-
-  // Here we are doing a SW reset to make sure the device starts in a known state
-  myICM.swReset();
-  if (myICM.status != ICM_20948_Stat_Ok)
-  {
-    Serial.print(F("Software Reset returned: "));
-    Serial.println(myICM.statusString());
-  }
-  delay(250);
-
-  // Now wake the sensor up
-  myICM.sleep(false);
-  myICM.lowPower(false);
-
-  // The next few configuration functions accept a bit-mask of sensors for which the settings should be applied.
-
-  // Set Gyro and Accelerometer to a particular sample mode
-  // options: ICM_20948_Sample_Mode_Continuous
-  //          ICM_20948_Sample_Mode_Cycled
-  myICM.setSampleMode((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), ICM_20948_Sample_Mode_Continuous);
-  if (myICM.status != ICM_20948_Stat_Ok)
-  {
-    Serial.print(F("setSampleMode returned: "));
-    Serial.println(myICM.statusString());
-  }
-  
-  // Set full scale ranges for both acc and gyr
-  ICM_20948_fss_t myFSS; // This uses a "Full Scale Settings" structure that can contain values for all configurable sensors
-
-  myFSS.a = gpm16; // (ICM_20948_ACCEL_CONFIG_FS_SEL_e)
-                  // gpm2
-                  // gpm4
-                  // gpm8
-                  // gpm16
-
-  myFSS.g = dps2000; // (ICM_20948_GYRO_CONFIG_1_FS_SEL_e)
-                    // dps250
-                    // dps500
-                    // dps1000
-                    // dps2000
-
-  myICM.setFullScale((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), myFSS);
-  if (myICM.status != ICM_20948_Stat_Ok)
-  {
-    Serial.print(F("setFullScale returned: "));
-    Serial.println(myICM.statusString());
-  }
-
-  // Set up Digital Low-Pass Filter configuration
-  ICM_20948_dlpcfg_t myDLPcfg;    // Similar to FSS, this uses a configuration structure for the desired sensors
-  myDLPcfg.a = acc_d473bw_n499bw; // (ICM_20948_ACCEL_CONFIG_DLPCFG_e)
-                                  // acc_d246bw_n265bw      - means 3db bandwidth is 246 hz and nyquist bandwidth is 265 hz
-                                  // acc_d111bw4_n136bw
-                                  // acc_d50bw4_n68bw8
-                                  // acc_d23bw9_n34bw4
-                                  // acc_d11bw5_n17bw
-                                  // acc_d5bw7_n8bw3        - means 3 db bandwidth is 5.7 hz and nyquist bandwidth is 8.3 hz
-                                  // acc_d473bw_n499bw
-
-  myDLPcfg.g = gyr_d361bw4_n376bw5; // (ICM_20948_GYRO_CONFIG_1_DLPCFG_e)
-                                    // gyr_d196bw6_n229bw8
-                                    // gyr_d151bw8_n187bw6
-                                    // gyr_d119bw5_n154bw3
-                                    // gyr_d51bw2_n73bw3
-                                    // gyr_d23bw9_n35bw9
-                                    // gyr_d11bw6_n17bw8
-                                    // gyr_d5bw7_n8bw9
-                                    // gyr_d361bw4_n376bw5
-
-  myICM.setDLPFcfg((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), myDLPcfg);
-  if (myICM.status != ICM_20948_Stat_Ok)
-  {
-    Serial.print(F("setDLPcfg returned: "));
-    Serial.println(myICM.statusString());
-  }
-
-  // Choose whether or not to use DLPF
-  // Here we're also showing another way to access the status values, and that it is OK to supply individual sensor masks to these functions
-  ICM_20948_Status_e accDLPEnableStat = myICM.enableDLPF(ICM_20948_Internal_Acc, false);
-  ICM_20948_Status_e gyrDLPEnableStat = myICM.enableDLPF(ICM_20948_Internal_Gyr, false);
-  Serial.print(F("Enable DLPF for Accelerometer returned: "));
-  Serial.println(myICM.statusString(accDLPEnableStat));
-  Serial.print(F("Enable DLPF for Gyroscope returned: "));
-  Serial.println(myICM.statusString(gyrDLPEnableStat));
-
-  // Choose whether or not to start the magnetometer
-  myICM.startupMagnetometer();
-  if (myICM.status != ICM_20948_Stat_Ok)
-  {
-    Serial.print(F("startupMagnetometer returned: "));
-    Serial.println(myICM.statusString());
-  }
-
-  Serial.println();
-  Serial.println(F("Configuration complete!"));
-
-
-  }
-  // After successful ICM initialization
-  delay(500); // Wait for sensor to stabilize
-}
-void printFormattedFloat(float val, uint8_t leading, uint8_t decimals)
-{
-  float aval = abs(val);
-  if (val < 0)
-  {
-    Serial.print("-");
-    }
-    else
-    {
-    Serial.print(" ");
-  }
-  for (uint8_t indi = 0; indi < leading; indi++)
-  {
-    uint32_t tenpow = 0;
-    if (indi < (leading - 1))
-    {
-      tenpow = 1;
-    }
-    for (uint8_t c = 0; c < (leading - 1 - indi); c++)
-    {
-      tenpow *= 10;
-    }
-    if (aval < tenpow)
-    {
-      Serial.print("0");
-    }
-    else
-    {
-      break;
-    }
-  }
-  if (val < 0)
-  {
-    Serial.print(-val, decimals);
-  }
-  else
-  {
-    Serial.print(val, decimals);
-  }
-}
-void printScaledAGMT(ICM_20948_I2C *sensor)
-{
-  Serial.print("Scaled. Acc (mg) [ ");
-  printFormattedFloat(sensor->accX(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->accY(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->accZ(), 5, 2);
-  Serial.print(" ], Gyr (DPS) [ ");
-  printFormattedFloat(sensor->gyrX(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->gyrY(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->gyrZ(), 5, 2);
-  Serial.print(" ], Mag (uT) [ ");
-  printFormattedFloat(sensor->magX(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->magY(), 5, 2);
-  Serial.print(", ");
-  printFormattedFloat(sensor->magZ(), 5, 2);
-  Serial.print(" ], Tmp (C) [ ");
-  printFormattedFloat(sensor->temp(), 5, 2);
-  Serial.print(" ]");
-  Serial.println();
-}
-void ICM_20948_read(){
-
-  if (myICM.dataReady())
-  {
-    myICM.getAGMT();              // The values are only updated when you call 'getAGMT'
-    //printRawAGMT( myICM.agmt ); // Uncomment this to see the raw values, taken directly from the agmt structure
-    //printScaledAGMT(&myICM);      // This function takes into account the scale settings from when the measurement was made to calculate the values with units
-
-    // Convert from mg to g
-    icm_accel_x = myICM.accX() / 1000.0;
-    icm_accel_y = myICM.accY() / 1000.0;
-    icm_accel_z = myICM.accZ() / 1000.0;
-
-    icm_mag_x = myICM.magX(); // Extract the compass data
-    icm_mag_y = myICM.magY();
-    icm_mag_z = myICM.magZ();
-
-    icm_gyro_x = myICM.gyrX(); // Extract the raw gyro data
-    icm_gyro_y = myICM.gyrY();
-    icm_gyro_z = myICM.gyrZ();
-
-    delay(30);
-  }
-  else
-  {
-    Serial.println("Waiting for data");
-    delay(500);
-  }
-
-}
-
-void scan_i2c() {
-  Serial.println(F("\nI2C Scanner"));
-  Serial.println(F("Scanning..."));
-
-  byte error, address;
-  int nDevices = 0;
-
-  for(address = 1; address < 127; address++) {
-    // The i2c_scanner uses the return value of
-    // the Wire.endTransmission to see if
-    // a device acknowledged the address.
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
-
-    if (error == 0) {
-      Serial.print(F("I2C device found at address 0x"));
-      if (address < 16) 
-        Serial.print("0");
-      Serial.print(address, HEX);
-      
-      // Try to identify known devices
-      if (address == 0x42) Serial.print(F(" - SparkFun ZOE-M8Q GPS Module"));
-      if (address == 0x77) Serial.print(F(" - MS5611 Barometric Pressure Sensor"));
-      if (address == 0x69) Serial.print(F(" - ICM-20948 9-DOF IMU"));
-      if (address == 0x1F) Serial.print(F(" - SparkFun KX134 Accelerometer"));
-      Serial.println();
-      nDevices++;
-    }
-    else if (error == 4) {
-      Serial.print(F("Unknown error at address 0x"));
-      if (address < 16) 
-        Serial.print("0");
-      Serial.println(address, HEX);
-    }
-  }
-  
-  if (nDevices == 0)
-    Serial.println(F("No I2C devices found\n"));
-  else
-    Serial.println(F("I2C scan complete\n"));
-}
-
-// Function to initialize the SD card
-bool initSDCard() {
-  Serial.println("Initializing SD card...");
-  
-  // Check if card is physically present if we have a detect pin
-  #ifdef SD_DETECT_PIN
-    pinMode(SD_DETECT_PIN, INPUT_PULLUP);
-    if (digitalRead(SD_DETECT_PIN)) {
-      Serial.println("No SD card detected!");
-      return false;
-    }
-  #endif
-
-  // Try to initialize the card
-  if (!SD.begin(SD_CONFIG)) {
-    if (SD.sdErrorCode()) {
-      Serial.println("SD initialization failed!");
-      Serial.print("Error: ");
-      Serial.println(SD.sdErrorCode());
-      
-      // Try lower speed as fallback
-      Serial.println("Trying lower speed...");
-      SdSpiConfig config = SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(25));
-      
-      if (!SD.begin(config)) {
-        Serial.println("SD initialization failed at lower speed!");
-        return false;
-      }
-    }
-  }
-  
-  if (!volume.begin(SD.card())) {
-    Serial.println("Failed to initialize volume");
-    return false;
-  }
-
-  // Try to create a test file to verify filesystem
-  FsFile testFile;
-  const char* testFileName = "test.txt";
-  if (!testFile.open(testFileName, O_RDWR | O_CREAT | O_AT_END)) {
-    Serial.println("Failed to create test file!");
-    return false;
-  }
-  
-  // Write something to the test file
-  if (testFile.println("Test write")) {
-    Serial.println("Test file write successful");
-  } else {
-    Serial.println("Test file write failed!");
-    return false;
-  }
-  testFile.close();
-  
-  // Clean up test file
-  if (!SD.remove(testFileName)) {
-    Serial.println("Warning: Could not remove test file");
-  }
-
-  // Print some card statistics
-  Serial.print("Volume size (MB): ");
-  Serial.println((float)SD.card()->sectorCount() * 512.0 / 1000000.0);
-  
-  Serial.println("SD card initialization successful!");
-  return true;
-}
-
-// Function to initialize the Serial Flash memory
-bool initSerialFlash() {
-  Serial.println(F("Initializing Serial Flash..."));
-  
-  #if defined(BOARD_STM32_THING_PLUS)
-    // STM32 may need a different approach for external flash
-    // SerialFlash library is Teensy-specific
-    Serial.println(F("SerialFlash not supported on STM32 yet"));
-    Serial.println(F("Using internal LittleFS instead"));
-    return false;
-  #else
-    // Check if the flash memory is present - Teensy-specific SerialFlash
-    if (!SerialFlash.begin(FLASH_CS_PIN)) {
-      Serial.println(F("Serial Flash initialization failed!"));
-      return false;
-    }
-    
-    Serial.println(F("Serial Flash initialized."));
-    return true;
-  #endif
-}
-void printPaddedInt16b(int16_t val)
-{
-  if (val > 0)
-  {
-    Serial.print(" ");
-    if (val < 10000)
-    {
-      Serial.print("0");
-    }
-    if (val < 1000)
-    {
-      Serial.print("0");
-    }
-    if (val < 100)
-    {
-      Serial.print("0");
-    }
-    if (val < 10)
-    {
-      Serial.print("0");
-    }
-  }
-  else
-  {
-    Serial.print("-");
-    if (abs(val) < 10000)
-    {
-      Serial.print("0");
-    }
-    if (abs(val) < 1000)
-    {
-      Serial.print("0");
-    }
-    if (abs(val) < 100)
-    {
-      Serial.print("0");
-    }
-    if (abs(val) < 10)
-    {
-      Serial.print("0");
-    }
-  }
-  Serial.print(abs(val));
-}
-
-void printRawAGMT(ICM_20948_AGMT_t agmt)
-{
-  Serial.print("RAW. Acc [ ");
-  printPaddedInt16b(agmt.acc.axes.x);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.acc.axes.y);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.acc.axes.z);
-  Serial.print(" ], Gyr [ ");
-  printPaddedInt16b(agmt.gyr.axes.x);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.gyr.axes.y);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.gyr.axes.z);
-  Serial.print(" ], Mag [ ");
-  printPaddedInt16b(agmt.mag.axes.x);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.mag.axes.y);
-  Serial.print(", ");
-  printPaddedInt16b(agmt.mag.axes.z);
-  Serial.print(" ], Tmp [ ");
-  printPaddedInt16b(agmt.tmp.val);
-  Serial.print(" ]");
-  Serial.println();
-}
-
-
-// Function to print ICM_20948 data to serial
-void ICM_20948_print() {
-  if (myICM.dataReady())
-  {
-    //myICM.getAGMT();              // The values are only updated when you call 'getAGMT'
-    //printRawAGMT( myICM.agmt ); // Uncomment this to see the raw values, taken directly from the agmt structure
-    printScaledAGMT(&myICM);      // This function takes into account the scale settings from when the measurement was made to calculate the values with units
-    delay(30);
-  }
-  else
-  {
-    Serial.println("Waiting for data");
-    delay(500);
-  }
-
-
-
-  Serial.println(F("-------------------"));
 }
 
 // Function to check if valid data exists in internal flash
@@ -1399,80 +686,6 @@ String dumpInternalFlashData() {
   return dumpedFileName;
 }
 
-// Function to handle the flash data check prompt
-void handleFlashDataCheck() {
-  bool hasMoreFiles = true;
-  
-  while (hasMoreFiles) {
-    if (!checkInternalFlashData()) {
-      // No more files left
-      Serial.println(F("No more log files in flash memory."));
-      hasMoreFiles = false;
-      break;
-    }
-    
-    Serial.println(F("\nFlash data options:"));
-    Serial.println(F("1. Dump and delete next log file"));
-    Serial.println(F("2. Transfer to SD card and delete"));
-    Serial.println(F("3. Silently erase next log file"));
-    Serial.println(F("4. Continue without action"));
-    Serial.println(F("Enter choice (1-4) [waiting 10 seconds]:"));
-    
-    // Wait for response with timeout
-    unsigned long startTime = millis();
-    bool responseReceived = false;
-    char response = '0';
-    
-    while (millis() - startTime < 30000) { // 30 second timeout
-      // Blink LED to indicate waiting for user input
-      if ((millis() / 500) % 2 == 0) {
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50)); // Purple blinking to indicate waiting
-      } else {
-        pixels.setPixelColor(0, pixels.Color(0, 0, 0));
-      }
-      pixels.show();
-      
-      if (Serial.available()) {
-        response = Serial.read();
-        responseReceived = true;
-        break;
-      }
-    }
-    
-    if (!responseReceived || response == '4') {
-      Serial.println(F("\nContinuing without action..."));
-      break;
-    }
-    
-    String dumpedFile = "";
-    switch (response) {
-      case '1':
-        dumpedFile = dumpInternalFlashData();
-        break;
-      case '2':
-        if (sdCardAvailable) {
-          dumpedFile = transferToSDCard();
-        } else {
-          Serial.println(F("SD card not available!"));
-        }
-        break;
-      case '3':
-        dumpedFile = silentlyEraseNextFile();
-        break;
-    }
-    
-    // If a file was processed, delete it from flash
-    if (dumpedFile.length() > 0) {
-      if (flashFS.remove(dumpedFile.c_str())) {
-        Serial.print(F("Deleted file: "));
-        Serial.println(dumpedFile);
-      } else {
-        Serial.println(F("Failed to delete file!"));
-      }
-    }
-  }
-}
-
 // Function to transfer internal flash data to SD card
 String transferToSDCard() {
   Serial.println(F("\n===== TRANSFERRING TO SD CARD ====="));
@@ -1505,6 +718,7 @@ String transferToSDCard() {
     return "";
   }
   
+  // Open the source file from internal flash
   File sourceFile = flashFS.open(sourceFileName.c_str(), FILE_READ);
   if (!sourceFile) {
     Serial.println(F("Failed to open source file!"));
@@ -1512,7 +726,8 @@ String transferToSDCard() {
     return "";
   }
   
-  String destFileName = String("FLASH_") + sourceFileName;
+  // Change extension from .bin to .csv
+  String destFileName = String("FLASH_") + sourceFileName.substring(0, sourceFileName.length() - 4) + ".csv";
   FsFile destFile = SD.open(destFileName.c_str(), O_RDWR | O_CREAT | O_AT_END);
   if (!destFile) {
     Serial.println(F("Failed to create destination file!"));
@@ -1521,14 +736,40 @@ String transferToSDCard() {
     return "";
   }
   
+  // Write CSV header
+  destFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
+                    "Pressure,Temperature,"
+                    "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
+                    "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
+                    "ICM_GyroX,ICM_GyroY,ICM_GyroZ"));
+  
   const size_t bufferSize = 512;
   uint8_t buffer[bufferSize];
   size_t bytesRead;
+  char dataString[320]; // Buffer for CSV line
   
   while ((bytesRead = sourceFile.read(buffer, bufferSize)) > 0) {
-    if (destFile.write(buffer, bytesRead) != bytesRead) {
-      Serial.println(F("Failed to write to destination file!"));
-      break;
+    // Process each record in the buffer
+    for (size_t i = 0; i < bytesRead; i += sizeof(LogDataStruct)) {
+      if (i + sizeof(LogDataStruct) <= bytesRead) {
+        LogDataStruct* data = (LogDataStruct*)&buffer[i];
+        
+        // Format the data as CSV
+        int milliseconds = data->timestamp % 1000;
+        sprintf(dataString, "%lu,%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                data->timestamp / 1000, milliseconds,
+                data->fixType, data->sats,
+                data->latitude, data->longitude, data->altitude, data->altitudeMSL,
+                data->speed, data->heading, data->pDOP / 100.0, data->rtk,
+                data->pressure, data->temperature,
+                data->kx134_x, data->kx134_y, data->kx134_z,
+                data->icm_accel[0], data->icm_accel[1], data->icm_accel[2],
+                data->icm_gyro[0], data->icm_gyro[1], data->icm_gyro[2],
+                data->icm_mag[0], data->icm_mag[1], data->icm_mag[2]);
+        
+        // Write the CSV line to the destination file
+        destFile.println(dataString);
+      }
     }
   }
   
@@ -1539,7 +780,6 @@ String transferToSDCard() {
   
   Serial.print(F("Transferred to SD card as: "));
   Serial.println(destFileName);
-  
   return sourceFileName;
 }
 
@@ -1615,7 +855,7 @@ void printStatusSummary() {
   }
   
   Serial.println(F("==================================="));
-  Serial.println(F("Commands: help, dump, stats, imu, detail"));
+  Serial.println(F("Commands: help, dump, stats, imu, detail, calibrate"));
 }
 
 // Updated help message with more compact formatting
@@ -1627,6 +867,7 @@ void printHelpMessage() {
   Serial.println(F("stats  - Show storage statistics"));
   Serial.println(F("detail - Toggle detailed display"));
   Serial.println(F("imu    - Show detailed IMU data"));
+  Serial.println(F("calibrate - Perform barometric calibration with GPS"));
   Serial.println(F("help   - Show this help message"));
   
   if (internalFlashAvailable && flashLogFile) {
@@ -1667,8 +908,8 @@ void printStorageStatistics() {
       Serial.print(F(" | Log: "));
       Serial.println(logFileName);
     } else {
-      Serial.println();
-    }
+    Serial.println();
+  }
   } else {
     Serial.println(F("Not available"));
   }
@@ -1681,8 +922,8 @@ void printStorageStatistics() {
       Serial.print(F(" | Log: "));
       Serial.println(logFileName);
     } else {
-      Serial.println();
-    }
+    Serial.println();
+  }
   } else {
     Serial.println(F("Not available"));
   }
@@ -1879,10 +1120,8 @@ void setup() {
   Serial.print(":");
   Serial.println(myGNSS.getSecond());
   
-  // Perform one-time barometric calibration with GPS
-  if (!ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
-    Serial.println("Warning: Barometric calibration timed out");
-  }
+  // Barometric calibration is now done via command
+  Serial.println(F("Use 'calibrate' command to perform barometric calibration with GPS"));
 }
 
 void loop() {
@@ -1894,6 +1133,7 @@ void loop() {
   static unsigned long lastAccelReadTime = 0;
   static unsigned long lastGPSCheckTime = 0;
   static unsigned long lastStorageCheckTime = 0;
+  static unsigned long lastFlushTime = 0;  // Track when we last flushed data
   static bool sensorsUpdated = false;
   static bool displayMode = false; // Toggle for compact vs detailed display
   
@@ -1968,6 +1208,33 @@ void loop() {
     } else if (command == "imu") {
       // Show detailed IMU data
       ICM_20948_print();
+    } else if (command == "calibrate") {
+      // Manual calibration command
+      if (!baroCalibrated) {
+        Serial.println(F("Starting barometric calibration with GPS..."));
+        Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
+        
+        // Change LED to purple to indicate calibration in progress
+        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
+        pixels.show();
+        
+        if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
+          Serial.println(F("Barometric calibration successful!"));
+          baroCalibrated = true;
+          // Change LED to green to indicate success
+          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
+          pixels.show();
+          delay(1000);
+        } else {
+          Serial.println(F("Barometric calibration timed out or failed."));
+          // Change LED to red to indicate failure
+          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
+          pixels.show();
+          delay(1000);
+        }
+      } else {
+        Serial.println(F("Barometric calibration has already been performed."));
+      }
     } else if (command == "help") {
       // Show help message
       printHelpMessage();
@@ -1979,6 +1246,30 @@ void loop() {
     lastGPSReadTime = millis();
     gps_read();
     sensorsUpdated = true;
+
+    // Check for automatic calibration opportunity
+    if (!baroCalibrated && pDOP < 300) {  // pDOP is stored as integer * 100
+      Serial.println(F("Good GPS fix detected (pDOP < 3.0), starting automatic barometric calibration..."));
+      
+      // Change LED to purple to indicate calibration in progress
+      pixels.setPixelColor(0, pixels.Color(50, 0, 50));
+      pixels.show();
+      
+      if (ms5611_calibrate_with_gps(30000)) {  // Wait up to 30 seconds for calibration
+        Serial.println(F("Automatic barometric calibration successful!"));
+        baroCalibrated = true;
+        // Change LED to green to indicate success
+        pixels.setPixelColor(0, pixels.Color(0, 50, 0));
+        pixels.show();
+        delay(1000);
+      } else {
+        Serial.println(F("Automatic barometric calibration timed out or failed."));
+        // Change LED to red to indicate failure
+        pixels.setPixelColor(0, pixels.Color(50, 0, 0));
+        pixels.show();
+        delay(1000);
+      }
+    }
   }
   
   // Read barometer data at BARO_POLL_INTERVAL
@@ -2022,6 +1313,23 @@ void loop() {
     checkStorageSpace();
   }
   
+  // Periodically flush data to SD card (every 10 seconds)
+  if (millis() - lastFlushTime >= 10000) {  // 10 seconds
+    lastFlushTime = millis();
+    
+    // Flush SD card data
+    if (sdCardAvailable && LogDataFile) {
+      LogDataFile.flush();
+      Serial.println(F("SD card data flushed"));
+    }
+    
+    // Flush internal flash data
+    if (internalFlashAvailable && flashLogFile) {
+      flashLogFile.flush();
+      Serial.println(F("Internal flash data flushed"));
+    }
+  }
+  
   // Print status summary once per second
   if (millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
     lastDisplayTime = millis();
@@ -2035,11 +1343,5 @@ void loop() {
   }
 }
 
-// Sensor data variables
-extern float pressure;
-extern float temperature;
-extern float kx134_accel[3];
-extern float icm_accel[3];
-extern float icm_gyro[3];
 
 

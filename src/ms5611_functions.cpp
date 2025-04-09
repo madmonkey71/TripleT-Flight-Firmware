@@ -111,7 +111,7 @@ void ms5611_init() {
 void ms5611_print() {
     float raw_altitude = 44330.0 * (1.0 - pow(pressure / STANDARD_SEA_LEVEL_PRESSURE, 0.190295));
     
-    Serial.print("MS5611 Data\n");
+    Serial.print("MS5611 Data");
     Serial.print(" Baro (hPa): ");
     Serial.print(pressure, 2);
     Serial.print(" Temp: ");
@@ -120,5 +120,5 @@ void ms5611_print() {
     Serial.print(raw_altitude, 2);
     Serial.print(" Cal'd Alt: ");
     Serial.print(raw_altitude + baro_altitude_offset, 2);
-    Serial.println("m");
+    Serial.print("m");
 }

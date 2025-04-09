@@ -28,6 +28,7 @@
 // Include all the needed libraries.
 #include <Arduino.h>
 #include <Wire.h>
+
 // WS2812 LED Library
 #include <Adafruit_NeoPixel.h>
 // An SPI library for later functions
@@ -41,13 +42,6 @@
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.15
 
-
-// Save SdFat FILE_READ/WRITE values before including LittleFS
-#define SDFAT_FILE_READ O_RDONLY
-#define SDFAT_FILE_WRITE (O_RDWR | O_CREAT | O_AT_END)
-#undef FILE_READ
-#undef FILE_WRITE
-
 // Now include LittleFS
 #include <LittleFS.h>
 
@@ -55,10 +49,10 @@
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
 #include "ms5611_functions.h"
-#include "kx134_functions.h"
-#include "icm_20948_functions.h"  // Include ICM-20948 functions header
 #include "utility_functions.h"    // Include utility functions header
 #include "data_structures.h"  // Include our data structures
+#include "icm_20948_functions.h"  // Include ICM-20948 functions
+#include "kx134_functions.h"  // Include KX134 functions
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -195,7 +189,7 @@ bool initInternalFlash() {
   }
   
   // Create and open the log file
-  flashLogFile = flashFS.open(flashLogPath, 1); // Use 1 directly instead of FILE_WRITE
+  flashLogFile = flashFS.open(flashLogPath, 1); // Use 1 directly instead of 1
   if (!flashLogFile) {
     Serial.println(F("Failed to create log file!"));
     return false;
@@ -330,7 +324,7 @@ bool createNewLogFile() {
   String fileName = FileDateString + ".csv";
   
   // Try to open the file
-  if (!LogDataFile.open(fileName.c_str(), SDFAT_FILE_WRITE)) {
+  if (!LogDataFile.open(fileName.c_str(), O_RDWR | O_CREAT | O_AT_END)) {
     Serial.println("Failed to create log file: " + fileName);
     return false;
   }
@@ -770,30 +764,30 @@ String dumpInternalFlashData() {
     
     // Format and print the record
     char buffer[300];
-    sprintf(buffer, "%lu,%d,%d,%ld,%ld,%ld,%d,%.1f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%u%s",
-            timestamp,
-            fixType,
-            satCount,
-            latitude,
-            longitude,
-            altitude,
-            speed,
-            pressure / 10.0,    // Convert back to hPa
-            temperature / 100.0, // Convert back to °C
-            kx_accelX / 1000.0,  // Convert back to g
-            kx_accelY / 1000.0,
-            kx_accelZ / 1000.0,
-            icm_accelX / 1000.0, // Convert back to g
-            icm_accelY / 1000.0,
-            icm_accelZ / 1000.0,
-            icm_gyroX / 10.0,    // Convert back to deg/s
-            icm_gyroY / 10.0,
-            icm_gyroZ / 10.0,
-            icm_magX / 10.0,     // Convert back to uT
-            icm_magY / 10.0,
-            icm_magZ / 10.0,
-            checksum,
-            (calculatedChecksum != checksum) ? " (INVALID)" : "");
+    sprintf(buffer, "%lu.%03d,%d,%d,%ld,%ld,%ld,%d,%.1f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%s",
+            timestamp,                    // %lu.%03d - unsigned long with milliseconds
+            fixType,                      // %d - int
+            satCount,                     // %d - int
+            latitude,                     // %ld - long
+            longitude,                    // %ld - long
+            altitude,                     // %ld - long
+            speed,                        // %d - int
+            pressure / 10.0,              // %.1f - float
+            temperature / 100.0,          // %.2f - float
+            kx_accelX / 1000.0,          // %.3f - float
+            kx_accelY / 1000.0,          // %.3f - float
+            kx_accelZ / 1000.0,          // %.3f - float
+            icm_accelX / 1000.0,         // %.3f - float
+            icm_accelY / 1000.0,         // %.3f - float
+            icm_accelZ / 1000.0,         // %.3f - float
+            icm_gyroX / 10.0,            // %.1f - float
+            icm_gyroY / 10.0,            // %.1f - float
+            icm_gyroZ / 10.0,            // %.1f - float
+            icm_magX / 10.0,             // %.1f - float
+            icm_magY / 10.0,             // %.1f - float
+            icm_magZ / 10.0,             // %.1f - float
+            checksum,                     // %d - int
+            (calculatedChecksum != checksum) ? " (INVALID)" : ""); // %s - const char*
     
     Serial.println(buffer);
     recordCount++;
@@ -846,10 +840,10 @@ String transferToSDCard() {
     return "";
   }
   
-  // Open the source file from internal flash
-  File sourceFile = flashFS.open(sourceFileName.c_str(), FILE_READ);
+  // Open the source file from internal flash using direct mode value (2 = read)
+  File sourceFile = flashFS.open(sourceFileName.c_str(), 2);
   if (!sourceFile) {
-    Serial.println(F("Failed to open source file!"));
+    Serial.println(F("Failed to open source file on flash"));
     root.close();
     return "";
   }
@@ -869,7 +863,8 @@ String transferToSDCard() {
                     "Pressure,Temperature,"
                     "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                     "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
-                    "ICM_GyroX,ICM_GyroY,ICM_GyroZ"));
+                    "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
+                    "ICM_MagX,ICM_MagY,ICM_MagZ"));
   
   const size_t bufferSize = 512;
   uint8_t buffer[bufferSize];
@@ -884,16 +879,34 @@ String transferToSDCard() {
         
         // Format the data as CSV
         int milliseconds = data->timestamp % 1000;
-        sprintf(dataString, "%lu,%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
-                data->timestamp / 1000, milliseconds,
-                data->fixType, data->sats,
-                data->latitude, data->longitude, data->altitude, data->altitudeMSL,
-                data->speed, data->heading, data->pDOP / 100.0, data->rtk,
-                data->pressure, data->temperature,
-                data->kx134_x, data->kx134_y, data->kx134_z,
-                data->icm_accel[0], data->icm_accel[1], data->icm_accel[2],
-                data->icm_gyro[0], data->icm_gyro[1], data->icm_gyro[2],
-                data->icm_mag[0], data->icm_mag[1], data->icm_mag[2]);
+        sprintf(dataString, 
+                "%lu.%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+                data->timestamp / 1000,    // %lu.%03d - unsigned long with milliseconds
+                milliseconds,              // %03d - int
+                data->fixType,             // %d - int
+                data->sats,                // %d - int
+                data->latitude,            // %ld - long
+                data->longitude,           // %ld - long
+                data->altitude,            // %ld - long
+                data->altitudeMSL,         // %ld - long
+                data->speed,               // %ld - long
+                data->heading,             // %ld - long
+                data->pDOP / 100.0,        // %.2f - float
+                data->rtk,                 // %d - int
+                data->pressure,            // %.2f - float
+                data->temperature,         // %.2f - float
+                data->kx134_x,             // %.2f - float
+                data->kx134_y,             // %.2f - float
+                data->kx134_z,             // %.2f - float
+                data->icm_accel[0],        // %.2f - float
+                data->icm_accel[1],        // %.2f - float
+                data->icm_accel[2],        // %.2f - float
+                data->icm_gyro[0],         // %.2f - float
+                data->icm_gyro[1],         // %.2f - float
+                data->icm_gyro[2],         // %.2f - float
+                data->icm_mag[0],          // %.2f - float
+                data->icm_mag[1],          // %.2f - float
+                data->icm_mag[2]);         // %.2f - float
         
         // Write the CSV line to the destination file
         destFile.println(dataString);
@@ -1212,15 +1225,16 @@ void setup() {
 
   // Now initialize sensors
   Serial.println(F("\nInitializing sensors..."));
-  kxAccel.begin();
+  kx134_init();
   Serial.println(F("KX134 accelerometer initialized"));
+  
+  ICM_20948_init();
+  Serial.println(F("ICM-20948 initialized"));
   
   // Scan the I2C bus for devices
   scan_i2c();
   ms5611_init();
   gps_init();
-  ICM_20948_init();
-  kx134_init();
   
   // Only initialize internal flash if LittleFS initialization succeeded earlier
   if (internalFlashAvailable) {
@@ -1412,14 +1426,14 @@ void loop() {
   // Read IMU data at IMU_POLL_INTERVAL
   if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
-  ICM_20948_read();
+    ICM_20948_read();
     sensorsUpdated = true;
   }
   
   // Read accelerometer data at ACCEL_POLL_INTERVAL
   if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
-  kx134_read();
+    kx134_read();
     sensorsUpdated = true;
   }
   

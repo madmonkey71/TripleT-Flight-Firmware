@@ -52,16 +52,21 @@
 // External sensor objects
 extern SparkFun_KX134 kx134Accel;  // Create instance of the KX134 class
 extern MS5611 ms5611Sensor;  // Create instance of the MS5611 class
-extern LittleFS_Program flashFS;  // Program flash filesystem
+
+// Add forward declaration for LittleFS_Program 
+class LittleFS_Program;
 
 // External variables
 extern SdFat SD;
 extern FsVolume volume;
 extern Adafruit_NeoPixel pixels;
 extern bool sdCardAvailable;
+extern bool flashAvailable;
+extern bool internalFlashAvailable;
+extern String FileDateString;
+extern LittleFS_Program flashFS;  // Add extern declaration for flashFS
 
 // External logging variables
-extern String FileDateString;
 extern String LogDataString;
 extern unsigned long currentTime;
 extern bool baroCalibrated;

@@ -158,17 +158,19 @@ void handleFlashDataCheck() {
 
     // If we have an SD card, try to transfer the file
     if (sdCardAvailable) {
-      // Create a destination file on the SD card
-      char destPath[140];  // Increased buffer size to accommodate full path
-      snprintf(destPath, sizeof(destPath), "/flash_data/%s", file.name());
+      const char* filename = file.name();
+      
+      // Create destination filename with a timestamp prefix
+      char destPath[256];  // Large buffer for the path
+      snprintf(destPath, sizeof(destPath), "/flash_data/%lu_%s", millis(), filename);
       
       // Create the directory if it doesn't exist
       if (!SD.exists("/flash_data")) {
         SD.mkdir("/flash_data");
       }
 
-      // Open the destination file
-      FsFile destFile = SD.open(destPath, O_WRITE | O_CREAT);
+      // Open the destination file with explicit mode
+      FsFile destFile = SD.open(destPath, O_RDWR | O_CREAT | O_AT_END);
       if (!destFile) {
         Serial.print(F("Failed to create destination file: "));
         Serial.println(destPath);
@@ -176,19 +178,38 @@ void handleFlashDataCheck() {
         continue;
       }
 
-      // Copy the file contents
+      // Reset file position to start
+      file.seek(0);
+      
+      // Copy the file contents with verification
       uint8_t buffer[512];
       size_t bytesRead;
+      size_t totalBytes = 0;
+      bool transferSuccess = true;
+      
       while ((bytesRead = file.read(buffer, sizeof(buffer))) > 0) {
-        destFile.write(buffer, bytesRead);
+        if (destFile.write(buffer, bytesRead) != bytesRead) {
+          Serial.println(F("Write verification failed!"));
+          transferSuccess = false;
+          break;
+        }
+        totalBytes += bytesRead;
       }
 
       // Close the destination file
       destFile.close();
 
-      // Delete the source file
-      flashFS.remove(file.name());
-      Serial.println(F("File transferred and deleted from internal flash"));
+      // Verify file sizes match
+      if (transferSuccess && totalBytes == file.size()) {
+        // Delete the source file
+        flashFS.remove(file.name());
+        Serial.print(F("File transferred and verified: "));
+        Serial.println(destPath);
+      } else {
+        Serial.println(F("Transfer verification failed!"));
+        // Delete the incomplete destination file
+        SD.remove(destPath);
+      }
     }
 
     file = root.openNextFile();

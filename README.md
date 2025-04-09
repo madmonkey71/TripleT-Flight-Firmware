@@ -3,7 +3,7 @@
 An eventually comprehensive flight controller firmware for Teensy 4.0 microcontrollers, designed for model rockets and high-power rocketry applications.
 
 ## Project Status
-**Current Version**: v0.11 (Alpha)
+**Current Version**: v0.10 (Alpha)
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
@@ -12,8 +12,9 @@ An eventually comprehensive flight controller firmware for Teensy 4.0 microcontr
 - ✅ Basic diagnostic tools
 - 🚧 Flight state detection (In Progress)
 - 🚧 Parachute deployment control (Planned)
-- 🚧 Thrust vector control (Planned)
 - 🚧 Enhanced telemetry (Planned)
+- 🚧 Thrust vector control (Planned)
+- 🚧 Live Transmission of data via radio (Planned)
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
@@ -111,11 +112,6 @@ The firmware supports the following commands via the serial monitor (115200 baud
 | `stats` | Shows detailed storage statistics for all media |
 | `detail`| Toggles detailed display mode for sensor data |
 | `imu`   | Shows detailed IMU data |
-| `calibrate` | Performs barometric calibration with GPS |
-| `scan`  | Scans I2C bus for connected devices |
-| `gps`   | Shows detailed GPS information |
-| `baro`  | Shows detailed barometric data |
-| `accel` | Shows detailed accelerometer data |
 
 ### Data Logging
 

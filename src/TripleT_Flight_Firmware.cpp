@@ -339,7 +339,8 @@ bool createNewLogFile() {
   LogDataFile.println("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
                      "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                      "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
-                     "ICM_GyroX,ICM_GyroY,ICM_GyroZ");
+                     "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
+                     "ICM_MagX,ICM_MagY,ICM_MagZ");
 
   // Flush the header to ensure it's written
   LogDataFile.sync();
@@ -410,6 +411,123 @@ void WriteLogData(bool forceLog = false) {
       flashFile.write((uint8_t*)LogDataString.c_str(), LogDataString.length());
       flashFile.write(newLine, 1);
       flashFile.close();
+    }
+  }
+
+  // Write to internal flash (LittleFS) at a reduced rate (5Hz)
+  static unsigned long lastInternalLogTime = 0;
+  if (internalFlashAvailable && flashLogFile && (forceLog || millis() - lastInternalLogTime >= 200)) { // 5Hz
+    lastInternalLogTime = millis();
+    
+    // Write the data record (52 bytes)
+    uint8_t recordBytes[52];
+    
+    // Timestamp (4 bytes)
+    uint32_t timestamp = millis();
+    recordBytes[0] = timestamp & 0xFF;
+    recordBytes[1] = (timestamp >> 8) & 0xFF;
+    recordBytes[2] = (timestamp >> 16) & 0xFF;
+    recordBytes[3] = (timestamp >> 24) & 0xFF;
+    
+    // Fix type and satellite count (2 bytes)
+    recordBytes[4] = GPS_fixType;
+    recordBytes[5] = SIV;
+    
+    // Latitude (4 bytes)
+    int32_t lat = GPS_latitude * 10000000;
+    recordBytes[6] = lat & 0xFF;
+    recordBytes[7] = (lat >> 8) & 0xFF;
+    recordBytes[8] = (lat >> 16) & 0xFF;
+    recordBytes[9] = (lat >> 24) & 0xFF;
+    
+    // Longitude (4 bytes)
+    int32_t lon = GPS_longitude * 10000000;
+    recordBytes[10] = lon & 0xFF;
+    recordBytes[11] = (lon >> 8) & 0xFF;
+    recordBytes[12] = (lon >> 16) & 0xFF;
+    recordBytes[13] = (lon >> 24) & 0xFF;
+    
+    // Altitude (4 bytes)
+    int32_t alt = GPS_altitude * 100;
+    recordBytes[14] = alt & 0xFF;
+    recordBytes[15] = (alt >> 8) & 0xFF;
+    recordBytes[16] = (alt >> 16) & 0xFF;
+    recordBytes[17] = (alt >> 24) & 0xFF;
+    
+    // Speed (2 bytes)
+    int16_t speed = GPS_speed * 100;
+    recordBytes[18] = speed & 0xFF;
+    recordBytes[19] = (speed >> 8) & 0xFF;
+    
+    // Pressure (2 bytes) - stored as hPa * 10
+    int16_t press = pressure * 10;
+    recordBytes[20] = press & 0xFF;
+    recordBytes[21] = (press >> 8) & 0xFF;
+    
+    // Temperature (2 bytes) - stored as °C * 100
+    int16_t temp = temperature * 100;
+    recordBytes[22] = temp & 0xFF;
+    recordBytes[23] = (temp >> 8) & 0xFF;
+    
+    // KX134 Accelerometer values (6 bytes) - stored as g * 1000
+    int16_t kx_accelX = kx134_accel[0] * 1000;
+    int16_t kx_accelY = kx134_accel[1] * 1000;
+    int16_t kx_accelZ = kx134_accel[2] * 1000;
+    recordBytes[24] = kx_accelX & 0xFF;
+    recordBytes[25] = (kx_accelX >> 8) & 0xFF;
+    recordBytes[26] = kx_accelY & 0xFF;
+    recordBytes[27] = (kx_accelY >> 8) & 0xFF;
+    recordBytes[28] = kx_accelZ & 0xFF;
+    recordBytes[29] = (kx_accelZ >> 8) & 0xFF;
+    
+    // ICM-20948 Accelerometer values (6 bytes) - stored as g * 1000
+    int16_t icm_accelX = icm_accel[0] * 1000;
+    int16_t icm_accelY = icm_accel[1] * 1000;
+    int16_t icm_accelZ = icm_accel[2] * 1000;
+    recordBytes[30] = icm_accelX & 0xFF;
+    recordBytes[31] = (icm_accelX >> 8) & 0xFF;
+    recordBytes[32] = icm_accelY & 0xFF;
+    recordBytes[33] = (icm_accelY >> 8) & 0xFF;
+    recordBytes[34] = icm_accelZ & 0xFF;
+    recordBytes[35] = (icm_accelZ >> 8) & 0xFF;
+    
+    // ICM-20948 Gyroscope values (6 bytes) - stored as deg/s * 10
+    int16_t icm_gyroX = icm_gyro[0] * 10;
+    int16_t icm_gyroY = icm_gyro[1] * 10;
+    int16_t icm_gyroZ = icm_gyro[2] * 10;
+    recordBytes[36] = icm_gyroX & 0xFF;
+    recordBytes[37] = (icm_gyroX >> 8) & 0xFF;
+    recordBytes[38] = icm_gyroY & 0xFF;
+    recordBytes[39] = (icm_gyroY >> 8) & 0xFF;
+    recordBytes[40] = icm_gyroZ & 0xFF;
+    recordBytes[41] = (icm_gyroZ >> 8) & 0xFF;
+    
+    // ICM-20948 Magnetometer values (6 bytes) - stored as uT * 10
+    int16_t icm_magX = icm_mag[0] * 10;
+    int16_t icm_magY = icm_mag[1] * 10;
+    int16_t icm_magZ = icm_mag[2] * 10;
+    recordBytes[42] = icm_magX & 0xFF;
+    recordBytes[43] = (icm_magX >> 8) & 0xFF;
+    recordBytes[44] = icm_magY & 0xFF;
+    recordBytes[45] = (icm_magY >> 8) & 0xFF;
+    recordBytes[46] = icm_magZ & 0xFF;
+    recordBytes[47] = (icm_magZ >> 8) & 0xFF;
+    
+    // Calculate checksum (2 bytes)
+    uint16_t checksum = 0;
+    for (int i = 0; i < 50; i++) {
+      checksum += recordBytes[i];
+    }
+    recordBytes[50] = checksum & 0xFF;
+    recordBytes[51] = (checksum >> 8) & 0xFF;
+    
+    // Write the record
+    flashLogFile.write(recordBytes, 52);
+    recordCount++;
+    
+    // Flush periodically
+    if (recordCount % 10 == 0) {
+      flashLogFile.flush();
     }
   }
 }
@@ -545,14 +663,14 @@ String dumpInternalFlashData() {
   Serial.println();
   
   // Print column headers for CSV format
-  Serial.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,Speed,Pressure,Temp,KX134_AccelX,KX134_AccelY,KX134_AccelZ,ICM_AccelX,ICM_AccelY,ICM_AccelZ,ICM_GyroX,ICM_GyroY,ICM_GyroZ,Checksum"));
+  Serial.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,Speed,Pressure,Temp,KX134_AccelX,KX134_AccelY,KX134_AccelZ,ICM_AccelX,ICM_AccelY,ICM_AccelZ,ICM_GyroX,ICM_GyroY,ICM_GyroZ,ICM_MagX,ICM_MagY,ICM_MagZ,Checksum"));
   
-  // Dump each 46-byte record
-  uint8_t recordBytes[46];
+  // Dump each 52-byte record (increased from 46 to accommodate magnetometer data)
+  uint8_t recordBytes[52];
   int recordCount = 0;
   
-  while (logFile.available() >= 46) {
-    logFile.read(recordBytes, 46);
+  while (logFile.available() >= 52) {
+    logFile.read(recordBytes, 52);
     
     // Extract record data
     
@@ -630,22 +748,29 @@ String dumpInternalFlashData() {
     icm_gyroZ |= (int16_t)recordBytes[40];
     icm_gyroZ |= (int16_t)recordBytes[41] << 8;
     
-    // Reserved bytes [42-43] are skipped
+    // ICM-20948 Magnetometer values (6 bytes) - stored as uT * 10
+    int16_t icm_magX = 0, icm_magY = 0, icm_magZ = 0;
+    icm_magX |= (int16_t)recordBytes[42];
+    icm_magX |= (int16_t)recordBytes[43] << 8;
+    icm_magY |= (int16_t)recordBytes[44];
+    icm_magY |= (int16_t)recordBytes[45] << 8;
+    icm_magZ |= (int16_t)recordBytes[46];
+    icm_magZ |= (int16_t)recordBytes[47] << 8;
     
     // Checksum (2 bytes)
     uint16_t checksum = 0;
-    checksum |= (uint16_t)recordBytes[44];
-    checksum |= (uint16_t)recordBytes[45] << 8;
+    checksum |= (uint16_t)recordBytes[50];
+    checksum |= (uint16_t)recordBytes[51] << 8;
     
     // Calculate and verify checksum
     uint16_t calculatedChecksum = 0;
-    for (int i = 0; i < 44; i++) {
+    for (int i = 0; i < 50; i++) {
       calculatedChecksum += recordBytes[i];
     }
     
     // Format and print the record
-    char buffer[250];
-    sprintf(buffer, "%lu,%d,%d,%ld,%ld,%ld,%d,%.1f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.1f,%u%s",
+    char buffer[300];
+    sprintf(buffer, "%lu,%d,%d,%ld,%ld,%ld,%d,%.1f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%u%s",
             timestamp,
             fixType,
             satCount,
@@ -664,6 +789,9 @@ String dumpInternalFlashData() {
             icm_gyroX / 10.0,    // Convert back to deg/s
             icm_gyroY / 10.0,
             icm_gyroZ / 10.0,
+            icm_magX / 10.0,     // Convert back to uT
+            icm_magY / 10.0,
+            icm_magZ / 10.0,
             checksum,
             (calculatedChecksum != checksum) ? " (INVALID)" : "");
     
@@ -756,7 +884,7 @@ String transferToSDCard() {
         
         // Format the data as CSV
         int milliseconds = data->timestamp % 1000;
-        sprintf(dataString, "%lu,%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+        sprintf(dataString, "%lu,%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
                 data->timestamp / 1000, milliseconds,
                 data->fixType, data->sats,
                 data->latitude, data->longitude, data->altitude, data->altitudeMSL,

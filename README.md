@@ -2,11 +2,32 @@
 
 An eventually comprehensive flight controller firmware for Teensy 4.0 microcontrollers, designed for model rockets and high-power rocketry applications.
 
+## Project Status
+**Current Version**: v0.11 (Alpha)
+
+### Development Status
+- ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
+- ✅ Triple redundant data logging (SD, External Flash, Internal Flash)
+- ✅ Interactive serial interface
+- ✅ Basic diagnostic tools
+- 🚧 Flight state detection (In Progress)
+- 🚧 Parachute deployment control (Planned)
+- 🚧 Thrust vector control (Planned)
+- 🚧 Enhanced telemetry (Planned)
+
+## Project Lead
+**Matthew Thom** - Project Lead and Primary Developer
+
+### AI Assistance
+This project utilizes AI assistance for:
+- Code documentation
+- System architecture design
+- Implementation suggestions
+- Code review and optimization
+
 ## Overview
 
 TripleT Flight Firmware is an open-source flight controller software built for Teensy 4.0. It provides robust sensor integration, multi-target data logging, and a command-driven interface to configure and interact with your flight computer.
-
-**Current Version**: v0.10 (Alpha)
 
 ## Hardware Requirements
 
@@ -90,6 +111,11 @@ The firmware supports the following commands via the serial monitor (115200 baud
 | `stats` | Shows detailed storage statistics for all media |
 | `detail`| Toggles detailed display mode for sensor data |
 | `imu`   | Shows detailed IMU data |
+| `calibrate` | Performs barometric calibration with GPS |
+| `scan`  | Scans I2C bus for connected devices |
+| `gps`   | Shows detailed GPS information |
+| `baro`  | Shows detailed barometric data |
+| `accel` | Shows detailed accelerometer data |
 
 ### Data Logging
 
@@ -116,6 +142,13 @@ After a flight, you can retrieve the data using:
 1. **SD Card**: Remove the SD card and read the CSV files directly
 2. **Serial Interface**: Use the `dump` command to export internal flash data via serial
 3. **Manual Download**: Connect to the Teensy and use the serial commands to extract data
+
+## Documentation
+
+For detailed documentation, please refer to:
+- [System Documentation](docs/TripleT_Flight_Firmware_Documentation.md)
+- [Hardware Setup Guide](docs/Hardware_Setup.md)
+- [Troubleshooting Guide](docs/Troubleshooting.md)
 
 ## Future Enhancements
 

@@ -9,7 +9,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <SparkFun_KX13X.h>
 #include <MS5611.h>
-#include <LittleFS.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 
 // SD Card Configuration
 #ifndef SD_CONFIG
@@ -35,9 +35,6 @@
 #ifndef FLASH_CS_PIN
 #define FLASH_CS_PIN 6  // CS pin for Serial Flash
 #endif
-#ifndef INTERNAL_FLASH_SIZE
-#define INTERNAL_FLASH_SIZE 1024 * 1024  // 1MB internal flash
-#endif
 
 // NeoPixel Configuration
 #define NEOPIXEL_PIN 8  // Pin for NeoPixel
@@ -62,23 +59,38 @@ extern FsVolume volume;
 extern Adafruit_NeoPixel pixels;
 extern bool sdCardAvailable;
 extern bool flashAvailable;
-extern bool internalFlashAvailable;
 extern String FileDateString;
-extern LittleFS_Program flashFS;  // Add extern declaration for flashFS
 
 // External logging variables
 extern String LogDataString;
 extern unsigned long currentTime;
 extern bool baroCalibrated;
+extern const char* BOARD_NAME;
+
+// External sensor data
+extern SFE_UBLOX_GNSS myGNSS;
+extern float pressure;
+extern float temperature;
+extern float kx134_accel[3];
+extern float icm_accel[3];
+extern float icm_gyro[3];
+extern float icm_mag[3];
+extern bool icm_data_available;
+extern double icm_q1, icm_q2, icm_q3;
+extern uint16_t icm_data_header;
 
 // External board configuration
 extern const char* BOARD_NAME;
 
 // Function declarations
 bool initSDCard();
-bool initSerialFlash();
 void initNeoPixel();
 void scan_i2c();
-void handleFlashDataCheck();
+bool createNewLogFile();
+void WriteLogData(bool forceLog = false);
+void formatNumber(float input, byte columns, byte places);
+void printStatusSummary();
+void printHelpMessage();
+void printStorageStatistics();
 
 #endif // UTILITY_FUNCTIONS_H 

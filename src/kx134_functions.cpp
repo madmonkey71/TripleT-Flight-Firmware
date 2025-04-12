@@ -6,27 +6,56 @@ SparkFun_KX134 kxAccel;
 outputData kx134AccelData;
 float kx134_accel[3] = {0, 0, 0};  // Initialize array to zeros
 
-void kx134_init(){
-  if (kxAccel.softwareReset())
-    Serial.println("Reset.");
-  // Give some time for the accelerometer to reset.
-  // It needs two, but give it five for good measure.
-  delay(50);
-  // Many settings for KX13X can only be
-  // applied when the accelerometer is powered down.
-  // However there are many that can be changed "on-the-fly"
-  // check datasheet for more info, or the comments in the
-  // "...regs.h" file which specify which can be changed when.
-  // So we disable the accelerometer
-  kxAccel.enableAccel(false);
-  // Do stuff
-  // kxAccel.setRange(SFE_KX132_RANGE16G); // 16g Range
-  kxAccel.setRange(SFE_KX134_RANGE64G);         // 64g for the KX134
-  kxAccel.enableDataEngine(); // Enables the bit that indicates data is ready.
-  kxAccel.setOutputDataRate(50); // Default is 50Hz
-  // Re-enable the accelerometer
-  kxAccel.enableAccel(); 
-  kxAccel.begin();
+bool kx134_init() {
+    Serial.println("Initializing KX134 accelerometer...");
+    
+    // First try to begin communication
+    if (!kxAccel.begin()) {
+        Serial.println("KX134 initialization failed - could not communicate with device");
+        return false;
+    }
+    
+    // Perform software reset
+    if (!kxAccel.softwareReset()) {
+        Serial.println("KX134 software reset failed");
+        return false;
+    }
+    
+    // Wait for reset to complete
+    delay(50);
+    
+    // Disable accelerometer for configuration
+    if (!kxAccel.enableAccel(false)) {
+        Serial.println("Failed to disable accelerometer for configuration");
+        return false;
+    }
+    
+    // Configure range
+    if (!kxAccel.setRange(SFE_KX134_RANGE64G)) {
+        Serial.println("Failed to set accelerometer range");
+        return false;
+    }
+    
+    // Configure data rate
+    if (!kxAccel.setOutputDataRate(50)) {
+        Serial.println("Failed to set output data rate");
+        return false;
+    }
+    
+    // Enable data engine
+    if (!kxAccel.enableDataEngine()) {
+        Serial.println("Failed to enable data engine");
+        return false;
+    }
+    
+    // Re-enable accelerometer
+    if (!kxAccel.enableAccel(true)) {
+        Serial.println("Failed to re-enable accelerometer");
+        return false;
+    }
+    
+    Serial.println("KX134 initialization successful");
+    return true;
 }
 
 void kx134_read(){

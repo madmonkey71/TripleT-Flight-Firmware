@@ -42,9 +42,6 @@
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.15
 
-// Now include LittleFS
-#include <LittleFS.h>
-
 // Now include the GPS and sensor functions
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
@@ -61,14 +58,14 @@ unsigned long currentTime;  // For timestamp
 bool baroCalibrated = false;  // For barometric calibration status
 const char* BOARD_NAME = "Teensy 4.1";
 
-// Define LittleFS filesystem
-LittleFS_Program flashFS;
-
 // External declarations for sensor data
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object
 extern float pressure;
 extern float temperature;
 extern float kx134_accel[3];
+
+// Define sensor objects
+SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
 
 // Global variables to store ICM_20948 IMU data
 float icm_accel[3] = {0};  // Accelerometer data (x, y, z)
@@ -101,18 +98,15 @@ struct LogDataStruct {
   float icm_mag[3];      // 12 bytes (x, y, z)
 };
 
-// Storage configuration and thresholds
-#define STORAGE_FULL_THRESHOLD 90  // Percentage at which storage is considered full
-#define SD_CARD_TYPE_SD1 1
-#define SD_CARD_TYPE_SD2 2
-#define SD_CARD_TYPE_SDHC 3
+// Storage configuration
+#define SD_CARD_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
+#define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 
 // Storage variables
 SdFat SD;
 FsVolume volume;
 bool sdCardAvailable = false;
 bool flashAvailable = false;
-bool internalFlashAvailable = false;
 FsFile root;
 FsFile entry;
 FsFile LogDataFile;
@@ -126,9 +120,6 @@ uint64_t usedSpace;
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS
 char logFileName[32] = ""; // To store the current log file name
 
-// Internal flash memory parameters for Teensy
-#define FLASH_LOG_INTERVAL 250  // Log at 4Hz (every 200ms)
-
 // Sensor polling intervals (in milliseconds)
 #define GPS_POLL_INTERVAL 200       // Poll GPS at 5Hz
 #define IMU_POLL_INTERVAL 100       // Poll IMU at 10Hz
@@ -138,170 +129,13 @@ char logFileName[32] = ""; // To store the current log file name
 #define GPS_CHECK_INTERVAL 10000    // Check GPS connection every 10 seconds
 #define STORAGE_CHECK_INTERVAL 30000 // Check storage space every 30 seconds
 
-// Add new LittleFS variables
-File flashLogFile;
-char flashLogPath[32] = "/log.bin";
-unsigned long recordCount = 0;
-
-// Forward declarations for flash handling functions
-String transferToSDCard();
-String silentlyEraseNextFile();
-String dumpInternalFlashData();
-
-// Function to initialize the internal flash memory
-bool initInternalFlash() {
-  Serial.println(F("Initializing internal flash with LittleFS..."));
-  
-  #if defined(BOARD_STM32_THING_PLUS)
-    // STM32-specific LittleFS initialization
-    // On STM32, we use a different size for the flash storage
-    if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-      Serial.println(F("Failed to initialize STM32 LittleFS!"));
-      return false;
-    }
-    
-    Serial.println(F("STM32 LittleFS initialized successfully"));
-  #else
-    // Teensy-specific LittleFS initialization
-    if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-      Serial.println(F("Failed to initialize Teensy LittleFS!"));
-      return false;
-    }
-    
-    Serial.println(F("Teensy LittleFS initialized successfully"));
-  #endif
-  
-  // Generate a new log file name with timestamp or counter
-  if (SIV > 0) { // If we have satellite fix
-    sprintf(flashLogPath, "/log_%04d%02d%02d_%02d%02d%02d.bin", 
-      myGNSS.getYear(), myGNSS.getMonth(), myGNSS.getDay(),
-      myGNSS.getHour(), myGNSS.getMinute(), myGNSS.getSecond());
-  } else {
-    // Find an unused log file name
-    int fileCount = 0;
-    while (fileCount < 9999) {
-      sprintf(flashLogPath, "/log_%04d.bin", fileCount);
-      if (!flashFS.exists(flashLogPath)) {
-        break;
-      }
-      fileCount++;
-    }
-  }
-  
-  // Create and open the log file
-  flashLogFile = flashFS.open(flashLogPath, 1); // Use 1 directly instead of 1
-  if (!flashLogFile) {
-    Serial.println(F("Failed to create log file!"));
-    return false;
-  }
-  
-  // Write a header to the file
-  char header[32];
-  sprintf(header, "TRIPLET_v%.2f_%lu", TRIPLET_FLIGHT_VERSION, millis());
-  flashLogFile.write((uint8_t*)header, 32);
-  flashLogFile.flush();
-  
-  Serial.print(F("Internal flash log file created: "));
-  Serial.println(flashLogPath);
-  
-  recordCount = 0;
-  return true;
-}
-
-// Function to monitor storage space
-bool checkStorageSpace() {
-  static unsigned long lastCheckTime = 0;
-  
-  if (millis() - lastCheckTime < 30000) {
-    return true;  // Just return true if we're not checking yet
-  }
-  lastCheckTime = millis();
-  
-  bool storageOK = true;  // Default to true
-  
-  // Check SD card free space
-  if (sdCardAvailable) {
-    uint32_t totalSpace = 0;
-    uint32_t usedSpace = 0;
-    
-    // Get card info using SDFat
-    if (!volume.begin(SD.card())) {
-      Serial.println("Failed to initialize volume");
-      storageOK = false;
-    } else {
-      totalSpace = volume.clusterCount() * volume.bytesPerCluster();
-      usedSpace = (volume.clusterCount() - volume.freeClusterCount()) * volume.bytesPerCluster();
-      
-      // Count used space
-      FsFile root = SD.open("/");
-      if (root) {
-        while (true) {
-          FsFile entry = root.openNextFile();
-          if (!entry) {
-            break;
-          }
-          usedSpace += entry.size();
-          entry.close();
+void checkStorageSpace() {
+    if (sdCardAvailable) {
+        uint64_t freeSpace = SD.vol()->freeClusterCount() * SD.vol()->bytesPerCluster();
+        if (freeSpace < SD_CARD_MIN_FREE_SPACE) {
+            Serial.println("WARNING: SD card space low!");
         }
-        root.close();
-        
-        Serial.print(F("SD Card: "));
-        Serial.print(usedSpace / 1024);
-        Serial.print(F(" KB used of "));
-        Serial.print(totalSpace / 1024);
-        Serial.println(F(" KB total"));
-        
-        if (totalSpace > 0) {
-          uint8_t percentUsed = (usedSpace * 100UL) / totalSpace;
-          Serial.print(F("SD Card usage: "));
-          Serial.print(percentUsed);
-          Serial.println(F("%"));
-          
-          if (percentUsed > STORAGE_FULL_THRESHOLD) {
-            storageOK = false;
-          }
-        }
-      }
     }
-  }
-  
-  // Check internal flash space with LittleFS
-  if (internalFlashAvailable && flashLogFile) {
-    uint64_t totalBytes = INTERNAL_FLASH_SIZE;
-    uint64_t usedBytes = 0;
-    
-    File root = flashFS.open("/");
-    if (root && root.isDirectory()) {
-      File file = root.openNextFile();
-      while (file) {
-        if (!file.isDirectory()) {
-          usedBytes += file.size();
-        }
-        file = root.openNextFile();
-      }
-      root.close();
-    }
-    
-    int percentUsed = (usedBytes * 100) / totalBytes;
-    Serial.print(F("Internal flash used: "));
-    Serial.print(usedBytes);
-    Serial.print(F(" bytes ("));
-    Serial.print(percentUsed);
-    Serial.println(F("%)"));
-    
-    // Warn if running low on space
-    if (percentUsed > 80) {
-      Serial.println(F("WARNING: Internal flash storage is nearly full"));
-    }
-  }
-  
-  // Check external flash space if needed
-  if (flashAvailable) {
-    Serial.println(F("Serial Flash status check (simplified)"));
-    // SerialFlash has limited API for checking space
-    // This would need to be customized for your specific flash chip
-  }
-  return storageOK;  // Return the storage status
 }
 
 // Function to create a new log file with timestamp in name
@@ -347,7 +181,7 @@ void WriteLogData(bool forceLog = false) {
   static unsigned long lastLogTime = 0;
   
   // Only log at specified intervals or when forced (after sensor reading)
-  if (!forceLog && millis() - lastLogTime < FLASH_LOG_INTERVAL) {
+  if (!forceLog && millis() - lastLogTime < 200) { // Changed from FLASH_LOG_INTERVAL to fixed 200ms
     return;
   }
   lastLogTime = millis();
@@ -392,138 +226,6 @@ void WriteLogData(bool forceLog = false) {
       Serial.println("Failed to write to log file");
     }
   }
-
-  // Write to Serial Flash
-  if (flashAvailable && strlen(logFileName) > 0) {
-    SerialFlashFile flashFile = SerialFlash.open(logFileName);
-    if (flashFile) {
-      // Find the end of the file to append
-      flashFile.seek(flashFile.size());
-      
-      // Append the data
-      char newLine[2] = "\n";
-      flashFile.write((uint8_t*)LogDataString.c_str(), LogDataString.length());
-      flashFile.write(newLine, 1);
-      flashFile.close();
-    }
-  }
-
-  // Write to internal flash (LittleFS) at a reduced rate (5Hz)
-  static unsigned long lastInternalLogTime = 0;
-  if (internalFlashAvailable && flashLogFile && (forceLog || millis() - lastInternalLogTime >= 200)) { // 5Hz
-    lastInternalLogTime = millis();
-    
-    // Write the data record (52 bytes)
-    uint8_t recordBytes[52];
-    
-    // Timestamp (4 bytes)
-    uint32_t timestamp = millis();
-    recordBytes[0] = timestamp & 0xFF;
-    recordBytes[1] = (timestamp >> 8) & 0xFF;
-    recordBytes[2] = (timestamp >> 16) & 0xFF;
-    recordBytes[3] = (timestamp >> 24) & 0xFF;
-    
-    // Fix type and satellite count (2 bytes)
-    recordBytes[4] = GPS_fixType;
-    recordBytes[5] = SIV;
-    
-    // Latitude (4 bytes)
-    int32_t lat = GPS_latitude * 10000000;
-    recordBytes[6] = lat & 0xFF;
-    recordBytes[7] = (lat >> 8) & 0xFF;
-    recordBytes[8] = (lat >> 16) & 0xFF;
-    recordBytes[9] = (lat >> 24) & 0xFF;
-    
-    // Longitude (4 bytes)
-    int32_t lon = GPS_longitude * 10000000;
-    recordBytes[10] = lon & 0xFF;
-    recordBytes[11] = (lon >> 8) & 0xFF;
-    recordBytes[12] = (lon >> 16) & 0xFF;
-    recordBytes[13] = (lon >> 24) & 0xFF;
-    
-    // Altitude (4 bytes)
-    int32_t alt = GPS_altitude * 100;
-    recordBytes[14] = alt & 0xFF;
-    recordBytes[15] = (alt >> 8) & 0xFF;
-    recordBytes[16] = (alt >> 16) & 0xFF;
-    recordBytes[17] = (alt >> 24) & 0xFF;
-    
-    // Speed (2 bytes)
-    int16_t speed = GPS_speed * 100;
-    recordBytes[18] = speed & 0xFF;
-    recordBytes[19] = (speed >> 8) & 0xFF;
-    
-    // Pressure (2 bytes) - stored as hPa * 10
-    int16_t press = pressure * 10;
-    recordBytes[20] = press & 0xFF;
-    recordBytes[21] = (press >> 8) & 0xFF;
-    
-    // Temperature (2 bytes) - stored as °C * 100
-    int16_t temp = temperature * 100;
-    recordBytes[22] = temp & 0xFF;
-    recordBytes[23] = (temp >> 8) & 0xFF;
-    
-    // KX134 Accelerometer values (6 bytes) - stored as g * 1000
-    int16_t kx_accelX = kx134_accel[0] * 1000;
-    int16_t kx_accelY = kx134_accel[1] * 1000;
-    int16_t kx_accelZ = kx134_accel[2] * 1000;
-    recordBytes[24] = kx_accelX & 0xFF;
-    recordBytes[25] = (kx_accelX >> 8) & 0xFF;
-    recordBytes[26] = kx_accelY & 0xFF;
-    recordBytes[27] = (kx_accelY >> 8) & 0xFF;
-    recordBytes[28] = kx_accelZ & 0xFF;
-    recordBytes[29] = (kx_accelZ >> 8) & 0xFF;
-    
-    // ICM-20948 Accelerometer values (6 bytes) - stored as g * 1000
-    int16_t icm_accelX = icm_accel[0] * 1000;
-    int16_t icm_accelY = icm_accel[1] * 1000;
-    int16_t icm_accelZ = icm_accel[2] * 1000;
-    recordBytes[30] = icm_accelX & 0xFF;
-    recordBytes[31] = (icm_accelX >> 8) & 0xFF;
-    recordBytes[32] = icm_accelY & 0xFF;
-    recordBytes[33] = (icm_accelY >> 8) & 0xFF;
-    recordBytes[34] = icm_accelZ & 0xFF;
-    recordBytes[35] = (icm_accelZ >> 8) & 0xFF;
-    
-    // ICM-20948 Gyroscope values (6 bytes) - stored as deg/s * 10
-    int16_t icm_gyroX = icm_gyro[0] * 10;
-    int16_t icm_gyroY = icm_gyro[1] * 10;
-    int16_t icm_gyroZ = icm_gyro[2] * 10;
-    recordBytes[36] = icm_gyroX & 0xFF;
-    recordBytes[37] = (icm_gyroX >> 8) & 0xFF;
-    recordBytes[38] = icm_gyroY & 0xFF;
-    recordBytes[39] = (icm_gyroY >> 8) & 0xFF;
-    recordBytes[40] = icm_gyroZ & 0xFF;
-    recordBytes[41] = (icm_gyroZ >> 8) & 0xFF;
-    
-    // ICM-20948 Magnetometer values (6 bytes) - stored as uT * 10
-    int16_t icm_magX = icm_mag[0] * 10;
-    int16_t icm_magY = icm_mag[1] * 10;
-    int16_t icm_magZ = icm_mag[2] * 10;
-    recordBytes[42] = icm_magX & 0xFF;
-    recordBytes[43] = (icm_magX >> 8) & 0xFF;
-    recordBytes[44] = icm_magY & 0xFF;
-    recordBytes[45] = (icm_magY >> 8) & 0xFF;
-    recordBytes[46] = icm_magZ & 0xFF;
-    recordBytes[47] = (icm_magZ >> 8) & 0xFF;
-    
-    // Calculate checksum (2 bytes)
-    uint16_t checksum = 0;
-    for (int i = 0; i < 50; i++) {
-      checksum += recordBytes[i];
-    }
-    recordBytes[50] = checksum & 0xFF;
-    recordBytes[51] = (checksum >> 8) & 0xFF;
-    
-    // Write the record
-    flashLogFile.write(recordBytes, 52);
-    recordCount++;
-    
-    // Flush periodically
-    if (recordCount % 10 == 0) {
-      flashLogFile.flush();
-    }
-  }
 }
 
 void formatNumber(float input, byte columns, byte places) 
@@ -531,423 +233,6 @@ void formatNumber(float input, byte columns, byte places)
   char buffer[20]; // Allocate space to store the formatted number string
   dtostrf(input, columns, places, buffer); // Convert float to string with specified columns and decimal places
   Serial.print(buffer); // Print the formatted number to the serial monitor
-}
-
-// Function to check if valid data exists in internal flash
-bool checkInternalFlashData() {
-  // Skip if LittleFS is not initialized
-  if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-    return false;
-  }
-  
-  // List files in the root directory to see if there are any logs
-  File root = flashFS.open("/");
-  if (!root || !root.isDirectory()) {
-    return false;
-  }
-  
-  bool hasLogFiles = false;
-  File file = root.openNextFile();
-  
-  while (file) {
-    // Check if this looks like a log file
-    if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-      Serial.print(F("Found log file: "));
-      Serial.print(file.name());
-      Serial.print(F(" ("));
-      Serial.print(file.size());
-      Serial.println(F(" bytes)"));
-      hasLogFiles = true;
-    }
-    file = root.openNextFile();
-  }
-  
-  root.close();
-  return hasLogFiles;
-}
-
-// Function to dump internal flash data to serial and return the name of the dumped file
-String dumpInternalFlashData() {
-  Serial.println(F("\n===== INTERNAL FLASH DATA DUMP ====="));
-  
-  // Skip if LittleFS is not initialized
-  if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-    Serial.println(F("Failed to initialize LittleFS!"));
-    return "";
-  }
-  
-  // List all log files
-  File root = flashFS.open("/");
-  if (!root || !root.isDirectory()) {
-    Serial.println(F("Failed to open root directory!"));
-    return "";
-  }
-  
-  // Show available log files
-  int fileIndex = 0;
-  File file = root.openNextFile();
-  
-  // Store file names for later use
-  String fileNames[10]; // Assume max 10 files for simplicity
-  int fileCount = 0;
-  
-  while (file && fileCount < 10) {
-    if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-      fileNames[fileCount] = String(file.name());
-      Serial.print(fileIndex);
-      Serial.print(F(": "));
-      Serial.print(file.name());
-      Serial.print(F(" ("));
-      Serial.print(file.size());
-      Serial.println(F(" bytes)"));
-      fileIndex++;
-      fileCount++;
-    }
-    file = root.openNextFile();
-  }
-  
-  // If no files found
-  if (fileIndex == 0) {
-    Serial.println(F("No log files found!"));
-    root.close();
-    return "";
-  }
-  
-  // Always dump the first file (index 0)
-  int selectedFile = 0;
-  Serial.print(F("Dumping file: "));
-  Serial.println(fileNames[selectedFile]);
-  
-  // Reopen the root and find the selected file
-  root.close();
-  root = flashFS.open("/");
-  fileIndex = 0;
-  file = root.openNextFile();
-  
-  File logFile;
-  String dumpedFileName = "";
-  
-  while (file) {
-    if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-      if (fileIndex == selectedFile) {
-        logFile = file;
-        dumpedFileName = String(file.name());
-        break;
-      }
-      fileIndex++;
-    }
-    file = root.openNextFile();
-  }
-  
-  if (!logFile) {
-    Serial.println(F("Failed to open selected file!"));
-    root.close();
-    return "";
-  }
-  
-  // Read the header first (first 32 bytes)
-  uint8_t headerBytes[32];
-  logFile.read(headerBytes, 32);
-  
-  Serial.print(F("Header: "));
-  for (int i = 0; i < 32; i++) {
-    if (headerBytes[i] == 0) break;
-    Serial.print((char)headerBytes[i]);
-  }
-  Serial.println();
-  
-  // Print column headers for CSV format
-  Serial.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,Speed,Pressure,Temp,KX134_AccelX,KX134_AccelY,KX134_AccelZ,ICM_AccelX,ICM_AccelY,ICM_AccelZ,ICM_GyroX,ICM_GyroY,ICM_GyroZ,ICM_MagX,ICM_MagY,ICM_MagZ,Checksum"));
-  
-  // Dump each 52-byte record (increased from 46 to accommodate magnetometer data)
-  uint8_t recordBytes[52];
-  int recordCount = 0;
-  
-  while (logFile.available() >= 52) {
-    logFile.read(recordBytes, 52);
-    
-    // Extract record data
-    
-    // Timestamp (4 bytes)
-    unsigned long timestamp = 0;
-    timestamp |= (unsigned long)recordBytes[0];
-    timestamp |= (unsigned long)recordBytes[1] << 8;
-    timestamp |= (unsigned long)recordBytes[2] << 16;
-    timestamp |= (unsigned long)recordBytes[3] << 24;
-    
-    // Fix type and satellite count
-    byte fixType = recordBytes[4];
-    byte satCount = recordBytes[5];
-    
-    // Latitude (4 bytes)
-    long latitude = 0;
-    latitude |= (long)recordBytes[6];
-    latitude |= (long)recordBytes[7] << 8;
-    latitude |= (long)recordBytes[8] << 16;
-    latitude |= (long)recordBytes[9] << 24;
-    
-    // Longitude (4 bytes)
-    long longitude = 0;
-    longitude |= (long)recordBytes[10];
-    longitude |= (long)recordBytes[11] << 8;
-    longitude |= (long)recordBytes[12] << 16;
-    longitude |= (long)recordBytes[13] << 24;
-    
-    // Altitude (4 bytes)
-    long altitude = 0;
-    altitude |= (long)recordBytes[14];
-    altitude |= (long)recordBytes[15] << 8;
-    altitude |= (long)recordBytes[16] << 16;
-    altitude |= (long)recordBytes[17] << 24;
-    
-    // Speed (2 bytes)
-    int16_t speed = 0;
-    speed |= (int16_t)recordBytes[18];
-    speed |= (int16_t)recordBytes[19] << 8;
-    
-    // Pressure (2 bytes) - stored as hPa * 10
-    int16_t pressure = 0;
-    pressure |= (int16_t)recordBytes[20];
-    pressure |= (int16_t)recordBytes[21] << 8;
-    
-    // Temperature (2 bytes) - stored as °C * 100
-    int16_t temperature = 0;
-    temperature |= (int16_t)recordBytes[22];
-    temperature |= (int16_t)recordBytes[23] << 8;
-    
-    // KX134 Accelerometer values (6 bytes) - stored as g * 1000
-    int16_t kx_accelX = 0, kx_accelY = 0, kx_accelZ = 0;
-    kx_accelX |= (int16_t)recordBytes[24];
-    kx_accelX |= (int16_t)recordBytes[25] << 8;
-    kx_accelY |= (int16_t)recordBytes[26];
-    kx_accelY |= (int16_t)recordBytes[27] << 8;
-    kx_accelZ |= (int16_t)recordBytes[28];
-    kx_accelZ |= (int16_t)recordBytes[29] << 8;
-    
-    // ICM-20948 Accelerometer values (6 bytes) - stored as g * 1000
-    int16_t icm_accelX = 0, icm_accelY = 0, icm_accelZ = 0;
-    icm_accelX |= (int16_t)recordBytes[30];
-    icm_accelX |= (int16_t)recordBytes[31] << 8;
-    icm_accelY |= (int16_t)recordBytes[32];
-    icm_accelY |= (int16_t)recordBytes[33] << 8;
-    icm_accelZ |= (int16_t)recordBytes[34];
-    icm_accelZ |= (int16_t)recordBytes[35] << 8;
-    
-    // ICM-20948 Gyroscope values (6 bytes) - stored as deg/s * 10
-    int16_t icm_gyroX = 0, icm_gyroY = 0, icm_gyroZ = 0;
-    icm_gyroX |= (int16_t)recordBytes[36];
-    icm_gyroX |= (int16_t)recordBytes[37] << 8;
-    icm_gyroY |= (int16_t)recordBytes[38];
-    icm_gyroY |= (int16_t)recordBytes[39] << 8;
-    icm_gyroZ |= (int16_t)recordBytes[40];
-    icm_gyroZ |= (int16_t)recordBytes[41] << 8;
-    
-    // ICM-20948 Magnetometer values (6 bytes) - stored as uT * 10
-    int16_t icm_magX = 0, icm_magY = 0, icm_magZ = 0;
-    icm_magX |= (int16_t)recordBytes[42];
-    icm_magX |= (int16_t)recordBytes[43] << 8;
-    icm_magY |= (int16_t)recordBytes[44];
-    icm_magY |= (int16_t)recordBytes[45] << 8;
-    icm_magZ |= (int16_t)recordBytes[46];
-    icm_magZ |= (int16_t)recordBytes[47] << 8;
-    
-    // Checksum (2 bytes)
-    uint16_t checksum = 0;
-    checksum |= (uint16_t)recordBytes[50];
-    checksum |= (uint16_t)recordBytes[51] << 8;
-    
-    // Calculate and verify checksum
-    uint16_t calculatedChecksum = 0;
-    for (int i = 0; i < 50; i++) {
-      calculatedChecksum += recordBytes[i];
-    }
-    
-    // Format and print the record
-    char buffer[300];
-    sprintf(buffer, "%lu.%03d,%d,%d,%ld,%ld,%ld,%d,%.1f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%s",
-            timestamp,                    // %lu.%03d - unsigned long with milliseconds
-            fixType,                      // %d - int
-            satCount,                     // %d - int
-            latitude,                     // %ld - long
-            longitude,                    // %ld - long
-            altitude,                     // %ld - long
-            speed,                        // %d - int
-            pressure / 10.0,              // %.1f - float
-            temperature / 100.0,          // %.2f - float
-            kx_accelX / 1000.0,          // %.3f - float
-            kx_accelY / 1000.0,          // %.3f - float
-            kx_accelZ / 1000.0,          // %.3f - float
-            icm_accelX / 1000.0,         // %.3f - float
-            icm_accelY / 1000.0,         // %.3f - float
-            icm_accelZ / 1000.0,         // %.3f - float
-            icm_gyroX / 10.0,            // %.1f - float
-            icm_gyroY / 10.0,            // %.1f - float
-            icm_gyroZ / 10.0,            // %.1f - float
-            icm_magX / 10.0,             // %.1f - float
-            icm_magY / 10.0,             // %.1f - float
-            icm_magZ / 10.0,             // %.1f - float
-            checksum,                     // %d - int
-            (calculatedChecksum != checksum) ? " (INVALID)" : ""); // %s - const char*
-    
-    Serial.println(buffer);
-    recordCount++;
-    
-    // Add a brief delay to avoid overwhelming the serial buffer
-    if (recordCount % 10 == 0) {
-      delay(10);
-    }
-  }
-  
-  logFile.close();
-  root.close();
-  
-  Serial.print(F("Total records: "));
-  Serial.println(recordCount);
-  Serial.println(F("===== END OF DATA DUMP =====\n"));
-  
-  return dumpedFileName;
-}
-
-// Function to transfer internal flash data to SD card
-String transferToSDCard() {
-  Serial.println(F("\n===== TRANSFERRING TO SD CARD ====="));
-  
-  if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-    Serial.println(F("Failed to initialize LittleFS!"));
-    return "";
-  }
-  
-  File root = flashFS.open("/");
-  if (!root || !root.isDirectory()) {
-    Serial.println(F("Failed to open root directory!"));
-    return "";
-  }
-  
-  File file = root.openNextFile();
-  String sourceFileName = "";
-  
-  while (file) {
-    if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-      sourceFileName = String(file.name());
-      break;
-    }
-    file = root.openNextFile();
-  }
-  
-  if (sourceFileName.length() == 0) {
-    Serial.println(F("No log files found!"));
-    root.close();
-    return "";
-  }
-  
-  // Open the source file from internal flash using direct mode value (2 = read)
-  File sourceFile = flashFS.open(sourceFileName.c_str(), 2);
-  if (!sourceFile) {
-    Serial.println(F("Failed to open source file on flash"));
-    root.close();
-    return "";
-  }
-  
-  // Change extension from .bin to .csv
-  String destFileName = String("FLASH_") + sourceFileName.substring(0, sourceFileName.length() - 4) + ".csv";
-  FsFile destFile = SD.open(destFileName.c_str(), O_RDWR | O_CREAT | O_AT_END);
-  if (!destFile) {
-    Serial.println(F("Failed to create destination file!"));
-    sourceFile.close();
-    root.close();
-    return "";
-  }
-  
-  // Write CSV header
-  destFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
-                    "Pressure,Temperature,"
-                    "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
-                    "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
-                    "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
-                    "ICM_MagX,ICM_MagY,ICM_MagZ"));
-  
-  const size_t bufferSize = 512;
-  uint8_t buffer[bufferSize];
-  size_t bytesRead;
-  char dataString[320]; // Buffer for CSV line
-  
-  while ((bytesRead = sourceFile.read(buffer, bufferSize)) > 0) {
-    // Process each record in the buffer
-    for (size_t i = 0; i < bytesRead; i += sizeof(LogDataStruct)) {
-      if (i + sizeof(LogDataStruct) <= bytesRead) {
-        LogDataStruct* data = (LogDataStruct*)&buffer[i];
-        
-        // Format the data as CSV
-        int milliseconds = data->timestamp % 1000;
-        sprintf(dataString, 
-                "%lu.%03d,%d,%d,%ld,%ld,%ld,%ld,%ld,%ld,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
-                data->timestamp / 1000,    // %lu.%03d - unsigned long with milliseconds
-                milliseconds,              // %03d - int
-                data->fixType,             // %d - int
-                data->sats,                // %d - int
-                data->latitude,            // %ld - long
-                data->longitude,           // %ld - long
-                data->altitude,            // %ld - long
-                data->altitudeMSL,         // %ld - long
-                data->speed,               // %ld - long
-                data->heading,             // %ld - long
-                data->pDOP / 100.0,        // %.2f - float
-                data->rtk,                 // %d - int
-                data->pressure,            // %.2f - float
-                data->temperature,         // %.2f - float
-                data->kx134_x,             // %.2f - float
-                data->kx134_y,             // %.2f - float
-                data->kx134_z,             // %.2f - float
-                data->icm_accel[0],        // %.2f - float
-                data->icm_accel[1],        // %.2f - float
-                data->icm_accel[2],        // %.2f - float
-                data->icm_gyro[0],         // %.2f - float
-                data->icm_gyro[1],         // %.2f - float
-                data->icm_gyro[2],         // %.2f - float
-                data->icm_mag[0],          // %.2f - float
-                data->icm_mag[1],          // %.2f - float
-                data->icm_mag[2]);         // %.2f - float
-        
-        // Write the CSV line to the destination file
-        destFile.println(dataString);
-      }
-    }
-  }
-  
-  destFile.flush();
-  destFile.close();
-  sourceFile.close();
-  root.close();
-  
-  Serial.print(F("Transferred to SD card as: "));
-  Serial.println(destFileName);
-  return sourceFileName;
-}
-
-// Function to silently erase the next log file
-String silentlyEraseNextFile() {
-  if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-    return "";
-  }
-  
-  File root = flashFS.open("/");
-  if (!root || !root.isDirectory()) {
-    return "";
-  }
-  
-  File file = root.openNextFile();
-  String fileName = "";
-  
-  while (file) {
-    if (!file.isDirectory() && strstr(file.name(), ".bin") != NULL) {
-      fileName = String(file.name());
-      break;
-    }
-    file = root.openNextFile();
-  }
-  
-  root.close();
-  return fileName;
 }
 
 // Updated printStatusSummary function without VT100 codes
@@ -980,20 +265,7 @@ void printStatusSummary() {
   Serial.print(F("  SD:"));
   Serial.print(sdCardAvailable ? F("OK") : F("--"));
   Serial.print(F(" | ExtFlash:"));
-  Serial.print(flashAvailable ? F("OK") : F("--"));
-  Serial.print(F(" | IntFlash:"));
-  
-  if (internalFlashAvailable && flashLogFile) {
-    int percentUsed = (flashLogFile.size() * 100) / (INTERNAL_FLASH_SIZE - 4096);
-    Serial.print(recordCount);
-    Serial.print(F(" recs ("));
-    Serial.print(percentUsed);
-    Serial.println(F("%)"));
-  } else if (internalFlashAvailable) {
-    Serial.println(F("Ready"));
-  } else {
-    Serial.println(F("--"));
-  }
+  Serial.println(flashAvailable ? F("OK") : F("--"));
   
   Serial.println(F("==================================="));
   Serial.println(F("Commands: help, dump, stats, imu, detail, calibrate"));
@@ -1002,27 +274,14 @@ void printStatusSummary() {
 // Updated help message with more compact formatting
 void printHelpMessage() {
   Serial.println(F("\n--- AVAILABLE COMMANDS ---"));
-  Serial.println(F("dump   - Dump internal flash data"));
-  Serial.println(F("erase  - Erase all internal flash data"));
+  Serial.println(F("dump   - Dump external flash data"));
+  Serial.println(F("erase  - Erase all external flash data"));
   Serial.println(F("list   - List all log files"));
   Serial.println(F("stats  - Show storage statistics"));
   Serial.println(F("detail - Toggle detailed display"));
   Serial.println(F("imu    - Show detailed IMU data"));
   Serial.println(F("calibrate - Perform barometric calibration with GPS"));
   Serial.println(F("help   - Show this help message"));
-  
-  if (internalFlashAvailable && flashLogFile) {
-    Serial.print(F("\nFlash: "));
-    Serial.print(recordCount);
-    Serial.print(F(" records, "));
-    
-    unsigned long fileSize = flashLogFile.size();
-    unsigned long maxSize = INTERNAL_FLASH_SIZE - 4096;
-    int percentUsed = (fileSize * 100) / maxSize;
-    
-    Serial.print(percentUsed);
-    Serial.println(F("% used"));
-  }
 }
 
 // Updated storage stats with more concise output
@@ -1049,77 +308,7 @@ void printStorageStatistics() {
       Serial.print(F(" | Log: "));
       Serial.println(logFileName);
     } else {
-    Serial.println();
-  }
-  } else {
-    Serial.println(F("Not available"));
-  }
-  
-  // External Flash stats
-  Serial.print(F("Ext Flash: "));
-  if (flashAvailable) {
-    Serial.print(F("Active"));
-    if (strlen(logFileName) > 0) {
-      Serial.print(F(" | Log: "));
-      Serial.println(logFileName);
-    } else {
-    Serial.println();
-  }
-  } else {
-    Serial.println(F("Not available"));
-  }
-  
-  // Internal Flash stats
-  Serial.print(F("Int Flash: "));
-  if (internalFlashAvailable) {
-    uint64_t totalBytes = INTERNAL_FLASH_SIZE;
-    uint64_t usedBytes = 0;
-    int fileCount = 0;
-    
-    File root = flashFS.open("/");
-    if (root && root.isDirectory()) {
-      File file = root.openNextFile();
-      
-      while (file) {
-        if (!file.isDirectory()) {
-          usedBytes += file.size();
-          fileCount++;
-        }
-        file = root.openNextFile();
-      }
-      root.close();
-      
-      float percentUsed = (usedBytes * 100.0) / totalBytes;
-      
-      Serial.print(usedBytes);
-      Serial.print(F(" of "));
-      Serial.print(totalBytes);
-      Serial.print(F(" bytes ("));
-      Serial.print(percentUsed, 1);
-      Serial.print(F("%) | Files: "));
-      Serial.println(fileCount);
-      
-      if (flashLogFile) {
-        Serial.print(F("Current: "));
-        Serial.print(flashLogPath);
-        Serial.print(F(" ("));
-        Serial.print(recordCount);
-        Serial.println(F(" records)"));
-        
-        // Estimate remaining capacity
-        if (recordCount > 0) {
-          float bytesPerRecord = flashLogFile.size() / (float)recordCount;
-          uint64_t remainingBytes = totalBytes - usedBytes;
-          uint64_t remainingRecords = remainingBytes / bytesPerRecord;
-          float minutesRemaining = (remainingRecords / 5.0) / 60.0; // 5Hz logging rate
-          
-          Serial.print(F("Est. capacity: ~"));
-          Serial.print(remainingRecords);
-          Serial.print(F(" more records ("));
-          Serial.print(minutesRemaining, 1);
-          Serial.println(F(" min)"));
-        }
-      }
+      Serial.println();
     }
   } else {
     Serial.println(F("Not available"));
@@ -1128,7 +317,28 @@ void printStorageStatistics() {
   Serial.println(F("-----------------------------"));
 }
 
+void handleCommand(const String& command) {
+    if (command == "status") {
+        Serial.println("System Status:");
+        Serial.print("SD Card: ");
+        Serial.println(sdCardAvailable ? "Available" : "Not Available");
+        Serial.print("External Flash: ");
+        Serial.println(flashAvailable ? "Available" : "Not Available");
+        Serial.print("GPS: ");
+        Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
+        Serial.print("Barometer: ");
+        Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
+        Serial.print("Accelerometer: ");
+        Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
+    }
+    // ... rest of command handling ...
+}
+
 void setup() {
+  // Wait for the Serial monitor to be opened.
+  Serial.begin(115200);
+  delay(500); // Give the serial port time to initialize
+  
   // Initialize NeoPixel first for visual feedback
   pixels.begin();
   pixels.clear();
@@ -1139,10 +349,6 @@ void setup() {
   delay(500);
   tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN); delay(75);
   noTone(BUZZER_PIN);
-
-  // Wait for the Serial monitor to be opened.
-  Serial.begin(115200);
-  delay(500); // Give the serial port time to initialize
   
   // Change LED to orange to indicate waiting for serial
   pixels.setPixelColor(0, pixels.Color(50, 25, 0)); // Orange during serial init
@@ -1175,8 +381,8 @@ void setup() {
     // STM32 specific I2C setup
     Wire.setSDA(I2C_SDA_PIN);
     Wire.setSCL(I2C_SCL_PIN);
-  Wire.begin();
-  Wire.setClock(400000);
+    Wire.begin();
+    Wire.setClock(400000);
   
     Serial.println("STM32 SPI and I2C initialized");
   #else
@@ -1192,41 +398,13 @@ void setup() {
     
     Serial.println("Teensy SPI and I2C initialized");
   #endif
-
-  // Initialize storage first
-  Serial.println(F("Initializing storage..."));
-  
-  // Initialize SD card first since we may need it for flash data transfer
-  sdCardAvailable = initSDCard();
-  Serial.print(F("SD Card: "));
-  Serial.println(sdCardAvailable ? F("Available") : F("Not available"));
-  
-  // Initialize internal flash
-  Serial.println(F("Checking internal flash memory..."));
-  if (!flashFS.begin(INTERNAL_FLASH_SIZE)) {
-    Serial.println(F("Failed to initialize LittleFS!"));
-    internalFlashAvailable = false;
-  } else {
-    internalFlashAvailable = true;
-    Serial.println(F("Internal flash initialized successfully"));
-    
-    // Change LED to blue to indicate checking for flash data
-    pixels.setPixelColor(0, pixels.Color(0, 0, 50)); // Blue during flash check
-    pixels.show();
-    
-    // Check if there's data in the internal flash and handle it
-    handleFlashDataCheck();
-  }
-  
-  // Initialize external flash last
-  flashAvailable = initSerialFlash();
-  Serial.print(F("External Flash: "));
-  Serial.println(flashAvailable ? F("Available") : F("Not available"));
-
   // Now initialize sensors
   Serial.println(F("\nInitializing sensors..."));
-  kx134_init();
-  Serial.println(F("KX134 accelerometer initialized"));
+  if (!kx134_init()) {
+    Serial.println(F("WARNING: KX134 accelerometer initialization failed"));
+  } else {
+    Serial.println(F("KX134 accelerometer initialized"));
+  }
   
   ICM_20948_init();
   Serial.println(F("ICM-20948 initialized"));
@@ -1235,13 +413,15 @@ void setup() {
   scan_i2c();
   ms5611_init();
   gps_init();
+  // Initialize storage first
+  Serial.println(F("Initializing storage..."));
   
-  // Only initialize internal flash if LittleFS initialization succeeded earlier
-  if (internalFlashAvailable) {
-    internalFlashAvailable = initInternalFlash();
-  }
-  
-  if (sdCardAvailable || flashAvailable || internalFlashAvailable) {
+  // Initialize SD card first since we may need it for flash data transfer
+  initSDCard();
+  Serial.print(F("SD Card: "));
+  Serial.println(sdCardAvailable ? F("Available") : F("Not available"));
+    
+  if (sdCardAvailable || flashAvailable) {
     Serial.println(F("Creating new log file..."));
     createNewLogFile();
     Serial.println(F("Data logging ready."));
@@ -1286,58 +466,24 @@ void loop() {
     
     if (command == "dump") {
       // Dump internal flash data on demand
-      if (internalFlashAvailable) {
-        if (checkInternalFlashData()) {
-          dumpInternalFlashData();
-        } else {
-          Serial.println(F("No valid data found in internal flash."));
-        }
+      if (flashAvailable) {
+        Serial.println(F("Dump command not supported for external flash."));
       } else {
-        Serial.println(F("Internal flash not available."));
+        Serial.println(F("External flash not available."));
       }
     } else if (command == "erase") {
       // Erase internal flash data
-      if (internalFlashAvailable) {
-        Serial.println(F("Erasing internal flash data..."));
-        if (flashLogFile) {
-          flashLogFile.close();
-        }
-        flashFS.format();
-        Serial.println(F("All log files erased."));
-        initInternalFlash();
+      if (flashAvailable) {
+        Serial.println(F("Erase command not supported for external flash."));
       } else {
-        Serial.println(F("Internal flash not available."));
+        Serial.println(F("External flash not available."));
       }
     } else if (command == "list") {
       // List log files
-      if (internalFlashAvailable) {
-        Serial.println(F("\nLog Files:"));
-        File root = flashFS.open("/");
-        if (!root || !root.isDirectory()) {
-          Serial.println(F("Failed to open root directory!"));
-        } else {
-          File file = root.openNextFile();
-          int fileCount = 0;
-          
-          while (file) {
-            if (!file.isDirectory()) {
-              Serial.print(file.name());
-              Serial.print(F(" - "));
-              Serial.print(file.size());
-              Serial.println(F(" bytes"));
-              fileCount++;
-            }
-            file = root.openNextFile();
-          }
-          
-          if (fileCount == 0) {
-            Serial.println(F("No files found."));
-          }
-          
-          root.close();
-        }
+      if (flashAvailable) {
+        Serial.println(F("List command not supported for external flash."));
       } else {
-        Serial.println(F("Internal flash not available."));
+        Serial.println(F("External flash not available."));
       }
     } else if (command == "stats") {
       // Show detailed storage statistics
@@ -1380,6 +526,18 @@ void loop() {
     } else if (command == "help") {
       // Show help message
       printHelpMessage();
+    } else if (command == "status") {
+        Serial.println("System Status:");
+        Serial.print("SD Card: ");
+        Serial.println(sdCardAvailable ? "Available" : "Not Available");
+        Serial.print("External Flash: ");
+        Serial.println(flashAvailable ? "Available" : "Not Available");
+        Serial.print("GPS: ");
+        Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
+        Serial.print("Barometer: ");
+        Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
+        Serial.print("Accelerometer: ");
+        Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
     }
   }
   
@@ -1463,12 +621,6 @@ void loop() {
     if (sdCardAvailable && LogDataFile) {
       LogDataFile.flush();
       Serial.println(F("SD card data flushed"));
-    }
-    
-    // Flush internal flash data
-    if (internalFlashAvailable && flashLogFile) {
-      flashLogFile.flush();
-      Serial.println(F("Internal flash data flushed"));
     }
   }
   

@@ -126,6 +126,7 @@ char logFileName[32] = ""; // To store the current log file name
 // Define global debug control variables (near the top with other global declarations)
 bool enableSensorDebug = true;   // Enable sensor data debug output by default
 bool enableQuaternionDebug = true;  // Enable quaternion debug output by default
+bool enableGPSDebug = true;      // Enable GPS data debug output by default
 
 void checkStorageSpace() {
     if (sdCardAvailable) {
@@ -241,26 +242,28 @@ void printStatusSummary() {
   // Current time
   Serial.print(F("Time: "));
   Serial.print(millis() / 1000);
-  Serial.print(F("s"));
+  Serial.println(F("s"));
   
-  // GPS
-  Serial.print(F("  GPS: "));
-  if (GPS_fixType > 0) {
-    Serial.print(GPS_fixType);
-    Serial.print(F("D fix, "));
-    Serial.print(SIV);
-    Serial.print(F(" sats"));
-    
-    // Only print position if we have a fix
-    Serial.print(F("Pos: "));
-    Serial.print(GPS_latitude / 10000000.0, 6);  // Convert raw integer to decimal degrees
-    Serial.print(F(", "));
-    Serial.print(GPS_longitude / 10000000.0, 6); // Convert raw integer to decimal degrees
-    Serial.print(F(" Alt: "));
-    Serial.print(GPS_altitude / 1000.0, 2);  // Convert mm to meters with 2 decimal places
-    Serial.println(F("m"));
-  } else {
-    Serial.println(F("No fix"));
+  // GPS data - only show if GPS debugging is enabled
+  if (enableGPSDebug) {
+    Serial.print(F("GPS: "));
+    if (GPS_fixType > 0) {
+      Serial.print(GPS_fixType);
+      Serial.print(F("D fix, "));
+      Serial.print(SIV);
+      Serial.println(F(" sats"));
+      
+      // Only print position if we have a fix
+      Serial.print(F("Pos: "));
+      Serial.print(GPS_latitude / 10000000.0, 6);  // Convert raw integer to decimal degrees
+      Serial.print(F(", "));
+      Serial.print(GPS_longitude / 10000000.0, 6); // Convert raw integer to decimal degrees
+      Serial.print(F(" Alt: "));
+      Serial.print(GPS_altitude / 1000.0, 2);  // Convert mm to meters with 2 decimal places
+      Serial.println(F("m"));
+    } else {
+      Serial.println(F("No fix"));
+    }
   }
   
   // Barometer data
@@ -302,7 +305,9 @@ void printStatusSummary() {
   Serial.print(F("  Sensor:"));
   Serial.print(enableSensorDebug ? F("ON") : F("OFF"));
   Serial.print(F(" | Quaternion:"));
-  Serial.println(enableQuaternionDebug ? F("ON") : F("OFF"));
+  Serial.print(enableQuaternionDebug ? F("ON") : F("OFF"));
+  Serial.print(F(" | GPS:"));
+  Serial.println(enableGPSDebug ? F("ON") : F("OFF"));
   
   Serial.println(F("==================================="));
   Serial.println(F("Commands: help, dump, stats, imu, detail, calibrate"));
@@ -326,6 +331,10 @@ void printHelpMessage() {
   
   Serial.print(F("quat     - Toggle quaternion debug (currently "));
   Serial.print(enableQuaternionDebug ? F("ON") : F("OFF"));
+  Serial.println(F(")"));
+  
+  Serial.print(F("gps      - Toggle GPS debug (currently "));
+  Serial.print(enableGPSDebug ? F("ON") : F("OFF"));
   Serial.println(F(")"));
   
   Serial.println(F("status   - Show system status"));
@@ -382,6 +391,8 @@ void handleCommand(const String& command) {
         Serial.println(enableSensorDebug ? "Enabled" : "Disabled");
         Serial.print("Quaternion Debug: ");
         Serial.println(enableQuaternionDebug ? "Enabled" : "Disabled");
+        Serial.print("GPS Debug: ");
+        Serial.println(enableGPSDebug ? "Enabled" : "Disabled");
     } else if (command == "sensor") {
         enableSensorDebug = !enableSensorDebug;
         Serial.print(F("Sensor debug output: "));
@@ -390,6 +401,10 @@ void handleCommand(const String& command) {
         enableQuaternionDebug = !enableQuaternionDebug;
         Serial.print(F("Quaternion debug output: "));
         Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "gps") {
+        enableGPSDebug = !enableGPSDebug;
+        Serial.print(F("GPS debug output: "));
+        Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
     } else if (command == "calibrate") {
       // Manual calibration command
       if (!baroCalibrated) {
@@ -623,6 +638,10 @@ void loop() {
         enableQuaternionDebug = !enableQuaternionDebug;
         Serial.print(F("Quaternion debug output: "));
         Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "gps") {
+        enableGPSDebug = !enableGPSDebug;
+        Serial.print(F("GPS debug output: "));
+        Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
     }
   }
   

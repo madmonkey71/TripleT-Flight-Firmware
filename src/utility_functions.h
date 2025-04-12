@@ -77,7 +77,7 @@ extern float icm_gyro[3];
 extern float icm_mag[3];
 extern float icm_temp;  // Add ICM temperature variable
 extern bool icm_data_available;
-extern double icm_q1, icm_q2, icm_q3;
+extern double icm_q0, icm_q1, icm_q2, icm_q3;
 extern uint16_t icm_data_header;
 
 // External board configuration

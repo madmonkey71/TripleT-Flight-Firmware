@@ -67,14 +67,7 @@ extern float kx134_accel[3];
 // Define sensor objects
 SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
 
-// Global variables to store ICM_20948 IMU data
-float icm_accel[3] = {0, 0, 0};  // x, y, z acceleration in g's
-float icm_gyro[3] = {0, 0, 0};   // x, y, z angular velocity in dps
-float icm_mag[3] = {0, 0, 0};    // x, y, z magnetic field in uT
-float icm_temp = 0.0;            // Temperature in degrees Celsius
-bool icm_data_available = false; // Flag to indicate if new data is available
-double icm_q1 = 0.0, icm_q2 = 0.0, icm_q3 = 0.0;  // Quaternion components
-uint16_t icm_data_header = 0;    // Header for data packet
+// Global variables for ICM_20948 IMU data are defined in icm_20948_functions.cpp
 
 // Define the structure that matches our binary data format
 struct LogDataStruct {
@@ -396,10 +389,12 @@ void setup() {
     
     // Standard I2C setup
     Wire.begin();
-    // Wire.setClock(400000);
     
     Serial.println("Teensy SPI and I2C initialized");
   #endif
+  // Scan the I2C bus for devices
+  scan_i2c();
+
   // Now initialize sensors
   Serial.println(F("\nInitializing sensors..."));
   if (!kx134_init()) {
@@ -411,8 +406,6 @@ void setup() {
   ICM_20948_init();
   Serial.println(F("ICM-20948 initialized"));
   
-  // Scan the I2C bus for devices
-  scan_i2c();
   ms5611_init();
   gps_init();
   // Initialize storage first

@@ -7,6 +7,9 @@ float temperature = 0;
 float baro_altitude_offset = 0;  // Initialize calibration offset to 0
 bool baro_calibration_done = false;
 
+// Add reference to debug flag
+extern bool enableSensorDebug;
+
 int ms5611_read() {
     int result = ms5611Sensor.read();
     if (result == MS5611_READ_OK) {
@@ -109,6 +112,9 @@ void ms5611_init() {
 }
 
 void ms5611_print() {
+    // Only print if sensor debug is enabled
+    if (!enableSensorDebug) return;
+    
     float raw_altitude = 44330.0 * (1.0 - pow(pressure / STANDARD_SEA_LEVEL_PRESSURE, 0.190295));
     
     Serial.print("MS5611 Data");

@@ -6,6 +6,9 @@ SparkFun_KX134 kxAccel;
 outputData kx134AccelData;
 float kx134_accel[3] = {0, 0, 0};  // Initialize array to zeros
 
+// Add reference to debug flag
+extern bool enableSensorDebug;
+
 bool kx134_init() {
     Serial.println("Initializing KX134 accelerometer...");
     
@@ -64,6 +67,9 @@ void kx134_read(){
 }
 
 void kx134_print(){
+  // Only print if sensor debug is enabled
+  if (!enableSensorDebug) return;
+  
   Serial.print(F("  KX134: X:"));
   Serial.print(kx134_accel[0], 2);
   Serial.print(F("g Y:"));

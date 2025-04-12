@@ -19,55 +19,64 @@ long GPS_heading = 0;
 int pDOP = 0;
 byte RTK = 0;
 
+// Add reference to debug flag
+extern bool enableGPSDebug;
+
 bool checkGPSConnection() {
   // Check if we can communicate with the GPS module
   Wire.begin();
 
   if (myGNSS.begin(Wire) == true) {
       // Successfully connected to GPS
-    Serial.println(F("GPS module connection verified"));
+    if (enableGPSDebug) Serial.println(F("GPS module connection verified"));
     byte rate = myGNSS.getNavigationFrequency();
     
     if (rate > 0) {
       // We got a response
-      Serial.print(F("GPS communication success! Nav rate: "));
-      Serial.println(rate);
+      if (enableGPSDebug) {
+        Serial.print(F("GPS communication success! Nav rate: "));
+        Serial.println(rate);
+      }
       return true;
     } else {
-      Serial.println(F("WARNING: No response from GPS when querying navigation rate."));
+      if (enableGPSDebug) Serial.println(F("WARNING: No response from GPS when querying navigation rate."));
       return false;
     }
   } else {
       // Failed to connect to GPS
-      Serial.println(F("Could not connect to GPS module - check wiring"));
+      if (enableGPSDebug) Serial.println(F("Could not connect to GPS module - check wiring"));
       return false;
   }
 }
 
 void gps_init() {
-  Serial.println(F("Initializing GPS module..."));
+  if (enableGPSDebug) Serial.println(F("Initializing GPS module..."));
   
   // Try to connect to the GPS module - be explicit that we're using I2C
   if (myGNSS.begin(Wire) == false) {
-    Serial.println(F("u-blox GPS not detected at default I2C address. Please check wiring."));
+    if (enableGPSDebug) Serial.println(F("u-blox GPS not detected at default I2C address. Please check wiring."));
     return;
   }
 
-  // Enable debug messages
-  myGNSS.enableDebugging(Serial, true);
-
-  // Get the protocol version
-  Serial.print(F("Protocol version: "));
-  Serial.println(myGNSS.getProtocolVersion(), HEX);
+  // Enable debug messages only if GPS debug is enabled
+  if (enableGPSDebug) {
+    myGNSS.enableDebugging(Serial, true);
+    
+    // Get the protocol version
+    Serial.print(F("Protocol version: "));
+    Serial.println(myGNSS.getProtocolVersion(), HEX);
+  } else {
+    myGNSS.enableDebugging(Serial, false);
+  }
 
   // Configure the GPS module
   bool pvtSuccess = myGNSS.setAutoPVT(true);
-  if (!pvtSuccess) {
+  if (!pvtSuccess && enableGPSDebug) {
     Serial.println(F("Failed to configure PVT"));
   }
 
   bool rateSuccess = myGNSS.setNavigationFrequency(5);
-  if (!rateSuccess) {
+  if (!rateSuccess && enableGPSDebug) {
     Serial.println(F("Failed to set navigation frequency"));
   }
 
@@ -82,11 +91,11 @@ void gps_init() {
 
   // Save the configuration
   bool saveSuccess = myGNSS.saveConfiguration();
-  if (!saveSuccess) {
+  if (!saveSuccess && enableGPSDebug) {
     Serial.println(F("Failed to save configuration"));
   }
 
-  Serial.println(F("GPS module initialized successfully"));
+  if (enableGPSDebug) Serial.println(F("GPS module initialized successfully"));
 }
 
 void gps_read() {
@@ -121,6 +130,9 @@ void gps_read() {
 }
 
 void gps_print() {
+  // Only print if GPS debug is enabled
+  if (!enableGPSDebug) return;
+  
   // Print the date and time
   Serial.print(myGNSS.getYear()); Serial.print(F("-"));
   Serial.print(myGNSS.getMonth()); Serial.print(F("-"));

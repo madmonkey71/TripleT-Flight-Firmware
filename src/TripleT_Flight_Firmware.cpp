@@ -68,12 +68,13 @@ extern float kx134_accel[3];
 SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
 
 // Global variables to store ICM_20948 IMU data
-float icm_accel[3] = {0};  // Accelerometer data (x, y, z)
-float icm_gyro[3] = {0};   // Gyroscope data (x, y, z)
-float icm_mag[3] = {0};    // Magnetometer data (x, y, z)
-bool icm_data_available = false;
-double icm_q1 = 0, icm_q2 = 0, icm_q3 = 0; // Quaternion data
-uint16_t icm_data_header = 0; // To store what data types are available
+float icm_accel[3] = {0, 0, 0};  // x, y, z acceleration in g's
+float icm_gyro[3] = {0, 0, 0};   // x, y, z angular velocity in dps
+float icm_mag[3] = {0, 0, 0};    // x, y, z magnetic field in uT
+float icm_temp = 0.0;            // Temperature in degrees Celsius
+bool icm_data_available = false; // Flag to indicate if new data is available
+double icm_q1 = 0.0, icm_q2 = 0.0, icm_q3 = 0.0;  // Quaternion components
+uint16_t icm_data_header = 0;    // Header for data packet
 
 // Define the structure that matches our binary data format
 struct LogDataStruct {
@@ -177,7 +178,7 @@ bool createNewLogFile() {
   return true;
 }
 
-void WriteLogData(bool forceLog = false) {
+void WriteLogData(bool forceLog) {
   static unsigned long lastLogTime = 0;
   
   // Only log at specified intervals or when forced (after sensor reading)
@@ -190,8 +191,8 @@ void WriteLogData(bool forceLog = false) {
   LogDataString = String(currentTime) + "," +
                   String(GPS_fixType) + "," +
                   String(SIV) + "," +
-                  String(GPS_latitude, 7) + "," +
-                  String(GPS_longitude, 7) + "," +
+                  String(GPS_latitude, 5) + "," +
+                  String(GPS_longitude, 5) + "," +
                   String(GPS_altitude, 2) + "," +
                   String(GPS_altitudeMSL, 2) + "," +
                   String(GPS_speed, 2) + "," +
@@ -211,7 +212,8 @@ void WriteLogData(bool forceLog = false) {
                   String(icm_gyro[2], 4) + "," +
                   String(icm_mag[0], 4) + "," +
                   String(icm_mag[1], 4) + "," +
-                  String(icm_mag[2], 4);
+                  String(icm_mag[2], 4) + "," +
+                  String(icm_temp, 2);
 
   // Write to SD card if available
   if (LogDataFile) {
@@ -394,7 +396,7 @@ void setup() {
     
     // Standard I2C setup
     Wire.begin();
-    Wire.setClock(400000);
+    // Wire.setClock(400000);
     
     Serial.println("Teensy SPI and I2C initialized");
   #endif

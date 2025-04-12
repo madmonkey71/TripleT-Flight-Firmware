@@ -22,7 +22,7 @@ bool kx134_init() {
     }
     
     // Wait for reset to complete
-    delay(50);
+    delay(5);
     
     // Disable accelerometer for configuration
     if (!kxAccel.enableAccel(false)) {
@@ -35,13 +35,7 @@ bool kx134_init() {
         Serial.println("Failed to set accelerometer range");
         return false;
     }
-    
-    // Configure data rate
-    if (!kxAccel.setOutputDataRate(50)) {
-        Serial.println("Failed to set output data rate");
-        return false;
-    }
-    
+
     // Enable data engine
     if (!kxAccel.enableDataEngine()) {
         Serial.println("Failed to enable data engine");
@@ -76,5 +70,5 @@ void kx134_print(){
   Serial.print(kx134_accel[1], 2);
   Serial.print(F("g Z:"));
   Serial.print(kx134_accel[2], 2);
-  Serial.println(F("g"));
+  Serial.print(F("g"));
 } 

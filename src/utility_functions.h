@@ -75,6 +75,7 @@ extern float kx134_accel[3];
 extern float icm_accel[3];
 extern float icm_gyro[3];
 extern float icm_mag[3];
+extern float icm_temp;  // Add ICM temperature variable
 extern bool icm_data_available;
 extern double icm_q1, icm_q2, icm_q3;
 extern uint16_t icm_data_header;
@@ -92,5 +93,8 @@ void formatNumber(float input, byte columns, byte places);
 void printStatusSummary();
 void printHelpMessage();
 void printStorageStatistics();
+void initExternalFlash();
+void checkStorageSpace();
+void handleCommand(const String& command);
 
 #endif // UTILITY_FUNCTIONS_H 

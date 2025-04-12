@@ -10,7 +10,9 @@ An eventually comprehensive flight controller firmware for Teensy 4.0 microcontr
 - ✅ Triple redundant data logging (SD, External Flash, Internal Flash)
 - ✅ Interactive serial interface
 - ✅ Basic diagnostic tools
+- ✅ Quarternion based Position estimation (Work in Progress)
 - 🚧 Flight state detection (In Progress)
+- 🚧 Apogee Detection (Planned)
 - 🚧 Parachute deployment control (Planned)
 - 🚧 Enhanced telemetry (Planned)
 - 🚧 Thrust vector control (Planned)

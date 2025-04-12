@@ -127,6 +127,7 @@ char logFileName[32] = ""; // To store the current log file name
 bool enableSensorDebug = true;   // Enable sensor data debug output by default
 bool enableQuaternionDebug = true;  // Enable quaternion debug output by default
 bool enableGPSDebug = true;      // Enable GPS data debug output by default
+bool enableStatusSummary = true; // Enable periodic status summary by default
 
 void checkStorageSpace() {
     if (sdCardAvailable) {
@@ -337,6 +338,10 @@ void printHelpMessage() {
   Serial.print(enableGPSDebug ? F("ON") : F("OFF"));
   Serial.println(F(")"));
   
+  Serial.print(F("summary  - Toggle status summary (currently "));
+  Serial.print(enableStatusSummary ? F("ON") : F("OFF"));
+  Serial.println(F(")"));
+  
   Serial.println(F("status   - Show system status"));
   Serial.println(F("help     - Show this help message"));
 }
@@ -393,6 +398,8 @@ void handleCommand(const String& command) {
         Serial.println(enableQuaternionDebug ? "Enabled" : "Disabled");
         Serial.print("GPS Debug: ");
         Serial.println(enableGPSDebug ? "Enabled" : "Disabled");
+        Serial.print("Status Summary: ");
+        Serial.println(enableStatusSummary ? "Enabled" : "Disabled");
     } else if (command == "sensor") {
         enableSensorDebug = !enableSensorDebug;
         Serial.print(F("Sensor debug output: "));
@@ -405,6 +412,10 @@ void handleCommand(const String& command) {
         enableGPSDebug = !enableGPSDebug;
         Serial.print(F("GPS debug output: "));
         Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "summary") {
+        enableStatusSummary = !enableStatusSummary;
+        Serial.print(F("Status summary: "));
+        Serial.println(enableStatusSummary ? F("ENABLED") : F("DISABLED"));
     } else if (command == "calibrate") {
       // Manual calibration command
       if (!baroCalibrated) {
@@ -642,6 +653,10 @@ void loop() {
         enableGPSDebug = !enableGPSDebug;
         Serial.print(F("GPS debug output: "));
         Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "summary") {
+        enableStatusSummary = !enableStatusSummary;
+        Serial.print(F("Status summary: "));
+        Serial.println(enableStatusSummary ? F("ENABLED") : F("DISABLED"));
     }
   }
   
@@ -728,8 +743,8 @@ void loop() {
     }
   }
   
-  // Print status summary once per second
-  if (millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
+  // Print status summary once per second, but only if enabled
+  if (enableStatusSummary && millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
     lastDisplayTime = millis();
     printStatusSummary();
   }

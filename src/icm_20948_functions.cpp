@@ -2,6 +2,10 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+// Add extern declarations for the debug flags
+extern bool enableSensorDebug;
+extern bool enableQuaternionDebug;
+
 // Sensor data
 ICM_20948_I2C myICM;
 float icm_accel[3] = {0, 0, 0};
@@ -466,8 +470,9 @@ void ICM_20948_read() {
     calculateOrientation();
     
     // Print quaternion values only occasionally to reduce serial traffic
+    // and only if quaternion debug is enabled
     static unsigned long lastPrintTime = 0;
-    if (millis() - lastPrintTime > 1000) { // Print only once per second
+    if (enableQuaternionDebug && (millis() - lastPrintTime > 1000)) { // Print only once per second
       lastPrintTime = millis();
       
       Serial.print("Quaternion: ");
@@ -491,8 +496,9 @@ void ICM_20948_read() {
     }
   } else {
     // Don't print this message every time - it floods the serial port
+    // and only print if sensor debug is enabled
     static unsigned long lastErrorTime = 0;
-    if (millis() - lastErrorTime > 5000) { // Only print every 5 seconds
+    if (enableSensorDebug && (millis() - lastErrorTime > 5000)) { // Only print every 5 seconds
       lastErrorTime = millis();
       Serial.println("No data ready from ICM-20948");
     }
@@ -565,6 +571,9 @@ void ICM_20948_calibrate() {
 
 // Print ICM-20948 data to serial
 void ICM_20948_print() {
+  // Only print if sensor debug is enabled
+  if (!enableSensorDebug) return;
+  
   Serial.println("ICM-20948 Data:");
   
   Serial.print("  Accelerometer: X:");
@@ -595,15 +604,18 @@ void ICM_20948_print() {
   Serial.print(icm_temp, 1);
   Serial.println("°C");
   
-  Serial.print("  Quaternion: W:");
-  Serial.print(icm_q0, 4);
-  Serial.print(" X:");
-  Serial.print(icm_q1, 4);
-  Serial.print(" Y:");
-  Serial.print(icm_q2, 4);
-  Serial.print(" Z:");
-  Serial.print(icm_q3, 4);
-  Serial.print(" (");
-  Serial.print(isStationary ? "STATIONARY" : "MOVING");
-  Serial.println(")");
+  // Only print quaternion data if quaternion debug is enabled
+  if (enableQuaternionDebug) {
+    Serial.print("  Quaternion: W:");
+    Serial.print(icm_q0, 4);
+    Serial.print(" X:");
+    Serial.print(icm_q1, 4);
+    Serial.print(" Y:");
+    Serial.print(icm_q2, 4);
+    Serial.print(" Z:");
+    Serial.print(icm_q3, 4);
+    Serial.print(" (");
+    Serial.print(isStationary ? "STATIONARY" : "MOVING");
+    Serial.println(")");
+  }
 } 

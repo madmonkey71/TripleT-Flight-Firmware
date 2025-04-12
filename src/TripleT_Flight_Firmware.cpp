@@ -123,6 +123,10 @@ char logFileName[32] = ""; // To store the current log file name
 #define GPS_CHECK_INTERVAL 10000    // Check GPS connection every 10 seconds
 #define STORAGE_CHECK_INTERVAL 30000 // Check storage space every 30 seconds
 
+// Define global debug control variables (near the top with other global declarations)
+bool enableSensorDebug = true;   // Enable sensor data debug output by default
+bool enableQuaternionDebug = true;  // Enable quaternion debug output by default
+
 void checkStorageSpace() {
     if (sdCardAvailable) {
         uint64_t freeSpace = SD.vol()->freeClusterCount() * SD.vol()->bytesPerCluster();
@@ -184,9 +188,9 @@ void WriteLogData(bool forceLog) {
   LogDataString = String(currentTime) + "," +
                   String(GPS_fixType) + "," +
                   String(SIV) + "," +
-                  String(GPS_latitude, 5) + "," +
-                  String(GPS_longitude, 5) + "," +
-                  String(GPS_altitude, 2) + "," +
+                  String(GPS_latitude / 10000000.0, 6) + "," +
+                  String(GPS_longitude / 10000000.0, 6) + "," +
+                  String(GPS_altitude / 1000.0, 2) + "," +
                   String(GPS_altitudeMSL, 2) + "," +
                   String(GPS_speed, 2) + "," +
                   String(GPS_heading, 2) + "," +
@@ -232,28 +236,59 @@ void formatNumber(float input, byte columns, byte places)
 
 // Updated printStatusSummary function without VT100 codes
 void printStatusSummary() {
-  // Use multiple newlines and separators instead of screen clearing
-  Serial.println(F("\n\n\n"));
-  Serial.println(F("==================================="));
-  Serial.print(F("TripleT Flight Firmware v"));
-  Serial.print(TRIPLET_FLIGHT_VERSION);
-  Serial.print(F(" | Runtime: "));
-  unsigned long runtime = millis() / 1000;
-  Serial.print(runtime / 60);
-  Serial.print(F("m "));
-  Serial.print(runtime % 60);
-  Serial.println(F("s"));
-  Serial.println(F("==================================="));
-
-  gps_print();
-  // SENSORS - Combine atmospheric and IMU data in a compact format
-  ms5611_print();
-  // KX134 Accelerometer data
-  kx134_print();
-
-  // ICM-20948 IMU data
-  Serial.print(F("  ICM-20948: "));
-  ICM_20948_print();
+  Serial.println(F("\n=== STATUS SUMMARY ==="));
+  
+  // Current time
+  Serial.print(F("Time: "));
+  Serial.print(millis() / 1000);
+  Serial.print(F("s"));
+  
+  // GPS
+  Serial.print(F("  GPS: "));
+  if (GPS_fixType > 0) {
+    Serial.print(GPS_fixType);
+    Serial.print(F("D fix, "));
+    Serial.print(SIV);
+    Serial.print(F(" sats"));
+    
+    // Only print position if we have a fix
+    Serial.print(F("Pos: "));
+    Serial.print(GPS_latitude / 10000000.0, 6);  // Convert raw integer to decimal degrees
+    Serial.print(F(", "));
+    Serial.print(GPS_longitude / 10000000.0, 6); // Convert raw integer to decimal degrees
+    Serial.print(F(" Alt: "));
+    Serial.print(GPS_altitude / 1000.0, 2);  // Convert mm to meters with 2 decimal places
+    Serial.println(F("m"));
+  } else {
+    Serial.println(F("No fix"));
+  }
+  
+  // Barometer data
+  if (enableSensorDebug) {
+    Serial.print(F("Baro: "));
+    Serial.print(pressure, 1);
+    Serial.print(F("Pa, "));
+    Serial.print(temperature, 1);
+    Serial.println(F("°C"));
+  
+    // Barometer altitude
+    if (baroCalibrated) {
+      Serial.print(F("Alt: "));
+      // Use pressure directly instead of calling undefined function
+      float baroAltitude = 44330.0 * (1.0 - pow(pressure / 101325.0, 0.1903));
+      Serial.print(baroAltitude, 1);
+      Serial.println(F("m"));
+    }
+  
+    // MS5611 Barometer data
+    ms5611_print();
+    // KX134 Accelerometer data
+    kx134_print();
+  
+    // ICM-20948 IMU data
+    Serial.print(F("  ICM-20948: "));
+    ICM_20948_print();
+  }
   
   // STORAGE STATUS - More compact representation
   Serial.println(F("STORAGE:"));
@@ -262,6 +297,13 @@ void printStatusSummary() {
   Serial.print(F(" | ExtFlash:"));
   Serial.println(flashAvailable ? F("OK") : F("--"));
   
+  // Debug status
+  Serial.println(F("DEBUG:"));
+  Serial.print(F("  Sensor:"));
+  Serial.print(enableSensorDebug ? F("ON") : F("OFF"));
+  Serial.print(F(" | Quaternion:"));
+  Serial.println(enableQuaternionDebug ? F("ON") : F("OFF"));
+  
   Serial.println(F("==================================="));
   Serial.println(F("Commands: help, dump, stats, imu, detail, calibrate"));
 }
@@ -269,14 +311,25 @@ void printStatusSummary() {
 // Updated help message with more compact formatting
 void printHelpMessage() {
   Serial.println(F("\n--- AVAILABLE COMMANDS ---"));
-  Serial.println(F("dump   - Dump external flash data"));
-  Serial.println(F("erase  - Erase all external flash data"));
-  Serial.println(F("list   - List all log files"));
-  Serial.println(F("stats  - Show storage statistics"));
-  Serial.println(F("detail - Toggle detailed display"));
-  Serial.println(F("imu    - Show detailed IMU data"));
-  Serial.println(F("calibrate - Perform barometric calibration with GPS"));
-  Serial.println(F("help   - Show this help message"));
+  Serial.println(F("dump     - Dump external flash data"));
+  Serial.println(F("erase    - Erase all external flash data"));
+  Serial.println(F("list     - List all log files"));
+  Serial.println(F("stats    - Show storage statistics"));
+  Serial.println(F("detail   - Toggle detailed display"));
+  Serial.println(F("imu      - Show detailed IMU data"));
+  Serial.println(F("calibrate- Perform barometric calibration with GPS"));
+  
+  // Show current status of debug flags
+  Serial.print(F("sensor   - Toggle sensor debug (currently "));
+  Serial.print(enableSensorDebug ? F("ON") : F("OFF"));
+  Serial.println(F(")"));
+  
+  Serial.print(F("quat     - Toggle quaternion debug (currently "));
+  Serial.print(enableQuaternionDebug ? F("ON") : F("OFF"));
+  Serial.println(F(")"));
+  
+  Serial.println(F("status   - Show system status"));
+  Serial.println(F("help     - Show this help message"));
 }
 
 // Updated storage stats with more concise output
@@ -325,8 +378,49 @@ void handleCommand(const String& command) {
         Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
         Serial.print("Accelerometer: ");
         Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
+        Serial.print("Sensor Debug: ");
+        Serial.println(enableSensorDebug ? "Enabled" : "Disabled");
+        Serial.print("Quaternion Debug: ");
+        Serial.println(enableQuaternionDebug ? "Enabled" : "Disabled");
+    } else if (command == "sensor") {
+        enableSensorDebug = !enableSensorDebug;
+        Serial.print(F("Sensor debug output: "));
+        Serial.println(enableSensorDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "quat") {
+        enableQuaternionDebug = !enableQuaternionDebug;
+        Serial.print(F("Quaternion debug output: "));
+        Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "calibrate") {
+      // Manual calibration command
+      if (!baroCalibrated) {
+        Serial.println(F("Starting barometric calibration with GPS..."));
+        Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
+        
+        // Change LED to purple to indicate calibration in progress
+        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
+        pixels.show();
+        
+        if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
+          Serial.println(F("Barometric calibration successful!"));
+          baroCalibrated = true;
+          // Change LED to green to indicate success
+          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
+          pixels.show();
+          delay(1000);
+        } else {
+          Serial.println(F("Barometric calibration timed out or failed."));
+          // Change LED to red to indicate failure
+          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
+          pixels.show();
+          delay(1000);
+        }
+      } else {
+        Serial.println(F("Barometric calibration has already been performed."));
+      }
+    } else if (command == "help") {
+      // Show help message
+      printHelpMessage();
     }
-    // ... rest of command handling ...
 }
 
 void setup() {
@@ -521,18 +615,14 @@ void loop() {
     } else if (command == "help") {
       // Show help message
       printHelpMessage();
-    } else if (command == "status") {
-        Serial.println("System Status:");
-        Serial.print("SD Card: ");
-        Serial.println(sdCardAvailable ? "Available" : "Not Available");
-        Serial.print("External Flash: ");
-        Serial.println(flashAvailable ? "Available" : "Not Available");
-        Serial.print("GPS: ");
-        Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
-        Serial.print("Barometer: ");
-        Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
-        Serial.print("Accelerometer: ");
-        Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
+    } else if (command == "sensor") {
+        enableSensorDebug = !enableSensorDebug;
+        Serial.print(F("Sensor debug output: "));
+        Serial.println(enableSensorDebug ? F("ENABLED") : F("DISABLED"));
+    } else if (command == "quat") {
+        enableQuaternionDebug = !enableQuaternionDebug;
+        Serial.print(F("Quaternion debug output: "));
+        Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
     }
   }
   

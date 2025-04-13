@@ -42,6 +42,17 @@
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.15
 
+// Define the board type if not defined by platformio.ini
+#ifndef BOARD_TEENSY40
+#ifndef BOARD_TEENSY41
+#if defined(__IMXRT1062__) && defined(ARDUINO_TEENSY41)
+#define BOARD_TEENSY41
+#elif defined(__IMXRT1062__) && defined(ARDUINO_TEENSY40)
+#define BOARD_TEENSY40
+#endif
+#endif
+#endif
+
 // Now include the GPS and sensor functions
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
@@ -50,6 +61,7 @@
 #include "data_structures.h"  // Include our data structures
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
+#include "sensor_fusion.h" // Include sensor fusion header
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -63,6 +75,9 @@ extern SFE_UBLOX_GNSS myGNSS;  // GPS object
 extern float pressure;
 extern float temperature;
 extern float kx134_accel[3];
+
+// Euler angles for orientation
+float roll = 0.0f, pitch = 0.0f, yaw = 0.0f;  // Current attitude in radians
 
 // Define sensor objects
 SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
@@ -90,6 +105,11 @@ struct LogDataStruct {
   float icm_accel[3];    // 12 bytes (x, y, z)
   float icm_gyro[3];     // 12 bytes (x, y, z)
   float icm_mag[3];      // 12 bytes (x, y, z)
+  float icm_temp;        // 4 bytes - Temperature from ICM sensor
+  float icm_q0;          // 4 bytes - Quaternion w component
+  float icm_q1;          // 4 bytes - Quaternion x component
+  float icm_q2;          // 4 bytes - Quaternion y component
+  float icm_q3;          // 4 bytes - Quaternion z component
 };
 
 // Storage configuration
@@ -98,8 +118,11 @@ struct LogDataStruct {
 
 // Storage variables
 SdFat SD;
-FsVolume volume;
 bool sdCardAvailable = false;
+bool sdCardPresent = false;   // Physical presence of SD card
+bool sdCardMounted = false;   // Whether SD card is mounted
+bool loggingEnabled = false;  // Whether logging is enabled
+uint64_t availableSpace = 0;  // Available space on SD card in bytes
 bool flashAvailable = false;
 FsFile root;
 FsFile entry;
@@ -123,80 +146,151 @@ char logFileName[32] = ""; // To store the current log file name
 #define GPS_CHECK_INTERVAL 10000    // Check GPS connection every 10 seconds
 #define STORAGE_CHECK_INTERVAL 30000 // Check storage space every 30 seconds
 
-// Define global debug control variables (near the top with other global declarations)
-bool enableSensorDebug = true;   // Enable sensor data debug output by default
-bool enableQuaternionDebug = true;  // Enable quaternion debug output by default
-bool enableGPSDebug = true;      // Enable GPS data debug output by default
-bool enableStatusSummary = true; // Enable periodic status summary by default
+// Debug control variables
+bool enableDetailedOutput = false;
+bool enableSystemDebug = false;      // For system messages
+// enableSensorDebug is declared as volatile below
+// enableQuaternionDebug is declared as volatile below
+bool enableIMUDebug = false;         // For IMU data
+// enableGPSDebug is declared as volatile below
+bool enableBaroDebug = false;        // For barometer data
+bool enableStorageDebug = false;     // For SD card and storage operations
+bool enableSensorFusionDebug = false; // For sensor fusion data
+bool enableEulerDebug = false;       // For Euler angles
+bool enableStatusSummary = false;    // Flag to control status summary output
+bool enableFusionDebug = false;      // Legacy flag for sensor fusion debug (using enableSensorFusionDebug instead)
+bool enableICMRawDebug = false;     // Flag to control ICM raw data debug output (OFF by default)
+bool displayMode = false;           // Toggle for compact vs detailed display
 
+// Debug control
+volatile bool detailedOutput = false;   // Add detailed data to be printed to console
+volatile bool enableSensorDebug = true; // Enable detailed sensor-related debug output
+volatile bool enableQuaternionDebug = true; // Enable quaternion debug output
+volatile bool enableGPSDebug = false;   // Disable GPS library debug output completely
+
+// Function to check available storage space
 void checkStorageSpace() {
-    if (sdCardAvailable) {
-        uint64_t freeSpace = SD.vol()->freeClusterCount() * SD.vol()->bytesPerCluster();
-        if (freeSpace < SD_CARD_MIN_FREE_SPACE) {
-            Serial.println("WARNING: SD card space low!");
-        }
+  if (sdCardAvailable && SD.vol()) {
+    uint64_t freeSpace = SD.vol()->freeClusterCount() * SD.vol()->bytesPerCluster();
+    availableSpace = freeSpace; // Update global variable
+    
+    if (freeSpace < SD_CARD_MIN_FREE_SPACE) {
+      Serial.println(F("WARNING: SD card space low!"));
+      Serial.print(F("Available space: "));
+      Serial.print(freeSpace / (1024ULL * 1024ULL));
+      Serial.println(F(" MB"));
     }
+  }
 }
 
 // Function to create a new log file with timestamp in name
 bool createNewLogFile() {
-  // Format the filename with date/time if GPS is available
-  if (myGNSS.getFixType() != 0) {
-    FileDateString = String(myGNSS.getYear()) + 
-                    String(myGNSS.getMonth()) + 
-                    String(myGNSS.getDay()) + "_" +
-                    String(myGNSS.getHour()) + 
-                    String(myGNSS.getMinute()) + 
-                    String(myGNSS.getSecond());
-  } else {
-    // If no GPS, use a counter
-    static uint32_t fileCounter = 0;
-    FileDateString = "LOG_" + String(fileCounter++);
+  // Make sure the SD card is available
+  if (!sdCardAvailable) {
+    Serial.println(F("SD card not available, cannot create log file"));
+      return false;
+    }
+    
+  // Close any previously open log file
+  if (LogDataFile) {
+    LogDataFile.flush();
+    LogDataFile.close();
   }
-
-  // Create the full filename
-  String fileName = FileDateString + ".csv";
   
-  // Try to open the file
-  if (!LogDataFile.open(fileName.c_str(), O_RDWR | O_CREAT | O_AT_END)) {
-    Serial.println("Failed to create log file: " + fileName);
+  // Create a unique filename based on timestamp
+  char fileName[64];
+  
+  // If GPS has fix, use date/time for filename
+  if (myGNSS.getFixType() > 0) {
+    sprintf(fileName, "DATA_%04d%02d%02d_%02d%02d%02d.csv", 
+      myGNSS.getYear(), myGNSS.getMonth(), myGNSS.getDay(),
+      myGNSS.getHour(), myGNSS.getMinute(), myGNSS.getSecond());
+  } else {
+    // No GPS fix, use millis()
+    sprintf(fileName, "LOG_%lu.csv", millis());
+  }
+  
+  Serial.print(F("Creating log file: "));
+  Serial.println(fileName);
+  
+  // Open the file
+  if (!LogDataFile.open(fileName, O_RDWR | O_CREAT | O_EXCL)) {
+    Serial.println(F("Failed to create log file"));
     return false;
   }
-
-  // Write the CSV header
-  LogDataFile.println("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
-                     "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
-                     "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
-                     "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
-                     "ICM_MagX,ICM_MagY,ICM_MagZ");
-
-  // Flush the header to ensure it's written
-  LogDataFile.sync();
   
-  Serial.println("Created new log file: " + fileName);
+  // Write CSV header
+  LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
+                       "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
+                       "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
+                       "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
+                       "ICM_MagX,ICM_MagY,ICM_MagZ,"
+                       "ICM_Temp,ICM_Q0,ICM_Q1,ICM_Q2,ICM_Q3"));
+  
+  // Flush to ensure header is written
+  LogDataFile.flush();
+  
+  // Copy filename to global variable
+  strcpy(logFileName, fileName);
+  
+  loggingEnabled = true;
+  Serial.println(F("Log file created successfully"));
+  
   return true;
+}
+
+// Function to safely close all files
+void closeAllFiles() {
+  if (LogDataFile) {
+    Serial.println(F("Closing log file"));
+    LogDataFile.flush(); // Ensure data is written
+    LogDataFile.close();
+    
+    // Reset file object
+    LogDataFile = FsFile();
+  }
+}
+
+// Function to handle system shutdown
+void prepareForShutdown() {
+  Serial.println(F("Preparing for shutdown..."));
+  
+  // Close all open files
+  closeAllFiles();
+  
+  // Set LED to indicate shutdown
+  pixels.setPixelColor(0, pixels.Color(0, 0, 50)); // Blue during shutdown
+  pixels.show();
+  
+  // Final beep
+  tone(BUZZER_PIN, 1000); delay(100); noTone(BUZZER_PIN);
+  
+  Serial.println(F("System shutdown complete"));
 }
 
 void WriteLogData(bool forceLog) {
   static unsigned long lastLogTime = 0;
   
-  // Only log at specified intervals or when forced (after sensor reading)
-  if (!forceLog && millis() - lastLogTime < 200) { // Changed from FLASH_LOG_INTERVAL to fixed 200ms
+  // Only log at specified intervals or when forced
+  if (!forceLog && millis() - lastLogTime < 200) {
     return;
   }
   lastLogTime = millis();
   
-  // Format the data string using global GPS variables
+  // Update current time
+  currentTime = millis();
+  
+  // Format data string
   LogDataString = String(currentTime) + "," +
                   String(GPS_fixType) + "," +
                   String(SIV) + "," +
                   String(GPS_latitude / 10000000.0, 6) + "," +
                   String(GPS_longitude / 10000000.0, 6) + "," +
                   String(GPS_altitude / 1000.0, 2) + "," +
-                  String(GPS_altitudeMSL, 2) + "," +
-                  String(GPS_speed, 2) + "," +
-                  String(GPS_heading, 2) + "," +
-                  String(pDOP / 100.0, 2) + "," +  // Convert from int to float
+                  String(GPS_altitudeMSL / 1000.0, 2) + "," + 
+                  String(GPS_speed / 1000.0, 2) + "," +       
+                  String(GPS_heading / 100000.0, 2) + "," +   
+                  String(pDOP / 100.0, 2) + "," +             
                   String(RTK) + "," +
                   String(pressure, 2) + "," +
                   String(temperature, 2) + "," +
@@ -212,20 +306,37 @@ void WriteLogData(bool forceLog) {
                   String(icm_mag[0], 4) + "," +
                   String(icm_mag[1], 4) + "," +
                   String(icm_mag[2], 4) + "," +
-                  String(icm_temp, 2);
+                  String(icm_temp, 2) + "," +
+                  String(icm_q0, 6) + "," +
+                  String(icm_q1, 6) + "," +
+                  String(icm_q2, 6) + "," +
+                  String(icm_q3, 6);
 
-  // Write to SD card if available
-  if (LogDataFile) {
-    if (LogDataFile.println(LogDataString)) {
-      // Use periodic sync instead of flush for better performance
-      static uint8_t syncCounter = 0;
-      if (++syncCounter >= 10) { // Sync every 10 writes
-        LogDataFile.sync();
-        syncCounter = 0;
-      }
-    } else {
-      Serial.println("Failed to write to log file");
+  // If SD card not available, just return
+  if (!sdCardAvailable) {
+    return;
+  }
+
+  // Write to SD card if file is open
+  if (!LogDataFile || !LogDataFile.isOpen()) {
+    // Try to create new log file if none exists
+    if (sdCardAvailable) {
+      createNewLogFile();
     }
+    return;
+  }
+  
+  // Write data to file
+  if (!LogDataFile.println(LogDataString)) {
+    Serial.println(F("Failed to write to log file"));
+    return;
+  }
+  
+  // Flush every 10 writes to reduce card wear while ensuring data is written
+  static uint8_t flushCounter = 0;
+  if (++flushCounter >= 10) {
+    LogDataFile.flush();
+    flushCounter = 0;
   }
 }
 
@@ -238,112 +349,153 @@ void formatNumber(float input, byte columns, byte places)
 
 // Updated printStatusSummary function without VT100 codes
 void printStatusSummary() {
-  Serial.println(F("\n=== STATUS SUMMARY ==="));
+  // Print status summary regardless of system debug flag, as it's controlled by enableStatusSummary 
   
   // Current time
-  Serial.print(F("Time: "));
-  Serial.print(millis() / 1000);
-  Serial.println(F("s"));
+  unsigned long currentMillis = millis();
+  unsigned long seconds = currentMillis / 1000;
+  unsigned long minutes = seconds / 60;
+  unsigned long hours = minutes / 60;
+  Serial.println("\n=== STATUS SUMMARY ===");
+  Serial.printf("Time: %02d:%02d:%02d\n", hours % 24, minutes % 60, seconds % 60);
   
-  // GPS data - only show if GPS debugging is enabled
+  // GPS section
   if (enableGPSDebug) {
-    Serial.print(F("GPS: "));
+    Serial.println("\n--- GPS Status ---");
     if (GPS_fixType > 0) {
-      Serial.print(GPS_fixType);
-      Serial.print(F("D fix, "));
-      Serial.print(SIV);
-      Serial.println(F(" sats"));
-      
-      // Only print position if we have a fix
-      Serial.print(F("Pos: "));
-      Serial.print(GPS_latitude / 10000000.0, 6);  // Convert raw integer to decimal degrees
-      Serial.print(F(", "));
-      Serial.print(GPS_longitude / 10000000.0, 6); // Convert raw integer to decimal degrees
-      Serial.print(F(" Alt: "));
-      Serial.print(GPS_altitude / 1000.0, 2);  // Convert mm to meters with 2 decimal places
-      Serial.println(F("m"));
+      Serial.printf("Position: %.6f, %.6f, Alt: %.2fm, Sat: %d, Fix: %d\n", 
+                  GPS_latitude / 10000000.0, GPS_longitude / 10000000.0, GPS_altitude / 1000.0, SIV, GPS_fixType);
+      Serial.printf("Speed: %.2f km/h, Course: %.2f°\n", GPS_speed / 1000.0 * 3.6, GPS_heading / 100000.0);
     } else {
-      Serial.println(F("No fix"));
+      Serial.println("No GPS fix");
     }
   }
   
-  // Barometer data
-  if (enableSensorDebug) {
-    Serial.print(F("Baro: "));
-    Serial.print(pressure, 1);
-    Serial.print(F("Pa, "));
-    Serial.print(temperature, 1);
-    Serial.println(F("°C"));
+  // IMU section
+  if (enableIMUDebug) {
+    Serial.println("\n--- IMU Status ---");
+    Serial.printf("Temp: %.1f°C, Motion: %s\n", 
+                icm_temp, isStationary ? "STATIONARY" : "MOVING");
+  }
   
-    // Barometer altitude
+  // Quaternion section
+  if (enableQuaternionDebug) {
+    Serial.println("\n--- Quaternion ---");
+    Serial.printf("Q: [%.3f, %.3f, %.3f, %.3f]\n", icm_q0, icm_q1, icm_q2, icm_q3);
+  }
+  
+  // Euler angles section
+  if (enableEulerDebug) {
+    Serial.println("\n--- Euler Angles ---");
+    Serial.printf("Roll: %.2f°, Pitch: %.2f°, Yaw: %.2f°\n", 
+                roll, pitch, yaw);
+  }
+  
+  // Barometer section
+  if (enableBaroDebug) {
+    Serial.println("\n--- Barometer ---");
     if (baroCalibrated) {
-      Serial.print(F("Alt: "));
-      // Use pressure directly instead of calling undefined function
-      float baroAltitude = 44330.0 * (1.0 - pow(pressure / 101325.0, 0.1903));
-      Serial.print(baroAltitude, 1);
-      Serial.println(F("m"));
+      // The pressure value is in hPa but the altitude formula expects Pa
+      // So we need to multiply by 100 to convert hPa to Pa
+      float pressurePa = pressure * 100.0; // Convert from hPa to Pa
+      float raw_altitude = 44330.0 * (1.0 - pow(pressurePa / 101325.0, 0.1903));
+      float calibrated_altitude = raw_altitude + baro_altitude_offset;
+      
+      Serial.printf("Pressure: %.2f hPa, Temp: %.2f°C\n", pressure, temperature);
+      Serial.printf("Altitude: Raw=%.2fm, Calibrated=%.2fm\n", raw_altitude, calibrated_altitude);
+    } else {
+      Serial.println("Not calibrated");
     }
-  
-    // MS5611 Barometer data
-    ms5611_print();
-    // KX134 Accelerometer data
-    kx134_print();
-  
-    // ICM-20948 IMU data
-    Serial.print(F("  ICM-20948: "));
-    ICM_20948_print();
   }
   
-  // STORAGE STATUS - More compact representation
-  Serial.println(F("STORAGE:"));
-  Serial.print(F("  SD:"));
-  Serial.print(sdCardAvailable ? F("OK") : F("--"));
-  Serial.print(F(" | ExtFlash:"));
-  Serial.println(flashAvailable ? F("OK") : F("--"));
+  // Storage section
+  if (enableStorageDebug) {
+    Serial.println("\n--- Storage ---");
+    Serial.printf("SD Card: %s, Space: %s\n", 
+                sdCardPresent ? "Present" : "Not found", 
+                sdCardMounted ? String(availableSpace / 1024) + "KB free" : "Not mounted");
+    Serial.printf("Logging: %s\n", loggingEnabled ? "Enabled" : "Disabled");
+  }
   
   // Debug status
-  Serial.println(F("DEBUG:"));
-  Serial.print(F("  Sensor:"));
-  Serial.print(enableSensorDebug ? F("ON") : F("OFF"));
-  Serial.print(F(" | Quaternion:"));
-  Serial.print(enableQuaternionDebug ? F("ON") : F("OFF"));
-  Serial.print(F(" | GPS:"));
-  Serial.println(enableGPSDebug ? F("ON") : F("OFF"));
-  
-  Serial.println(F("==================================="));
-  Serial.println(F("Commands: help, dump, stats, imu, detail, calibrate"));
+  Serial.println("\n--- Debug Status ---");
+  Serial.printf("System: %s, IMU: %s, GPS: %s, Baro: %s\n", 
+              enableSystemDebug ? "ON" : "OFF",
+              enableIMUDebug ? "ON" : "OFF",
+              enableGPSDebug ? "ON" : "OFF",
+              enableBaroDebug ? "ON" : "OFF");
+  Serial.printf("Storage: %s, Fusion: %s, Quat: %s, Euler: %s\n",
+              enableStorageDebug ? "ON" : "OFF",
+              enableSensorFusionDebug ? "ON" : "OFF",
+              enableQuaternionDebug ? "ON" : "OFF",
+              enableEulerDebug ? "ON" : "OFF");
+  Serial.printf("ICM Raw: %s\n",
+              enableICMRawDebug ? "ON" : "OFF");
+
+  Serial.println("=====================\n");
 }
 
 // Updated help message with more compact formatting
 void printHelpMessage() {
-  Serial.println(F("\n--- AVAILABLE COMMANDS ---"));
-  Serial.println(F("dump     - Dump external flash data"));
-  Serial.println(F("erase    - Erase all external flash data"));
-  Serial.println(F("list     - List all log files"));
-  Serial.println(F("stats    - Show storage statistics"));
-  Serial.println(F("detail   - Toggle detailed display"));
-  Serial.println(F("imu      - Show detailed IMU data"));
-  Serial.println(F("calibrate- Perform barometric calibration with GPS"));
+  Serial.println(F("=== TRIPLET FLIGHT COMMAND MENU ==="));
   
-  // Show current status of debug flags
-  Serial.print(F("sensor   - Toggle sensor debug (currently "));
-  Serial.print(enableSensorDebug ? F("ON") : F("OFF"));
-  Serial.println(F(")"));
+  // Debug flags status
+  Serial.println(F("\nDebug Flags Status:"));
+  Serial.print(F("  System Debug: "));
+  Serial.println(enableSystemDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  IMU Debug: "));
+  Serial.println(enableIMUDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  GPS Debug: "));
+  Serial.println(enableGPSDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  Barometer Debug: "));
+  Serial.println(enableBaroDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  Storage Debug: "));
+  Serial.println(enableStorageDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  Sensor Fusion Debug: "));
+  Serial.println(enableSensorFusionDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  Quaternion Debug: "));
+  Serial.println(enableQuaternionDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  Euler Debug: "));
+  Serial.println(enableEulerDebug ? F("ON") : F("OFF"));
+  Serial.print(F("  ICM Raw Debug: "));
+  Serial.println(enableICMRawDebug ? F("ON") : F("OFF"));
   
-  Serial.print(F("quat     - Toggle quaternion debug (currently "));
-  Serial.print(enableQuaternionDebug ? F("ON") : F("OFF"));
-  Serial.println(F(")"));
+  // Debug commands (numeric)
+  Serial.println(F("\nDebug Commands (Toggle with numbers):"));
+  Serial.println(F("  1 - Toggle system debug"));
+  Serial.println(F("  2 - Toggle IMU debug"));
+  Serial.println(F("  3 - Toggle GPS debug"));
+  Serial.println(F("  4 - Toggle barometer debug"));
+  Serial.println(F("  5 - Toggle storage debug"));
+  Serial.println(F("  6 - Toggle sensor fusion debug"));
+  Serial.println(F("  7 - Toggle quaternion debug"));
+  Serial.println(F("  8 - Toggle Euler angles debug"));
+  Serial.println(F("  9 - Toggle ICM raw debug"));
   
-  Serial.print(F("gps      - Toggle GPS debug (currently "));
-  Serial.print(enableGPSDebug ? F("ON") : F("OFF"));
-  Serial.println(F(")"));
+  // Other commands (alphabetic)
+  Serial.println(F("\nOther Commands (Use letters):"));
+  Serial.println(F("  a - Show this help message"));
+  Serial.println(F("  b - Show system status"));
+  Serial.println(F("  c - Dump all data"));
+  Serial.println(F("  d - Erase all stored data on flash"));
+  Serial.println(F("  e - List available log files"));  
+  Serial.println(F("  f - Show data statistics"));
+  Serial.println(F("  g - Toggle detailed display"));
+  Serial.println(F("  h - Calibrate barometer"));
+  Serial.println(F("  i - Display IMU data"));
+  Serial.println(F("  j - Toggle status summary"));
+  Serial.println(F("  k - Toggle sensor fusion debug"));
   
-  Serial.print(F("summary  - Toggle status summary (currently "));
-  Serial.print(enableStatusSummary ? F("ON") : F("OFF"));
-  Serial.println(F(")"));
+  // Utility commands
+  Serial.println(F("\nUtility Commands:"));
+  Serial.println(F("  debug_all_off - Disable all debugging"));
   
-  Serial.println(F("status   - Show system status"));
-  Serial.println(F("help     - Show this help message"));
+  Serial.println(F("\nLegacy commands still supported"));
+  Serial.println(F("  sd - Toggle sensor debug"));
+  Serial.println(F("  qd - Toggle quaternion debug"));
+  Serial.println(F("  fd - Toggle sensor fusion debug"));
+  Serial.println(F("  ed - Toggle Euler angles debug"));
+  Serial.println(F("  rd - Toggle ICM raw debug"));
 }
 
 // Updated storage stats with more concise output
@@ -361,8 +513,8 @@ void printStorageStatistics() {
       usedSpace += entry.size();
       entry.close();
     }
-    root.close();
-    
+  root.close();
+  
     Serial.print(usedSpace / 1024);
     Serial.print(F(" KB used"));
     
@@ -370,8 +522,8 @@ void printStorageStatistics() {
       Serial.print(F(" | Log: "));
       Serial.println(logFileName);
     } else {
-      Serial.println();
-    }
+    Serial.println();
+  }
   } else {
     Serial.println(F("Not available"));
   }
@@ -379,7 +531,161 @@ void printStorageStatistics() {
   Serial.println(F("-----------------------------"));
 }
 
-void handleCommand(const String& command) {
+void processCommand(String command) {
+    // Single character numeric commands for debug toggles
+    if (command.length() == 1) {
+        char cmd = command.charAt(0);
+        
+        // Numeric commands (1-9) for debug toggles
+        if (cmd >= '1' && cmd <= '9') {
+            switch (cmd) {
+                case '1': // System debug
+                    enableSystemDebug = !enableSystemDebug;
+                    Serial.print(F("System debug: "));
+                    Serial.println(enableSystemDebug ? F("ON") : F("OFF"));
+                    break;
+                case '2': // IMU debug
+                    enableIMUDebug = !enableIMUDebug;
+                    Serial.print(F("IMU debug: "));
+                    Serial.println(enableIMUDebug ? F("ON") : F("OFF"));
+                    break;
+                case '3': // GPS debug
+                    enableGPSDebug = !enableGPSDebug;
+                    Serial.print(F("GPS debug: "));
+                    Serial.println(enableGPSDebug ? F("ON") : F("OFF"));
+                    
+                    // Apply debug setting using our consolidated function
+                    setGPSDebugging(enableGPSDebug);
+                    break;
+                case '4': // Barometer debug
+                    enableBaroDebug = !enableBaroDebug;
+                    Serial.print(F("Barometer debug: "));
+                    Serial.println(enableBaroDebug ? F("ON") : F("OFF"));
+                    break;
+                case '5': // Storage debug
+                    enableStorageDebug = !enableStorageDebug;
+                    Serial.print(F("Storage debug: "));
+                    Serial.println(enableStorageDebug ? F("ON") : F("OFF"));
+                    break;
+                case '6': // Sensor fusion debug
+                    enableSensorFusionDebug = !enableSensorFusionDebug;
+                    Serial.print(F("Sensor fusion debug: "));
+                    Serial.println(enableSensorFusionDebug ? F("ON") : F("OFF"));
+                    break;
+                case '7': // Quaternion debug
+                    enableQuaternionDebug = !enableQuaternionDebug;
+                    Serial.print(F("Quaternion debug: "));
+                    Serial.println(enableQuaternionDebug ? F("ON") : F("OFF"));
+                    break;
+                case '8': // Euler angles debug
+                    enableEulerDebug = !enableEulerDebug;
+                    Serial.print(F("Euler angles debug: "));
+                    Serial.println(enableEulerDebug ? F("ON") : F("OFF"));
+                    break;
+                case '9': // ICM raw debug
+                    enableICMRawDebug = !enableICMRawDebug;
+                    Serial.print(F("ICM raw debug: "));
+                    Serial.println(enableICMRawDebug ? F("ON") : F("OFF"));
+      break;
+    }
+            return;
+        }
+        
+        // Alphabetic commands (a-k) for other functions
+        if (cmd >= 'a' && cmd <= 'k') {
+            switch (cmd) {
+                case 'a': // Help
+                    printHelpMessage();
+                    break;
+                case 'b': // Status
+                    Serial.println("System Status:");
+                    Serial.print("SD Card: ");
+                    Serial.println(sdCardAvailable ? "Available" : "Not Available");
+                    Serial.print("External Flash: ");
+                    Serial.println(flashAvailable ? "Available" : "Not Available");
+                    Serial.print("GPS: ");
+                    Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
+                    Serial.print("Barometer: ");
+                    Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
+                    Serial.print("Accelerometer: ");
+                    Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
+                    break;
+                case 'c': // Dump
+  if (flashAvailable) {
+                        Serial.println(F("Dump command not supported for external flash."));
+    } else {
+                        Serial.println(F("External flash not available."));
+  }
+                    break;
+                case 'd': // Erase flash
+                    if (flashAvailable) {
+                        Serial.println(F("Erase command not supported for external flash."));
+  } else {
+                        Serial.println(F("External flash not available."));
+                    }
+                    break;
+                case 'e': // List logs
+                    if (flashAvailable) {
+                        Serial.println(F("List command not supported for external flash."));
+                    } else {
+                        Serial.println(F("External flash not available."));
+                    }
+                    break;
+                case 'f': // Stats
+                    printStorageStatistics();
+                    break;
+                case 'g': // Detailed display
+                    displayMode = !displayMode;
+                    Serial.print(F("Detailed display mode: "));
+                    Serial.println(displayMode ? F("ON") : F("OFF"));
+                    break;
+                case 'h': // Calibrate
+                    if (!baroCalibrated) {
+                        Serial.println(F("Starting barometric calibration with GPS..."));
+                        Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
+                        
+                        // Change LED to purple to indicate calibration in progress
+                        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
+                        pixels.show();
+                        
+                        if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
+                            Serial.println(F("Barometric calibration successful!"));
+                            baroCalibrated = true;
+                            // Change LED to green to indicate success
+                            pixels.setPixelColor(0, pixels.Color(0, 50, 0));
+                            pixels.show();
+                            delay(1000);
+                        } else {
+                            Serial.println(F("Barometric calibration timed out or failed."));
+                            // Change LED to red to indicate failure
+                            pixels.setPixelColor(0, pixels.Color(50, 0, 0));
+                            pixels.show();
+                            delay(1000);
+                        }
+                    } else {
+                        Serial.println(F("Barometric calibration has already been performed."));
+                    }
+                    break;
+                case 'i': // IMU data
+                    ICM_20948_print();
+                    break;
+                case 'j': // Status summary
+                    enableStatusSummary = !enableStatusSummary;
+                    Serial.print(F("Status summary: "));
+                    Serial.println(enableStatusSummary ? F("ON") : F("OFF"));
+                    break;
+                case 'k': // Sensor fusion debug
+                    enableSensorFusionDebug = !enableSensorFusionDebug;
+                    enableFusionDebug = enableSensorFusionDebug; // Keep legacy flag in sync
+                    Serial.print(F("Sensor fusion debug: "));
+                    Serial.println(enableSensorFusionDebug ? F("ON") : F("OFF"));
+                    break;
+            }
+            return;
+        }
+    }
+    
+    // Legacy command handling for backward compatibility
     if (command == "status") {
         Serial.println("System Status:");
         Serial.print("SD Card: ");
@@ -400,18 +706,26 @@ void handleCommand(const String& command) {
         Serial.println(enableGPSDebug ? "Enabled" : "Disabled");
         Serial.print("Status Summary: ");
         Serial.println(enableStatusSummary ? "Enabled" : "Disabled");
-    } else if (command == "sensor") {
+    } else if (command == "sd") {
         enableSensorDebug = !enableSensorDebug;
-        Serial.print(F("Sensor debug output: "));
-        Serial.println(enableSensorDebug ? F("ENABLED") : F("DISABLED"));
-    } else if (command == "quat") {
+        Serial.print("Sensor debug output ");
+        Serial.println(enableSensorDebug ? "enabled" : "disabled");
+    } else if (command == "qd") {
         enableQuaternionDebug = !enableQuaternionDebug;
-        Serial.print(F("Quaternion debug output: "));
-        Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
-    } else if (command == "gps") {
-        enableGPSDebug = !enableGPSDebug;
-        Serial.print(F("GPS debug output: "));
-        Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
+        Serial.print("Quaternion debug output ");
+        Serial.println(enableQuaternionDebug ? "enabled" : "disabled");
+    } else if (command == "fd") {
+        enableSensorFusionDebug = !enableSensorFusionDebug;
+        Serial.print("Fusion debug output ");
+        Serial.println(enableSensorFusionDebug ? "enabled" : "disabled");
+    } else if (command == "ed") {
+        enableEulerDebug = !enableEulerDebug;
+        Serial.print("Euler angles debug output ");
+        Serial.println(enableEulerDebug ? "enabled" : "disabled");
+    } else if (command == "rd") {
+        enableICMRawDebug = !enableICMRawDebug;
+        Serial.print("ICM raw debug output ");
+        Serial.println(enableICMRawDebug ? "enabled" : "disabled");
     } else if (command == "summary") {
         enableStatusSummary = !enableStatusSummary;
         Serial.print(F("Status summary: "));
@@ -446,6 +760,170 @@ void handleCommand(const String& command) {
     } else if (command == "help") {
       // Show help message
       printHelpMessage();
+    } else if (strstr(command.c_str(), "togf") != NULL) {
+      enableSensorFusionDebug = !enableSensorFusionDebug;
+      Serial.print(F("Sensor fusion debug turned "));
+      Serial.println(enableSensorFusionDebug ? F("ON") : F("OFF"));
+    } else if (strstr(command.c_str(), "toge") != NULL) {
+      enableEulerDebug = !enableEulerDebug;
+      Serial.print(F("Euler angles debug turned "));
+      Serial.println(enableEulerDebug ? F("ON") : F("OFF"));
+    }
+    
+    // Handle debug commands
+    else if (command.startsWith("debug_system")) {
+      if (command.indexOf("on") != -1) {
+        enableSystemDebug = true;
+        Serial.println(F("System debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableSystemDebug = false;
+        Serial.println(F("System debug disabled"));
+  } else {
+        // Toggle current state
+        enableSystemDebug = !enableSystemDebug;
+        Serial.print(F("System debug toggled to: "));
+        Serial.println(enableSystemDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_imu")) {
+      if (command.indexOf("on") != -1) {
+        enableIMUDebug = true;
+        Serial.println(F("IMU debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableIMUDebug = false;
+        Serial.println(F("IMU debug disabled"));
+      } else {
+        // Toggle current state
+        enableIMUDebug = !enableIMUDebug;
+        Serial.print(F("IMU debug toggled to: "));
+        Serial.println(enableIMUDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_gps")) {
+      if (command.indexOf("on") != -1) {
+        enableGPSDebug = true;
+        Serial.println(F("GPS debug enabled"));
+        // Apply the debug setting using our consolidated function
+        setGPSDebugging(true);
+      } else if (command.indexOf("off") != -1) {
+        enableGPSDebug = false;
+        Serial.println(F("GPS debug disabled"));
+        // Apply the debug setting using our consolidated function
+        setGPSDebugging(false);
+      } else {
+        // Toggle current state
+        enableGPSDebug = !enableGPSDebug;
+        Serial.print(F("GPS debug toggled to: "));
+        Serial.println(enableGPSDebug ? F("ON") : F("OFF"));
+        // Apply the debug setting using our consolidated function
+        setGPSDebugging(enableGPSDebug);
+      }
+    }
+    else if (command.startsWith("debug_baro")) {
+      if (command.indexOf("on") != -1) {
+        enableBaroDebug = true;
+        Serial.println(F("Barometer debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableBaroDebug = false;
+        Serial.println(F("Barometer debug disabled"));
+  } else {
+        // Toggle current state
+        enableBaroDebug = !enableBaroDebug;
+        Serial.print(F("Barometer debug toggled to: "));
+        Serial.println(enableBaroDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_storage")) {
+      if (command.indexOf("on") != -1) {
+        enableStorageDebug = true;
+        Serial.println(F("Storage debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableStorageDebug = false;
+        Serial.println(F("Storage debug disabled"));
+    } else {
+        // Toggle current state
+        enableStorageDebug = !enableStorageDebug;
+        Serial.print(F("Storage debug toggled to: "));
+        Serial.println(enableStorageDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_fusion")) {
+      if (command.indexOf("on") != -1) {
+        enableSensorFusionDebug = true;
+        Serial.println(F("Sensor fusion debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableSensorFusionDebug = false;
+        Serial.println(F("Sensor fusion debug disabled"));
+  } else {
+        // Toggle current state
+        enableSensorFusionDebug = !enableSensorFusionDebug;
+        Serial.print(F("Sensor fusion debug toggled to: "));
+        Serial.println(enableSensorFusionDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_quaternion")) {
+      if (command.indexOf("on") != -1) {
+        enableQuaternionDebug = true;
+        Serial.println(F("Quaternion debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableQuaternionDebug = false;
+        Serial.println(F("Quaternion debug disabled"));
+      } else {
+        // Toggle current state
+        enableQuaternionDebug = !enableQuaternionDebug;
+        Serial.print(F("Quaternion debug toggled to: "));
+        Serial.println(enableQuaternionDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_euler")) {
+      if (command.indexOf("on") != -1) {
+        enableEulerDebug = true;
+        Serial.println(F("Euler angles debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableEulerDebug = false;
+        Serial.println(F("Euler angles debug disabled"));
+      } else {
+        // Toggle current state
+        enableEulerDebug = !enableEulerDebug;
+        Serial.print(F("Euler angles debug toggled to: "));
+        Serial.println(enableEulerDebug ? F("ON") : F("OFF"));
+      }
+    }
+    else if (command.startsWith("debug_icm_raw")) {
+      if (command.indexOf("on") != -1) {
+        enableICMRawDebug = true;
+        Serial.println(F("ICM raw debug enabled"));
+      } else if (command.indexOf("off") != -1) {
+        enableICMRawDebug = false;
+        Serial.println(F("ICM raw debug disabled"));
+  } else {
+        // Toggle current state
+        enableICMRawDebug = !enableICMRawDebug;
+        Serial.print(F("ICM raw debug toggled to: "));
+        Serial.println(enableICMRawDebug ? F("ON") : F("OFF"));
+  }
+    }
+    else if (command == "debug_all_off") {
+      // Disable all debugging at once
+      enableDetailedOutput = false;
+      enableSystemDebug = false;
+      enableSensorDebug = false;
+      enableQuaternionDebug = false;
+      enableIMUDebug = false;
+      enableGPSDebug = false;
+      enableBaroDebug = false;
+      enableStorageDebug = false;
+      enableSensorFusionDebug = false;
+      enableEulerDebug = false;
+      enableStatusSummary = false;
+      enableFusionDebug = false;
+      enableICMRawDebug = false;
+      displayMode = false;
+      
+      // Make sure GPS module debugging is explicitly disabled using our consolidated function
+      setGPSDebugging(false);
+      
+      Serial.println(F("All debugging disabled"));
     }
 }
 
@@ -454,10 +932,27 @@ void setup() {
   Serial.begin(115200);
   delay(500); // Give the serial port time to initialize
   
+  // Important: Disable all debugging immediately at startup
+  enableDetailedOutput = false;
+  enableSystemDebug = false;
+  enableSensorDebug = false;
+  enableQuaternionDebug = false;
+  enableIMUDebug = false;
+  enableGPSDebug = false;
+  enableBaroDebug = false;
+  enableStorageDebug = false;
+  enableSensorFusionDebug = false;
+  enableEulerDebug = false;
+  enableStatusSummary = false;
+  enableFusionDebug = false;
+  enableICMRawDebug = false;
+  displayMode = false;
+  
   // Initialize NeoPixel first for visual feedback
   pixels.begin();
   pixels.clear();
-  pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red during startup
+  pixels.setPixelColor(0, pixels.Color(20, 0, 0)); // Red during startup
+  pixels.setPixelColor(1, pixels.Color(20, 0, 0)); // Red during startup
   pixels.show();
   
   // Startup Tone
@@ -466,7 +961,7 @@ void setup() {
   noTone(BUZZER_PIN);
   
   // Change LED to orange to indicate waiting for serial
-  pixels.setPixelColor(0, pixels.Color(50, 25, 0)); // Orange during serial init
+  pixels.setPixelColor(0, pixels.Color(25, 12, 0)); // Orange during serial init
   pixels.show();
   
   // Wait for serial connection with timeout
@@ -486,29 +981,28 @@ void setup() {
   pixels.show();
 
   // Setup SPI and I2C based on the selected board
-  #if defined(BOARD_STM32_THING_PLUS)
-    // STM32 specific SPI setup
+  #if defined(BOARD_TEENSY41)
+    // Teensy 4.1 with SDIO doesn't need explicit SPI setup for SD card
+    
+    // For other SPI devices (if any)
+    SPI.begin();
+    
+    // Standard I2C setup
+  Wire.begin();
+  Wire.setClock(400000);
+  
+    Serial.println("Teensy 4.1 SPI and I2C initialized (SDIO mode for SD card)");
+  #else
+    // Teensy 4.0 and other boards with SPI SD card
+    SPI.setCS(SD_CS_PIN);
     SPI.setMOSI(SD_MOSI_PIN);
     SPI.setMISO(SD_MISO_PIN);
     SPI.setSCK(SD_SCK_PIN);
     SPI.begin();
     
-    // STM32 specific I2C setup
-    Wire.setSDA(I2C_SDA_PIN);
-    Wire.setSCL(I2C_SCL_PIN);
-    Wire.begin();
-    Wire.setClock(400000);
-  
-    Serial.println("STM32 SPI and I2C initialized");
-  #else
-    // Teensy SPI setup
-    SPI.setCS(SD_CS_PIN);
-    SPI.setMOSI(SD_MOSI_PIN);
-    SPI.setMISO(SD_MISO_PIN);
-    SPI.setSCK(SD_SCK_PIN);
-    
     // Standard I2C setup
     Wire.begin();
+    Wire.setClock(400000);
     
     Serial.println("Teensy SPI and I2C initialized");
   #endif
@@ -527,21 +1021,41 @@ void setup() {
   Serial.println(F("ICM-20948 initialized"));
   
   ms5611_init();
+  
+  // Initialize GPS module - simplified approach
+  Serial.println(F("Initializing GPS module..."));
+  
+  // Set debug flag explicitly to false before initialization
+  enableGPSDebug = false;
+  
+  // Use our new consolidated function to control GPS debugging
   gps_init();
+  
+  Serial.println(F("GPS module initialized"));
+  
+  // Initialize sensor fusion after all sensors are set up
+  initSensorFusion();
+  
   // Initialize storage first
   Serial.println(F("Initializing storage..."));
   
   // Initialize SD card first since we may need it for flash data transfer
-  initSDCard();
+  sdCardAvailable = initSDCard();
   Serial.print(F("SD Card: "));
   Serial.println(sdCardAvailable ? F("Available") : F("Not available"));
     
-  if (sdCardAvailable || flashAvailable) {
+  if (sdCardAvailable) {
+    // Only try to create a log file if SD card is available
     Serial.println(F("Creating new log file..."));
-    createNewLogFile();
+    if (createNewLogFile()) {
     Serial.println(F("Data logging ready."));
+    } else {
+      Serial.println(F("Failed to create log file, logging will be disabled."));
+      loggingEnabled = false;
+    }
   } else {
     Serial.println(F("WARNING: No storage available for data logging!"));
+    loggingEnabled = false;
   }
   
   Serial.print(" GPS Date/Time: ");
@@ -572,92 +1086,14 @@ void loop() {
   static unsigned long lastStorageCheckTime = 0;
   static unsigned long lastFlushTime = 0;  // Track when we last flushed data
   static bool sensorsUpdated = false;
-  static bool displayMode = false; // Toggle for compact vs detailed display
   
   // Check for serial commands
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
     
-    if (command == "dump") {
-      // Dump internal flash data on demand
-      if (flashAvailable) {
-        Serial.println(F("Dump command not supported for external flash."));
-      } else {
-        Serial.println(F("External flash not available."));
-      }
-    } else if (command == "erase") {
-      // Erase internal flash data
-      if (flashAvailable) {
-        Serial.println(F("Erase command not supported for external flash."));
-      } else {
-        Serial.println(F("External flash not available."));
-      }
-    } else if (command == "list") {
-      // List log files
-      if (flashAvailable) {
-        Serial.println(F("List command not supported for external flash."));
-      } else {
-        Serial.println(F("External flash not available."));
-      }
-    } else if (command == "stats") {
-      // Show detailed storage statistics
-      printStorageStatistics();
-    } else if (command == "detail" || command == "detailed") {
-      // Toggle detailed display mode
-      displayMode = !displayMode;
-      Serial.print(F("Detailed display mode: "));
-      Serial.println(displayMode ? F("ON") : F("OFF"));
-    } else if (command == "imu") {
-      // Show detailed IMU data
-      ICM_20948_print();
-    } else if (command == "calibrate") {
-      // Manual calibration command
-      if (!baroCalibrated) {
-        Serial.println(F("Starting barometric calibration with GPS..."));
-        Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
-        
-        // Change LED to purple to indicate calibration in progress
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-        pixels.show();
-        
-        if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
-          Serial.println(F("Barometric calibration successful!"));
-          baroCalibrated = true;
-          // Change LED to green to indicate success
-          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-          pixels.show();
-          delay(1000);
-        } else {
-          Serial.println(F("Barometric calibration timed out or failed."));
-          // Change LED to red to indicate failure
-          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-          pixels.show();
-          delay(1000);
-        }
-      } else {
-        Serial.println(F("Barometric calibration has already been performed."));
-      }
-    } else if (command == "help") {
-      // Show help message
-      printHelpMessage();
-    } else if (command == "sensor") {
-        enableSensorDebug = !enableSensorDebug;
-        Serial.print(F("Sensor debug output: "));
-        Serial.println(enableSensorDebug ? F("ENABLED") : F("DISABLED"));
-    } else if (command == "quat") {
-        enableQuaternionDebug = !enableQuaternionDebug;
-        Serial.print(F("Quaternion debug output: "));
-        Serial.println(enableQuaternionDebug ? F("ENABLED") : F("DISABLED"));
-    } else if (command == "gps") {
-        enableGPSDebug = !enableGPSDebug;
-        Serial.print(F("GPS debug output: "));
-        Serial.println(enableGPSDebug ? F("ENABLED") : F("DISABLED"));
-    } else if (command == "summary") {
-        enableStatusSummary = !enableStatusSummary;
-        Serial.print(F("Status summary: "));
-        Serial.println(enableStatusSummary ? F("ENABLED") : F("DISABLED"));
-    }
+    // Pass command to our command handler function
+    processCommand(command);
   }
   
   // Read GPS data at GPS_POLL_INTERVAL
@@ -700,17 +1136,21 @@ void loop() {
     }
   }
   
-  // Read IMU data at IMU_POLL_INTERVAL
-  if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
+  // Read IMU data at 10Hz
+  if (millis() - lastIMUReadTime >= 100) {
     lastIMUReadTime = millis();
-    ICM_20948_read();
+  ICM_20948_read();
+    
+    // After reading sensor data, update sensor fusion
+    updateSensorFusion();
+    
     sensorsUpdated = true;
   }
   
-  // Read accelerometer data at ACCEL_POLL_INTERVAL
-  if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
+  // Read accelerometer data at 10Hz
+  if (millis() - lastAccelReadTime >= 100) {
     lastAccelReadTime = millis();
-    kx134_read();
+  kx134_read();
     sensorsUpdated = true;
   }
   
@@ -720,7 +1160,7 @@ void loop() {
     sensorsUpdated = false;
   }
   
-  // Periodically check GPS connection
+  // Periodically check GPS connection - simplified approach
   if (millis() - lastGPSCheckTime >= GPS_CHECK_INTERVAL) {
     lastGPSCheckTime = millis();
     checkGPSConnection();
@@ -739,7 +1179,10 @@ void loop() {
     // Flush SD card data
     if (sdCardAvailable && LogDataFile) {
       LogDataFile.flush();
-      Serial.println(F("SD card data flushed"));
+      // Only print flush message if storage debugging is enabled
+      if (enableStorageDebug) {
+        Serial.println(F("SD card data flushed"));
+      }
     }
   }
   
@@ -753,6 +1196,11 @@ void loop() {
   if (displayMode && millis() - lastDetailedTime >= 5000) {
     lastDetailedTime = millis();
     ICM_20948_print();
+    
+    // Also print sensor fusion data if enabled
+    if (enableSensorFusionDebug || enableEulerDebug) {
+      printSensorFusionData();
+    }
   }
 }
 

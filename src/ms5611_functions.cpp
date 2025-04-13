@@ -9,6 +9,7 @@ bool baro_calibration_done = false;
 
 // Add reference to debug flag
 extern bool enableSensorDebug;
+extern bool enableGPSDebug;
 
 int ms5611_read() {
     int result = ms5611Sensor.read();
@@ -30,16 +31,24 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
         
         // Check for good GPS fix and accuracy
         if (GPS_fixType >= 3 && pDOP < 300) {  // 3.0 * 100 for fixed-point comparison
-            float current_pressure = pressure;  // Use the global pressure value
-            float raw_altitude = 44330.0 * (1.0 - pow(current_pressure / STANDARD_SEA_LEVEL_PRESSURE, 0.190295));
+            // The pressure is in hPa but formula expects Pa
+            float current_pressure_hPa = pressure;  // Use the global pressure value in hPa
+            float current_pressure_Pa = current_pressure_hPa * 100.0; // Convert to Pa
+            
+            // Standard sea level pressure in Pa
+            float sea_level_Pa = STANDARD_SEA_LEVEL_PRESSURE * 100.0; // Convert from hPa to Pa
+            
+            float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / sea_level_Pa, 0.190295));
             baro_altitude_offset = (GPS_altitude / 1000.0) - raw_altitude;  // Convert GPS altitude from mm to m
             baro_calibration_done = true;
             
-            #ifdef GPS_DEBUG_ENABLED
-            Serial.print("GPS Altitude: "); Serial.print(GPS_altitude);
-            Serial.print("m, Baro Altitude: "); Serial.print(raw_altitude);
-            Serial.print("m, Calibration Offset: "); Serial.println(baro_altitude_offset);
-            #endif
+            Serial.print("Calibration: GPS Alt="); 
+            Serial.print(GPS_altitude / 1000.0);
+            Serial.print("m, Baro Alt="); 
+            Serial.print(raw_altitude);
+            Serial.print("m, Offset="); 
+            Serial.print(baro_altitude_offset);
+            Serial.println("m");
             
             return true;
         }
@@ -52,12 +61,16 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
 
 float ms5611_get_altitude(float seaLevelPressure) {
     // Get the current pressure in hPa
-    float current_pressure = pressure;  // Use the global pressure value
+    float current_pressure_hPa = pressure;  // Use the global pressure value
+    
+    // Convert pressures from hPa to Pa
+    float current_pressure_Pa = current_pressure_hPa * 100.0;
+    float seaLevelPressure_Pa = seaLevelPressure * 100.0;
     
     // Use the barometric formula: h = 44330 * (1 - (P/P0)^(1/5.255))
     // where P is the measured pressure and P0 is the sea level pressure
     // This formula gives altitude in meters
-    float raw_altitude = 44330.0 * (1.0 - pow(current_pressure / seaLevelPressure, 0.190295));
+    float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / seaLevelPressure_Pa, 0.190295));
     
     // Apply calibration offset
     return raw_altitude + baro_altitude_offset;
@@ -76,15 +89,16 @@ void ms5611_update_calibration() {
         // Apply some smoothing to the calibration (80% old value, 20% new value)
         baro_altitude_offset = 0.8 * baro_altitude_offset + 0.2 * new_offset;
         
-#if GPS_DEBUG_ENABLED
-        Serial.print(F("Baro Calibration: GPS="));
-        Serial.print(gps_altitude, 1);
-        Serial.print(F("m Baro="));
-        Serial.print(baro_altitude, 1);
-        Serial.print(F("m Offset="));
-        Serial.print(baro_altitude_offset, 1);
-        Serial.println(F("m"));
-#endif
+        // Print debug info if GPS debugging is enabled
+        if (enableGPSDebug) {
+            Serial.print(F("Baro Calibration: GPS="));
+            Serial.print(gps_altitude, 1);
+            Serial.print(F("m Baro="));
+            Serial.print(baro_altitude, 1);
+            Serial.print(F("m Offset="));
+            Serial.print(baro_altitude_offset, 1);
+            Serial.println(F("m"));
+        }
     }
 }
 
@@ -115,7 +129,11 @@ void ms5611_print() {
     // Only print if sensor debug is enabled
     if (!enableSensorDebug) return;
     
-    float raw_altitude = 44330.0 * (1.0 - pow(pressure / STANDARD_SEA_LEVEL_PRESSURE, 0.190295));
+    // Convert pressure from hPa to Pa for altitude calculation
+    float pressure_Pa = pressure * 100.0; 
+    float std_pressure_Pa = STANDARD_SEA_LEVEL_PRESSURE * 100.0;
+    
+    float raw_altitude = 44330.0 * (1.0 - pow(pressure_Pa / std_pressure_Pa, 0.190295));
     
     Serial.print("MS5611 Data");
     Serial.print(" Baro (hPa): ");

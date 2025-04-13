@@ -6,7 +6,7 @@
 #include "gps_functions.h"
 
 // Define the global variables declared as extern in the header
-SFE_UBLOX_GNSS myGNSS;
+SFE_UBLOX_GNSS myGNSS; // Use default constructor
 long lastTime = 0;
 byte GPS_fixType = 0;
 byte SIV = 0;
@@ -20,82 +20,77 @@ int pDOP = 0;
 byte RTK = 0;
 
 // Add reference to debug flag
-extern bool enableGPSDebug;
+extern volatile bool enableGPSDebug;
 
-bool checkGPSConnection() {
-  // Check if we can communicate with the GPS module
-  Wire.begin();
+// Create a single persistent NullStream that doesn't output anything
+class NullStream : public Stream {
+public:
+  int available() { return 0; }
+  int read() { return -1; }
+  int peek() { return -1; }
+  void flush() {}
+  size_t write(uint8_t) { return 1; }
+};
 
-  if (myGNSS.begin(Wire) == true) {
-      // Successfully connected to GPS
-    if (enableGPSDebug) Serial.println(F("GPS module connection verified"));
-    byte rate = myGNSS.getNavigationFrequency();
-    
-    if (rate > 0) {
-      // We got a response
-      if (enableGPSDebug) {
-        Serial.print(F("GPS communication success! Nav rate: "));
-        Serial.println(rate);
-      }
-      return true;
-    } else {
-      if (enableGPSDebug) Serial.println(F("WARNING: No response from GPS when querying navigation rate."));
-      return false;
-    }
+static NullStream nullStream;
+
+// Single function to control GPS debugging state
+void setGPSDebugging(bool enable) {
+  // Set multiple times to ensure it takes effect
+  if (enable) {
+    myGNSS.enableDebugging(Serial, true);
   } else {
-      // Failed to connect to GPS
-      if (enableGPSDebug) Serial.println(F("Could not connect to GPS module - check wiring"));
-      return false;
+    // Call multiple times with delays to ensure it's disabled
+    myGNSS.enableDebugging(nullStream, false);
+    delay(10);
+    myGNSS.enableDebugging(nullStream, false);
+    delay(10);
+    myGNSS.enableDebugging(nullStream, false);
   }
 }
 
 void gps_init() {
-  if (enableGPSDebug) Serial.println(F("Initializing GPS module..."));
+  // Initialize I2C if not already initialized
+  Wire.begin();
   
-  // Try to connect to the GPS module - be explicit that we're using I2C
-  if (myGNSS.begin(Wire) == false) {
-    if (enableGPSDebug) Serial.println(F("u-blox GPS not detected at default I2C address. Please check wiring."));
-    return;
-  }
-
-  // Enable debug messages only if GPS debug is enabled
-  if (enableGPSDebug) {
-    myGNSS.enableDebugging(Serial, true);
-    
-    // Get the protocol version
-    Serial.print(F("Protocol version: "));
-    Serial.println(myGNSS.getProtocolVersion(), HEX);
-  } else {
-    myGNSS.enableDebugging(Serial, false);
-  }
-
+  // Simple message - debug status will be shown by the setGPSDebugging function
+  Serial.println(F("GPS init..."));
+  
+  // Ensure debugging is set to the desired state before any GPS operations
+  setGPSDebugging(enableGPSDebug);
+  
+  // Direct initialization without checking connection
+  myGNSS.begin(Wire);
+  
   // Configure the GPS module
-  bool pvtSuccess = myGNSS.setAutoPVT(true);
-  if (!pvtSuccess && enableGPSDebug) {
-    Serial.println(F("Failed to configure PVT"));
-  }
-
-  bool rateSuccess = myGNSS.setNavigationFrequency(5);
-  if (!rateSuccess && enableGPSDebug) {
-    Serial.println(F("Failed to set navigation frequency"));
-  }
-
+  Serial.print(F("Configuring GPS..."));
+  
   // Set the I2C port to output UBX only (turn off NMEA noise)
   myGNSS.setI2COutput(COM_TYPE_UBX);
+  
+  // Configure in a single block
+  bool configSuccess = true;
+  configSuccess &= myGNSS.setAutoPVT(true);
+  configSuccess &= myGNSS.setNavigationFrequency(5);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, COM_PORT_I2C, 1);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, COM_PORT_I2C, 5);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, COM_PORT_I2C, 1);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, COM_PORT_I2C, 1);
+  
+  Serial.println(configSuccess ? F("OK") : F("failed"));
+  
+  // Ensure debugging is still in the proper state after initialization
+  setGPSDebugging(enableGPSDebug);
+}
 
-  // Enable the messages we want to receive
-  myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, COM_PORT_I2C, 1); // Position, velocity, time - 1Hz
-  myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, COM_PORT_I2C, 5); // Satellite information - every 5 seconds
-  myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, COM_PORT_I2C, 1); // Receiver status - 1Hz
-  myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, COM_PORT_I2C, 1); // Dilution of precision - 1Hz
-
-  // Save the configuration
-  bool saveSuccess = myGNSS.saveConfiguration();
-  if (!saveSuccess && enableGPSDebug) {
-    Serial.println(F("Failed to save configuration"));
-  }
-
-  if (enableGPSDebug) Serial.println(F("GPS module initialized successfully"));
+// Original checkGPSConnection function was redundant - replaced with simpler version
+bool checkGPSConnection() {
+  // Ensure debug settings are consistent
+  setGPSDebugging(enableGPSDebug);
+  
+  // Just verify we can get data from the GPS
+  byte rate = myGNSS.getNavigationFrequency();
+  return (rate > 0);
 }
 
 void gps_read() {
@@ -127,6 +122,9 @@ void gps_read() {
     // Update the last time we got data
     lastTime = millis();
   }
+  
+  // Ensure debug settings are consistent after every operation
+  setGPSDebugging(enableGPSDebug);
 }
 
 void gps_print() {

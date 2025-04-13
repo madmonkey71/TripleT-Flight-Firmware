@@ -5,29 +5,34 @@
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
 extern bool enableQuaternionDebug;
+extern bool enableICMRawDebug; // New flag to control ICM raw data output
 
-// Sensor data
+// Initialize ICM_20948 variables
+float icm_accel[3] = {0.0f, 0.0f, 0.0f};  // Accelerometer data (g)
+float icm_gyro[3] = {0.0f, 0.0f, 0.0f};   // Gyroscope data (deg/s)
+float icm_mag[3] = {0.0f, 0.0f, 0.0f};    // Magnetometer data (uT)
+float icm_temp = 0.0f;                    // Temperature in degrees C
+float icm_q0 = 1.0f, icm_q1 = 0.0f, icm_q2 = 0.0f, icm_q3 = 0.0f;  // Quaternion components (w,x,y,z)
+bool icm_data_available = false;          // Flag to indicate if data is ready
+uint16_t icm_data_header = 0;             // FIFO header for checking packet types
+
+// ICM-20948 IMU object
 ICM_20948_I2C myICM;
-float icm_accel[3] = {0, 0, 0};
-float icm_gyro[3] = {0, 0, 0};
-float icm_mag[3] = {0, 0, 0};
-float icm_temp = 0;
-double icm_q0 = 1.0, icm_q1 = 0.0, icm_q2 = 0.0, icm_q3 = 0.0;
 
 // Motion detection
 bool isStationary = true;
 float accelMagnitudePrev = 0;
 float accelVariance = 0;
 float gyroMagnitude = 0;
-const float GYRO_THRESHOLD = 0.06;      // Increased from 0.03 to 0.06 rad/s
-const float ACCEL_VARIANCE_THRESHOLD = 0.008; // Increased from 0.005 to 0.008
+const float GYRO_THRESHOLD = 0.03;      // Reduced from 0.06 to 0.03 rad/s (about 1.7 deg/s) for better sensitivity
+const float ACCEL_VARIANCE_THRESHOLD = 0.005; // Reduced from 0.008 to 0.005 for better sensitivity
 float sampleFreq = 100.0f;              // Hz
 uint32_t lastUpdateTime = 0;            // micros
 
 // Add state transition counters for hysteresis
 int stationaryCounter = 0;
 int movingCounter = 0;
-const int STATE_CHANGE_THRESHOLD = 5;   // Require multiple consecutive readings to change state
+const int STATE_CHANGE_THRESHOLD = 3;   // Reduced from 5 to 3 for faster state change detection
 
 // Madgwick filter parameters
 float beta = 0.05f;                     // Reduced from 0.1f to reduce influence of noisy measurements
@@ -36,11 +41,20 @@ const float BETA_MOTION = 0.1f;         // Higher when in motion for more respon
 
 // Add gyro bias estimation
 float gyroBias[3] = {0.0f, 0.0f, 0.0f}; // Estimated gyro bias
-const float GYRO_BIAS_LEARN_RATE = 0.001f; // Rate at which we update the gyro bias estimates
+const float GYRO_BIAS_LEARN_RATE = 0.0005f; // Reduced from 0.001f for more stable bias estimates
 
 // Previous quaternion values for drift compensation
 float q0_prev = 1.0f, q1_prev = 0.0f, q2_prev = 0.0f, q3_prev = 0.0f;
-const float DRIFT_COMPENSATION_FACTOR = 0.98f;  // Increased from 0.95f to 0.98f for more stability
+
+// Drift compensation factors
+const float STATIONARY_DRIFT_COMPENSATION_FACTOR = 0.7f;  // Increased from 0.98f for better stability when stationary
+const float MOVING_DRIFT_COMPENSATION_FACTOR = 0.1f;      // Decreased for more responsiveness during motion
+
+// ZUPT (Zero-Velocity Update) implementation
+bool stationaryReferenceSet = false;
+float stationaryReferenceQ0 = 1.0f, stationaryReferenceQ1 = 0.0f, stationaryReferenceQ2 = 0.0f, stationaryReferenceQ3 = 0.0f;
+unsigned long lastZuptTime = 0;
+const unsigned long ZUPT_INTERVAL = 30000; // Perform ZUPT every 30 seconds when stationary
 
 // Magnetometer calibration
 float magBias[3] = {0, 0, 0};           // Hard iron correction
@@ -50,7 +64,7 @@ float magScale[3] = {1, 1, 1};          // Soft iron correction
 void ICM_20948_init() {
   // Start with a slower I2C clock speed
   Wire.begin();
-  Wire.setClock(100000); // Try a slower 100kHz speed instead of 400kHz
+  Wire.setClock(400000); // Use 400kHz for better performance
   
   Serial.println("Initializing ICM-20948...");
   
@@ -92,12 +106,12 @@ void ICM_20948_init() {
       myICM.begin(Wire, 1); // AD0 pin high (0x69)
       
       Serial.print(F("Initialization returned: "));
-      Serial.println(myICM.statusString());
+        Serial.println(myICM.statusString());
       
       if (myICM.status == ICM_20948_Stat_Ok) {
         Serial.println("Successfully connected to ICM-20948 with AD0=1!");
         initialized = true;
-      } else {
+        } else {
         delay(500);
       }
     }
@@ -116,7 +130,7 @@ void ICM_20948_init() {
   // Reset the device to ensure it's in a known state
   status = myICM.swReset();
   if (status != ICM_20948_Stat_Ok) {
-    Serial.print(F("Software Reset returned: "));
+        Serial.print(F("Software Reset returned: "));
     Serial.println(myICM.statusString(status));
   }
   delay(50);
@@ -129,10 +143,10 @@ void ICM_20948_init() {
   }
   delay(50);
   
-  // Set full scale ranges for both sensors
+  // Set full scale ranges for both sensors - adjusted for better sensitivity
   ICM_20948_fss_t fss;
-  fss.a = gpm4;       // +/- 4g
-  fss.g = dps1000;    // +/- 1000 dps
+  fss.a = gpm2;       // +/- 2g for better sensitivity
+  fss.g = dps500;    // +/- 500 dps for better sensitivity
   
   status = myICM.setFullScale((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), fss);
   if (status != ICM_20948_Stat_Ok) {
@@ -140,7 +154,7 @@ void ICM_20948_init() {
     Serial.println(myICM.statusString(status));
   }
   
-  // Set ODR (Output Data Rate)
+  // Set digital low-pass filter configuration
   ICM_20948_dlpcfg_t dlpcfg;
   dlpcfg.a = acc_d473bw_n499bw;  // Highest bandwidth for accelerometer
   dlpcfg.g = gyr_d361bw4_n376bw5;  // Highest bandwidth for gyroscope
@@ -151,10 +165,10 @@ void ICM_20948_init() {
     Serial.println(myICM.statusString(status));
   }
   
-  // Set sample mode for both sensors
+  // Set sample mode for both sensors to higher rate for better responsiveness
   ICM_20948_smplrt_t smplrt;
-  smplrt.g = 9;  // about 100Hz
-  smplrt.a = 9;  // about 100Hz
+  smplrt.g = 4;  // about 200Hz
+  smplrt.a = 4;  // about 200Hz
   
   status = myICM.setSampleRate((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), smplrt);
   if (status != ICM_20948_Stat_Ok) {
@@ -214,7 +228,7 @@ void detectStationary() {
   applyLowPassFilter(filteredGyro[1], icm_gyro[1], gyroAlpha);
   applyLowPassFilter(filteredGyro[2], icm_gyro[2], gyroAlpha);
   
-  // Calculate gyro magnitude from filtered values
+  // Calculate gyro magnitude from filtered values (already in radians/sec)
   gyroMagnitude = sqrt(sq(filteredGyro[0]) + sq(filteredGyro[1]) + sq(filteredGyro[2]));
   
   // Calculate accel magnitude with low-pass filter
@@ -229,6 +243,7 @@ void detectStationary() {
   accelMagnitudePrev = filteredAccelMagnitude;
   
   // Increment or reset counters based on current measurements
+  // Note: GYRO_THRESHOLD is already in radians/sec (0.03 rad/s ≈ 1.7 deg/s)
   if ((gyroMagnitude < GYRO_THRESHOLD) && (accelVariance < ACCEL_VARIANCE_THRESHOLD)) {
     stationaryCounter++;
     movingCounter = 0;
@@ -251,7 +266,7 @@ void detectStationary() {
   if (isStationary) {
     beta = BETA_STATIONARY; // Lower beta when stationary for less drift
     
-    // Update gyro bias estimate when stationary
+    // Update gyro bias estimate when stationary (gyros already in radians/sec)
     if (gyroMagnitude < GYRO_THRESHOLD) {
       gyroBias[0] += GYRO_BIAS_LEARN_RATE * (icm_gyro[0] - gyroBias[0]);
       gyroBias[1] += GYRO_BIAS_LEARN_RATE * (icm_gyro[1] - gyroBias[1]);
@@ -262,17 +277,67 @@ void detectStationary() {
   }
   
   // Print state change for debugging
-  if (wasStationary != isStationary) {
+  if (wasStationary != isStationary && enableICMRawDebug) {
     Serial.print("Motion state changed to: ");
     Serial.println(isStationary ? "STATIONARY" : "MOVING");
     Serial.print("Gyro magnitude: ");
     Serial.print(gyroMagnitude, 5);
-    Serial.print(" | Accel variance: ");
+    Serial.print(" rad/s | Accel variance: ");
     Serial.println(accelVariance, 5);
   }
 }
 
-// Calculate orientation using Madgwick filter with drift compensation
+// Reset quaternion drift using the reference quaternion
+void resetQuaternionDrift() {
+  if (!stationaryReferenceSet) {
+    // Set reference quaternion if this is the first time
+    stationaryReferenceQ0 = icm_q0;
+    stationaryReferenceQ1 = icm_q1;
+    stationaryReferenceQ2 = icm_q2;
+    stationaryReferenceQ3 = icm_q3;
+    stationaryReferenceSet = true;
+    
+    if (enableQuaternionDebug) {
+      Serial.println("Set new quaternion reference");
+    }
+  } else {
+    // Apply a gentle correction toward the reference quaternion (only for yaw - q3 component)
+    // This primarily targets yaw drift while preserving accurate pitch and roll
+    
+    // Extract current yaw
+    float yaw = atan2(2.0f * (icm_q0 * icm_q3 + icm_q1 * icm_q2),
+                       1.0f - 2.0f * (icm_q2 * icm_q2 + icm_q3 * icm_q3));
+    
+    // Extract reference yaw
+    float refYaw = atan2(2.0f * (stationaryReferenceQ0 * stationaryReferenceQ3 + stationaryReferenceQ1 * stationaryReferenceQ2),
+                          1.0f - 2.0f * (stationaryReferenceQ2 * stationaryReferenceQ2 + stationaryReferenceQ3 * stationaryReferenceQ3));
+    
+    // Calculate yaw difference (account for wrap-around)
+    float yawDiff = yaw - refYaw;
+    if (yawDiff > PI) yawDiff -= 2.0f * PI;
+    if (yawDiff < -PI) yawDiff += 2.0f * PI;
+    
+    // Only correct if the difference is significant but not too large (which might indicate intentional rotation)
+    if (fabs(yawDiff) > 0.05f && fabs(yawDiff) < 0.5f) {
+      // Apply 10% correction to the yaw component
+      float correctionFactor = 0.1f;
+      icm_q3 -= yawDiff * correctionFactor;
+      
+      // Renormalize the quaternion - ensure we're working with float references
+      float q0 = icm_q0, q1 = icm_q1, q2 = icm_q2, q3 = icm_q3;
+      normalizeQuaternion(q0, q1, q2, q3);
+      icm_q0 = q0; icm_q1 = q1; icm_q2 = q2; icm_q3 = q3;
+      
+      if (enableQuaternionDebug) {
+        Serial.print("Applied yaw correction of ");
+        Serial.print(yawDiff * correctionFactor * 180.0f / PI, 2);
+        Serial.println(" degrees");
+      }
+    }
+  }
+}
+
+// Calculate orientation using Madgwick filter with improved drift compensation
 void calculateOrientation() {
   // Calculate time delta
   uint32_t now = micros();
@@ -290,7 +355,18 @@ void calculateOrientation() {
     return;
   }
   
-  // Compensate for gyro bias
+  static unsigned long lastOrientationDebugTime = 0;
+  if (enableQuaternionDebug && millis() - lastOrientationDebugTime > 1000) {
+    lastOrientationDebugTime = millis();
+    Serial.print("DT: ");
+    Serial.print(dt, 6);
+    Serial.print("s (");
+    Serial.print(sampleFreq, 2);
+    Serial.print("Hz), Beta: ");
+    Serial.println(beta, 4);
+  }
+  
+  // Compensate for gyro bias (gyro values already in radians/sec)
   float biasCompensatedGyro[3];
   biasCompensatedGyro[0] = icm_gyro[0] - gyroBias[0];
   biasCompensatedGyro[1] = icm_gyro[1] - gyroBias[1];
@@ -308,11 +384,20 @@ void calculateOrientation() {
   float _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3;
   float q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
   
-  // Rate of change of quaternion from gyroscope (using bias-compensated gyro)
+  // Rate of change of quaternion from gyroscope (gyro values already in radians/sec)
   qDot1 = 0.5f * (-q1 * biasCompensatedGyro[0] - q2 * biasCompensatedGyro[1] - q3 * biasCompensatedGyro[2]);
   qDot2 = 0.5f * (q0 * biasCompensatedGyro[0] + q2 * biasCompensatedGyro[2] - q3 * biasCompensatedGyro[1]);
   qDot3 = 0.5f * (q0 * biasCompensatedGyro[1] - q1 * biasCompensatedGyro[2] + q3 * biasCompensatedGyro[0]);
   qDot4 = 0.5f * (q0 * biasCompensatedGyro[2] + q1 * biasCompensatedGyro[1] - q2 * biasCompensatedGyro[0]);
+  
+  // If we're moving significantly, prioritize gyro data by reducing filter correction
+  float currentBeta = beta;
+  if (!isStationary && (sqrtf(biasCompensatedGyro[0]*biasCompensatedGyro[0] + 
+                             biasCompensatedGyro[1]*biasCompensatedGyro[1] + 
+                             biasCompensatedGyro[2]*biasCompensatedGyro[2]) > GYRO_THRESHOLD*2)) {
+    // When in significant motion, trust gyro more by reducing corrections
+    currentBeta = beta * 0.5f;
+  }
   
   // If magnetometer measurement is valid, incorporate it
   if (!((icm_mag[0] == 0.0f) && (icm_mag[1] == 0.0f) && (icm_mag[2] == 0.0f))) {
@@ -372,10 +457,10 @@ void calculateOrientation() {
     s3 *= recipNorm;
     
     // Apply feedback step
-    qDot1 -= beta * s0;
-    qDot2 -= beta * s1;
-    qDot3 -= beta * s2;
-    qDot4 -= beta * s3;
+    qDot1 -= currentBeta * s0;
+    qDot2 -= currentBeta * s1;
+    qDot3 -= currentBeta * s2;
+    qDot4 -= currentBeta * s3;
   } else {
     // Just use accelerometer without magnetometer
     float ax = icm_accel[0];
@@ -399,9 +484,9 @@ void calculateOrientation() {
     float ez = (ax * vy - ay * vx);
     
     // Apply proportional feedback
-    qDot1 -= beta * ex;
-    qDot2 -= beta * ey;
-    qDot3 -= beta * ez;
+    qDot1 -= currentBeta * ex;
+    qDot2 -= currentBeta * ey;
+    qDot3 -= currentBeta * ez;
   }
   
   // Integrate rate of change of quaternion
@@ -413,8 +498,8 @@ void calculateOrientation() {
   // Normalize quaternion
   normalizeQuaternion(q0, q1, q2, q3);
   
-  // Apply drift compensation for both states, but more aggressively when stationary
-  float compensationFactor = isStationary ? DRIFT_COMPENSATION_FACTOR : 0.5f;
+  // Apply drift compensation for both states, with more aggressive compensation when stationary
+  float compensationFactor = isStationary ? STATIONARY_DRIFT_COMPENSATION_FACTOR : MOVING_DRIFT_COMPENSATION_FACTOR;
   
   // Only apply drift compensation if we've initialized previous values
   if (q0_prev != 0.0f || q1_prev != 0.0f || q2_prev != 0.0f || q3_prev != 0.0f) {
@@ -428,80 +513,127 @@ void calculateOrientation() {
     normalizeQuaternion(q0, q1, q2, q3);
   }
   
-  // Store current values as previous for next iteration
-  q0_prev = q0;
-  q1_prev = q1;
-  q2_prev = q2;
-  q3_prev = q3;
-  
-  // Update global quaternion values
-  icm_q0 = q0;
-  icm_q1 = q1;
-  icm_q2 = q2;
-  icm_q3 = q3;
+  // Implement Zero-Velocity Update (ZUPT)
+  if (isStationary && (millis() - lastZuptTime > ZUPT_INTERVAL)) {
+    // Store current values first
+    q0_prev = q0;
+    q1_prev = q1;
+    q2_prev = q2;
+    q3_prev = q3;
+    
+    // Update global quaternion values before reset
+    icm_q0 = q0;
+    icm_q1 = q1;
+    icm_q2 = q2;
+    icm_q3 = q3;
+    
+    // Apply drift reset (primarily to correct yaw drift)
+    resetQuaternionDrift();
+    
+    // Get the corrected values back
+    q0 = icm_q0;
+    q1 = icm_q1;
+    q2 = icm_q2;
+    q3 = icm_q3;
+    
+    lastZuptTime = millis();
+  } else {
+    // Normal update path - store current values as previous for next iteration
+    q0_prev = q0;
+    q1_prev = q1;
+    q2_prev = q2;
+    q3_prev = q3;
+    
+    // Update global quaternion values
+    icm_q0 = q0;
+    icm_q1 = q1;
+    icm_q2 = q2;
+    icm_q3 = q3;
+  }
 }
 
 // Read data from the ICM-20948 sensor
 void ICM_20948_read() {
-  // Check if data is ready
-  if (myICM.dataReady()) {
-    // Get the data
-    myICM.getAGMT();
+  static unsigned long lastPrintTime = 0;
+  static unsigned long lastErrorPrintTime = 0;
+  static unsigned long lastDetailedDebugTime = 0;
+  
+    if (myICM.dataReady()) {
+    myICM.getAGMT();  // Get the latest data
     
-    // Update global variables with new data
-    icm_accel[0] = myICM.accX() / 1000.0;  // Convert from mg to g
-    icm_accel[1] = myICM.accY() / 1000.0;
-    icm_accel[2] = myICM.accZ() / 1000.0;
-    icm_gyro[0] = myICM.gyrX() * (PI / 180.0);  // Convert to radians/s
-    icm_gyro[1] = myICM.gyrY() * (PI / 180.0);
-    icm_gyro[2] = myICM.gyrZ() * (PI / 180.0);
-    icm_mag[0] = myICM.magX();
-    icm_mag[1] = myICM.magY();
-    icm_mag[2] = myICM.magZ();
-    icm_temp = myICM.temp();
+    // Convert accelerometer data from mg to g and store in global array
+    icm_accel[0] = myICM.accX() / 1000.0f;
+    icm_accel[1] = myICM.accY() / 1000.0f;
+    icm_accel[2] = myICM.accZ() / 1000.0f;
     
-    // Apply magnetometer calibration
-    applyMagnetometerCalibration();
+    // Store gyroscope data in global array (convert to radians for calculations)
+    icm_gyro[0] = myICM.gyrX() * DEG_TO_RAD;
+    icm_gyro[1] = myICM.gyrY() * DEG_TO_RAD;
+    icm_gyro[2] = myICM.gyrZ() * DEG_TO_RAD;
     
-    // Detect if we're stationary
+    // Store magnetometer data in global array (uT)
+        icm_mag[0] = myICM.magX();
+        icm_mag[1] = myICM.magY();
+        icm_mag[2] = myICM.magZ();
+
+    // Store temperature in global variable (C)
+        icm_temp = myICM.temp();
+    
+    // Print detailed raw sensor data every second for debugging
+    if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
+      lastDetailedDebugTime = millis();
+      
+      Serial.println("--- ICM-20948 Raw Data ---");
+      Serial.print("Raw Gyro (rad/s): X=");
+      Serial.print(icm_gyro[0], 6);
+      Serial.print(", Y=");
+      Serial.print(icm_gyro[1], 6);
+      Serial.print(", Z=");
+      Serial.println(icm_gyro[2], 6);
+      
+      Serial.print("Gyro Bias (rad/s): X=");
+      Serial.print(gyroBias[0], 6);
+      Serial.print(", Y=");
+      Serial.print(gyroBias[1], 6);
+      Serial.print(", Z=");
+      Serial.println(gyroBias[2], 6);
+      
+      Serial.print("Gyro Magnitude: ");
+      Serial.println(gyroMagnitude, 6);
+      
+      Serial.print("Stationary: ");
+      Serial.print(isStationary ? "YES" : "NO");
+      Serial.print(", Counter: ");
+      Serial.print(isStationary ? stationaryCounter : movingCounter);
+      Serial.print(", Beta: ");
+      Serial.println(beta, 4);
+    }
+    
+    // Check if sensor is stationary
     detectStationary();
     
-    // Calculate orientation
+    // Update orientation with new sensor data
     calculateOrientation();
     
-    // Print quaternion values only occasionally to reduce serial traffic
-    // and only if quaternion debug is enabled
-    static unsigned long lastPrintTime = 0;
-    if (enableQuaternionDebug && (millis() - lastPrintTime > 1000)) { // Print only once per second
+    // Print quaternion values at a lower rate if debugging is enabled
+    if (enableQuaternionDebug && millis() - lastPrintTime > 500) {
       lastPrintTime = millis();
-      
-      Serial.print("Quaternion: ");
-      Serial.print(icm_q0, 4);
-      Serial.print(", ");
-      Serial.print(icm_q1, 4);
-      Serial.print(", ");
-      Serial.print(icm_q2, 4);
-      Serial.print(", ");
-      Serial.print(icm_q3, 4);
-      Serial.print(" | State: ");
-      Serial.print(isStationary ? "STATIONARY" : "MOVING");
-      
-      // Also print current gyro bias estimates
-      Serial.print(" | Bias X:");
-      Serial.print(gyroBias[0], 5);
-      Serial.print(" Y:");
-      Serial.print(gyroBias[1], 5);
-      Serial.print(" Z:");
-      Serial.println(gyroBias[2], 5);
+      Serial.print("Quaternion (w,x,y,z): ");
+      Serial.print(icm_q0, 4); Serial.print(", ");
+      Serial.print(icm_q1, 4); Serial.print(", ");
+      Serial.print(icm_q2, 4); Serial.print(", ");
+      Serial.print(icm_q3, 4); Serial.print(" | State: ");
+      Serial.println(isStationary ? "STATIONARY" : "MOVING");
     }
+
+        icm_data_available = true;
   } else {
-    // Don't print this message every time - it floods the serial port
-    // and only print if sensor debug is enabled
-    static unsigned long lastErrorTime = 0;
-    if (enableSensorDebug && (millis() - lastErrorTime > 5000)) { // Only print every 5 seconds
-      lastErrorTime = millis();
-      Serial.println("No data ready from ICM-20948");
+    // Only print error message once every 5 seconds to avoid flooding serial
+    if (enableSensorDebug && millis() - lastErrorPrintTime > 5000) {
+      lastErrorPrintTime = millis();
+      Serial.println("ICM-20948: No new data available");
     }
+    icm_data_available = false;
   }
 }
 

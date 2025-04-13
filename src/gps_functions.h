@@ -27,4 +27,7 @@ extern void gps_read();
 extern void gps_print();
 extern bool checkGPSConnection();
 
+// New function to control GPS debugging
+void setGPSDebugging(bool enable);
+
 #endif // GPS_FUNCTIONS_H 

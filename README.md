@@ -5,14 +5,21 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 ## Project Status
 **Current Version**: v0.15 (Alpha)
 
+### Recent Updates
+- ✅ Improved barometric sensor calibration:
+  - Enhanced MS5611 initialization with multiple readings to ensure stability
+  - Added validation checks for pressure readings (800-1100 hPa range)
+  - Implemented better GPS validation during calibration
+  - Added limits to prevent infinite calibration loops (max 3 attempts with 30-second intervals)
+  - Added detailed debugging information to diagnose calibration issues
+- ✅ Fixed synchronization between calibration status flags
+
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
 - ✅ SD Card data logging
 - ✅ Interactive serial interface
 - ✅ Basic diagnostic tools
-- ✅ Quaternion and Euler angle-based orientation tracking
 - ✅ GPS/Barometer calibration
-- ✅ Stationary detection
 - ✅ Configurable debug outputs
 - 🚧 Flight state detection (In Progress)
 - 🚧 Apogee Detection (Planned)
@@ -20,6 +27,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - 🚧 Enhanced telemetry (Planned)
 - 🚧 Thrust vector control (Planned)
 - 🚧 Live Transmission of data via radio (Planned)
+
+### Removed from project
+These weren't working out as I'd hoped so I removed them and will pivot to something else once I've figured out what
+- ✅ Quaternion and Euler angle-based orientation tracking
+- ✅ Stationary detection
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
@@ -54,9 +66,11 @@ TripleT Flight Firmware is an open-source flight controller software built for T
 ## Features
 
 - **Multi-sensor Integration**: Combined data from GPS, barometer, accelerometer, and 9-DOF IMU
-- **Sensor Fusion**: Kalman filter-based sensor fusion for accurate orientation tracking
 - **SD Card Logging**: Comprehensive data logging to SD card with CSV format
 - **GPS/Barometer Calibration**: Automatic or manual calibration of barometric altitude based on GPS data
+  - Robust calibration with validation checks for pressure and GPS data
+  - Visual feedback via LED indicators (purple during calibration, green for success, red for failure)
+  - Limited retry mechanism to prevent infinite calibration loops
 - **Comprehensive Data Collection**:
   - GPS position, altitude, speed, and fix quality
   - Barometric pressure, temperature, and calibrated altitude
@@ -107,6 +121,7 @@ The firmware supports both single-character and extended commands:
 
 | Command | Description |
 |---------|-------------|
+| `0`     | Toggle serial CSV output |
 | `1-9`   | Toggle various debug outputs (system, IMU, GPS, barometer, etc.) |
 | `a`     | Show help message |
 | `b`     | Show system status |
@@ -128,10 +143,8 @@ You can selectively enable/disable various debug outputs:
 - GPS debug
 - Barometer debug
 - Storage debug
-- Sensor fusion debug
-- Quaternion debug
-- Euler angles debug
 - ICM raw debug
+- Serial CSV output
 
 ### Data Logging
 
@@ -141,14 +154,16 @@ Data is logged to the SD card in CSV format with the following information:
 - Barometric data (pressure, temperature)
 - Accelerometer readings (X, Y, Z in g)
 - IMU data (acceleration, gyro, magnetometer)
-- Quaternion orientation values
 
 ### Barometer Calibration
 
 The system supports calibration of the barometric altitude using GPS data:
-- Automatic calibration when a good GPS fix is available
+- Automatic calibration when a good GPS fix is available (pDOP < 3.0)
+- Requires stable sensor readings before attempting calibration
+- Limited to 3 attempts with 30-second intervals between attempts
 - Manual calibration via the `h` command or `calibrate` command
-- Calibration status and values displayed in the barometer debug output
+- Visual feedback via LED (purple during calibration, green for success, red for failure)
+- Detailed debug output to diagnose calibration issues
 
 ## Documentation
 

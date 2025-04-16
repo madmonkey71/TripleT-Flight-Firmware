@@ -4,8 +4,11 @@
 MS5611 ms5611Sensor(0x77);
 float pressure = 0;
 float temperature = 0;
-float baro_altitude_offset = 0;  // Initialize calibration offset to 0
+float baro_altitude_offset = 0.0f;
 bool baro_calibration_done = false;
+
+// Declare the global variable from main
+extern bool baroCalibrated;
 
 // Add reference to debug flag
 extern bool enableSensorDebug;
@@ -24,37 +27,118 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
     if (baro_calibration_done) {
         return true;  // Already calibrated
     }
+    
+    Serial.println(F("Starting barometric calibration with GPS..."));
+    Serial.print(F("Current pressure: "));
+    Serial.print(pressure);
+    Serial.print(F(" hPa, GPS fix type: "));
+    Serial.print(GPS_fixType);
+    Serial.print(F(", pDOP: "));
+    Serial.println(pDOP / 100.0, 2);
+    
+    // Check if pressure is valid (not zero or unreasonable)
+    if (pressure < 700 || pressure > 1200) {
+        Serial.println(F("Pressure reading is invalid for calibration. Must be between 700-1200 hPa"));
+        Serial.print(F("Current value: "));
+        Serial.print(pressure);
+        Serial.println(F(" hPa"));
+        
+        // Try to get a fresh reading
+        Serial.println(F("Attempting to get fresh pressure reading..."));
+        int result = ms5611_read();
+        if (result == MS5611_READ_OK) {
+            Serial.print(F("New pressure reading: "));
+            Serial.print(pressure);
+            Serial.println(F(" hPa"));
+        } else {
+            Serial.print(F("MS5611 read error: "));
+            Serial.println(result);
+            return false;
+        }
+    }
 
     uint32_t start_time = millis();
+    unsigned int attempts = 0;
+    
     while (millis() - start_time < timeout_ms) {
+        attempts++;
         gps_read();  // Update GPS data
         
         // Check for good GPS fix and accuracy
         if (GPS_fixType >= 3 && pDOP < 300) {  // 3.0 * 100 for fixed-point comparison
+            // Get fresh pressure reading for calibration
+            int result = ms5611_read();
+            if (result != MS5611_READ_OK) {
+                Serial.print(F("Failed to read pressure: "));
+                Serial.println(result);
+                delay(500);
+                continue;
+            }
+            
             // The pressure is in hPa but formula expects Pa
             float current_pressure_hPa = pressure;  // Use the global pressure value in hPa
+            
+            // Invalid pressure check
+            if (current_pressure_hPa < 700 || current_pressure_hPa > 1200) {
+                Serial.print(F("Invalid pressure reading: "));
+                Serial.print(current_pressure_hPa);
+                Serial.println(F(" hPa"));
+                delay(500);
+                continue;
+            }
+            
             float current_pressure_Pa = current_pressure_hPa * 100.0; // Convert to Pa
+            
+            // Check GPS altitude validity
+            if (GPS_altitude == 0) {
+                Serial.println(F("GPS altitude is zero, waiting for valid altitude..."));
+                delay(500);
+                continue;
+            }
             
             // Standard sea level pressure in Pa
             float sea_level_Pa = STANDARD_SEA_LEVEL_PRESSURE * 100.0; // Convert from hPa to Pa
             
             float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / sea_level_Pa, 0.190295));
             baro_altitude_offset = (GPS_altitude / 1000.0) - raw_altitude;  // Convert GPS altitude from mm to m
-            baro_calibration_done = true;
             
-            Serial.print("Calibration: GPS Alt="); 
+            Serial.print(F("Calibration attempt #"));
+            Serial.print(attempts);
+            Serial.println(F(" succeeded!"));
+            Serial.print(F("GPS Alt="));
             Serial.print(GPS_altitude / 1000.0);
-            Serial.print("m, Baro Alt="); 
+            Serial.print(F("m, Raw Baro Alt="));
             Serial.print(raw_altitude);
-            Serial.print("m, Offset="); 
+            Serial.print(F("m, Calculated Offset="));
             Serial.print(baro_altitude_offset);
-            Serial.println("m");
+            Serial.println(F("m"));
+            
+            baro_calibration_done = true;
+            baroCalibrated = true;  // Also update the main program's flag
             
             return true;
-        }
-        
+        } else {
+            // If we don't have a good fix yet, provide feedback
+            if (attempts % 5 == 0) {  // Only print every 5 attempts
+                Serial.print(F("Waiting for good GPS fix. Current Fix Type: "));
+                Serial.print(GPS_fixType);
+                Serial.print(F(", pDOP: "));
+                Serial.print(pDOP / 100.0, 2);
+                Serial.print(F(", Time elapsed: "));
+                Serial.print((millis() - start_time) / 1000);
+                Serial.println(F("s"));
+            }
+        }    
         delay(200);  // Wait before next GPS read
     }
+    
+    Serial.println(F("Calibration timeout after "));
+    Serial.print((millis() - start_time) / 1000);
+    Serial.println(F(" seconds."));
+    Serial.print(F("Final GPS fix: "));
+    Serial.print(GPS_fixType);
+    Serial.print(F(", pDOP: "));
+    Serial.println(pDOP / 100.0, 2);
     
     return false;  // Timeout occurred
 }
@@ -103,25 +187,60 @@ void ms5611_update_calibration() {
 }
 
 void ms5611_init() {
-    Serial.println(__FILE__);
-    Serial.print("MS5611_LIB_VERSION: ");
+    Serial.println(F("Initializing MS5611 barometer..."));
+    Serial.print(F("MS5611_LIB_VERSION: "));
     Serial.println(MS5611_LIB_VERSION);
 
+    // Try to initialize the sensor
     if (ms5611Sensor.begin() == true) {
-        Serial.print("MS5611 found: ");
+        Serial.print(F("MS5611 found at address: "));
         Serial.println(ms5611Sensor.getAddress());
     } else {
-        Serial.println("MS5611 not found. halt.");
-        delay(500);
+        Serial.println(F("ERROR: MS5611 not found! Check connections."));
+        delay(1000);
+        return;
     }
 
+    // Set high oversampling for better accuracy
     ms5611Sensor.setOversampling(OSR_HIGH);
-    int result = ms5611_read();
-    if (result != MS5611_READ_OK) {
-        Serial.print("MS5611 read error during init: ");
-        Serial.println(result);
+    
+    // Take several readings to stabilize the sensor
+    Serial.println(F("Taking initial readings to stabilize MS5611..."));
+    bool validReading = false;
+    for (int i = 0; i < 5; i++) {
+        int result = ms5611_read();
+        if (result == MS5611_READ_OK) {
+            validReading = true;
+            Serial.print(F("Reading #"));
+            Serial.print(i+1);
+            Serial.print(F(": Pressure = "));
+            Serial.print(pressure);
+            Serial.print(F(" hPa, Temperature = "));
+            Serial.print(temperature);
+            Serial.println(F("°C"));
+        } else {
+            Serial.print(F("Read attempt #"));
+            Serial.print(i+1);
+            Serial.print(F(" failed with error: "));
+            Serial.println(result);
+        }
+        delay(100); // Small delay between readings
+    }
+    
+    if (validReading) {
+        Serial.println(F("MS5611 successfully initialized!"));
+        
+        // Check if pressure readings are in valid range
+        if (pressure < 800 || pressure > 1100) {
+            Serial.println(F("WARNING: Pressure readings outside expected range (800-1100 hPa)"));
+            Serial.print(F("Current pressure: "));
+            Serial.print(pressure);
+            Serial.println(F(" hPa - check sensor calibration"));
+        } else {
+            Serial.println(F("Pressure readings in valid range."));
+        }
     } else {
-        Serial.println("MS5611 successfully initialized and read");
+        Serial.println(F("ERROR: Failed to get valid readings from MS5611"));
     }
 }
 

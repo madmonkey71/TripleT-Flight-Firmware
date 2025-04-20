@@ -21,11 +21,23 @@ extern long GPS_heading;
 extern int pDOP;
 extern byte RTK;
 
+// GPS time variables with default values for Jan 1, 2000
+extern int GPS_year;
+extern byte GPS_month;
+extern byte GPS_day;
+extern byte GPS_hour;
+extern byte GPS_minute;
+extern byte GPS_second;
+extern bool GPS_time_valid;
+
 // Function declarations
 extern void gps_init();
-extern void gps_read();
+extern bool gps_read();
 extern void gps_print();
 extern bool checkGPSConnection();
+
+// Function to get GPS date/time safely (uses defaults if no valid time)
+extern void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute, byte& second);
 
 // New function to control GPS debugging
 void setGPSDebugging(bool enable);

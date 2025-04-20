@@ -19,6 +19,15 @@ long GPS_heading = 0;
 int pDOP = 0;
 byte RTK = 0;
 
+// GPS time variables with default values for Jan 1, 2000
+int GPS_year = 2000;
+byte GPS_month = 1;
+byte GPS_day = 1;
+byte GPS_hour = 0;
+byte GPS_minute = 0;
+byte GPS_second = 0;
+bool GPS_time_valid = false;
+
 // Add reference to debug flag
 extern volatile bool enableGPSDebug;
 
@@ -50,7 +59,18 @@ void setGPSDebugging(bool enable) {
 }
 
 void gps_init() {
-  // Initialize I2C if not already initialized
+  Serial.println(F("Initializing GPS..."));
+  
+  // Initialize GPS time variables with default values
+  GPS_year = 2000;
+  GPS_month = 1;
+  GPS_day = 1;
+  GPS_hour = 0;
+  GPS_minute = 0;
+  GPS_second = 0;
+  GPS_time_valid = false;
+  
+  // Initialize GPS connection
   Wire.begin();
   
   // Simple message - debug status will be shown by the setGPSDebugging function
@@ -93,108 +113,89 @@ bool checkGPSConnection() {
   return (rate > 0);
 }
 
-void gps_read() {
-  // Get the latest PVT data
-  boolean pvtSuccess = myGNSS.getPVT();
-  
-  if (pvtSuccess) {
-    // Get the fix type
-    byte fixType = myGNSS.getFixType();
-    GPS_fixType = fixType;
-
-    // Get the number of satellites in view
-    SIV = myGNSS.getSIV();
-
-    // Get the position data
+bool gps_read() {
+  // Update GPS data if available
+  if (myGNSS.getPVT()) {
+    // Get basic positioning data
     GPS_latitude = myGNSS.getLatitude();
     GPS_longitude = myGNSS.getLongitude();
-    GPS_altitude = myGNSS.getAltitude();
-    GPS_altitudeMSL = myGNSS.getAltitudeMSL();
-
-    // Get the velocity data
+    GPS_altitude = myGNSS.getAltitudeMSL();
     GPS_speed = myGNSS.getGroundSpeed();
-    GPS_heading = myGNSS.getHeading();
-
-    // Get the DOP and RTK data
-    pDOP = myGNSS.getPDOP();
-    RTK = myGNSS.getCarrierSolutionType();
-
-    // Update the last time we got data
-    lastTime = millis();
+    GPS_fixType = myGNSS.getFixType();
+    SIV = myGNSS.getSIV();
+    
+    // Update GPS time variables if we have a valid fix
+    if (GPS_fixType > 0) {
+      GPS_year = myGNSS.getYear();
+      GPS_month = myGNSS.getMonth();
+      GPS_day = myGNSS.getDay();
+      GPS_hour = myGNSS.getHour();
+      GPS_minute = myGNSS.getMinute();
+      GPS_second = myGNSS.getSecond();
+      GPS_time_valid = true;
+    }
+    
+    // Debug print if enabled
+    if (enableGPSDebug) {
+      gps_print();
+    }
+    return true;
   }
-  
-  // Ensure debug settings are consistent after every operation
-  setGPSDebugging(enableGPSDebug);
+  return false;
 }
 
 void gps_print() {
-  // Only print if GPS debug is enabled
-  if (!enableGPSDebug) return;
+  Serial.println("GPS Data:");
+  Serial.print("  Fix type: ");
+  Serial.print(GPS_fixType);
+  Serial.print(" | Satellites: ");
+  Serial.println(SIV);
   
-  // Print the date and time
-  Serial.print(myGNSS.getYear()); Serial.print(F("-"));
-  Serial.print(myGNSS.getMonth()); Serial.print(F("-"));
-  Serial.print(myGNSS.getDay()); Serial.print(F(" "));
-  Serial.print(myGNSS.getHour()); Serial.print(F(":"));
-  Serial.print(myGNSS.getMinute()); Serial.print(F(":"));
-  Serial.println(myGNSS.getSecond());
-
-  // Print the fix type
-  Serial.print(F("Fix type: "));
-  switch (GPS_fixType) {
-    case 0: Serial.print(F("No fix")); break;
-    case 1: Serial.print(F("Dead reckoning")); break;
-    case 2: Serial.print(F("2D")); break;
-    case 3: Serial.print(F("3D")); break;
-    case 4: Serial.print(F("GNSS + Dead reckoning")); break;
-    case 5: Serial.print(F("Time only")); break;
-    default: Serial.print(F("Unknown")); break;
-  }
-
-  // Print the number of satellites
-  Serial.print(F(" | SIV: "));
-  Serial.print(SIV);
-
-  // Print the position
-  Serial.print(F(" | Lat: "));
+  Serial.print("  Lat: ");
   Serial.print(GPS_latitude / 10000000.0, 7);
-  Serial.print(F("° "));
-  Serial.print(GPS_latitude < 0 ? F("S") : F("N"));
-  
-  Serial.print(F(" | Long: "));
+  Serial.print(" | Lon: ");
   Serial.print(GPS_longitude / 10000000.0, 7);
-  Serial.print(F("° "));
-  Serial.print(GPS_longitude < 0 ? F("W") : F("E"));
+  Serial.print(" | Alt: ");
+  Serial.print(GPS_altitude / 1000.0);
+  Serial.println(" m");
   
-  // Print the altitude
-  Serial.print(F(" | Alt: "));
-  Serial.print(GPS_altitude / 1000.0, 3);
-  Serial.print(F(" m"));
-
-  Serial.print(F(" | AltMSL: "));
-  Serial.print(GPS_altitudeMSL / 1000.0, 3);
-  Serial.print(F(" m"));
-
-  // Print the velocity
-  Serial.print(F(" | Speed: "));
-  Serial.print(GPS_speed / 1000.0, 3);
-  Serial.print(F(" m/s"));
-
-  Serial.print(F(" | Heading: "));
-  Serial.print(GPS_heading / 100000.0, 2);
-  Serial.print(F("°"));
-
-  // Print the DOP
-  Serial.print(F(" | pDOP: "));
-  Serial.print(pDOP / 100.0, 2);
-
-  // Print the RTK status
-  Serial.print(F(" | RTK: "));
-  switch (RTK) {
-    case 0: Serial.println(F("No RTK")); break;
-    case 1: Serial.println(F("Float RTK")); break;
-    case 2: Serial.println(F("Fixed RTK")); break;
-    default: Serial.println(F("Unknown")); break;
+  Serial.print("  Speed: ");
+  Serial.print(GPS_speed / 1000.0);
+  Serial.println(" m/s");
+  
+  if (GPS_time_valid) {
+    Serial.print("  Time: ");
+    Serial.print(GPS_year);
+    Serial.print("-");
+    if (GPS_month < 10) Serial.print("0");
+    Serial.print(GPS_month);
+    Serial.print("-");
+    if (GPS_day < 10) Serial.print("0");
+    Serial.print(GPS_day);
+    Serial.print(" ");
+    if (GPS_hour < 10) Serial.print("0");
+    Serial.print(GPS_hour);
+    Serial.print(":");
+    if (GPS_minute < 10) Serial.print("0");
+    Serial.print(GPS_minute);
+    Serial.print(":");
+    if (GPS_second < 10) Serial.print("0");
+    Serial.println(GPS_second);
+  } else {
+    Serial.println("  Time: Not yet valid");
   }
+  
+  Serial.println();
+}
+
+// Function to get GPS date/time safely (uses defaults if no valid time)
+void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute, byte& second) {
+  // Return the current GPS time values (defaults to Jan 1, 2000 if no valid fix)
+  year = GPS_year;
+  month = GPS_month;
+  day = GPS_day;
+  hour = GPS_hour;
+  minute = GPS_minute;
+  second = GPS_second;
 }
 

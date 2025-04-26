@@ -13,6 +13,7 @@ float icm_mag[3] = {0.0f, 0.0f, 0.0f};    // Magnetometer data (uT)
 float icm_temp = 0.0f;                    // Temperature in degrees C
 float icm_q0 = 1.0f, icm_q1 = 0.0f, icm_q2 = 0.0f, icm_q3 = 0.0f;  // Quaternion components (w,x,y,z)
 bool icm_data_available = false;          // Flag to indicate if data is ready
+bool icm20948_ready = false;              // Flag to indicate if ICM is ready
 uint16_t icm_data_header = 0;             // FIFO header for checking packet types
 
 // ICM-20948 IMU object
@@ -181,7 +182,10 @@ void ICM_20948_read() {
   static unsigned long lastErrorPrintTime = 0;
   static unsigned long lastDetailedDebugTime = 0;
   
-    if (myICM.dataReady()) {
+  // Update the ready flag
+  icm20948_ready = (myICM.status == ICM_20948_Stat_Ok);
+  
+  if (myICM.dataReady()) {
     myICM.getAGMT();  // Get the latest data
     
     // Convert accelerometer data from mg to g and store in global array
@@ -341,4 +345,10 @@ void ICM_20948_print() {
   Serial.print(icm_temp, 1);
   Serial.println("°C");
 
+}
+
+// Function to check if the ICM-20948 is ready
+bool ICM_20948_isReady() {
+  icm20948_ready = (myICM.status == ICM_20948_Stat_Ok && myICM.dataReady());
+  return icm20948_ready;
 } 

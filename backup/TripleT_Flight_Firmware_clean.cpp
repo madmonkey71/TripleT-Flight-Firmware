@@ -61,7 +61,6 @@
 #include "data_structures.h"  // Include our data structures
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
-#include "state_estimation.h"
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -446,28 +445,21 @@ void printStatusSummary() {
 
 // Updated help message with more compact formatting
 void printHelpMessage() {
-  Serial.println(F("TripleT Flight Firmware Commands:"));
-  Serial.println(F("================================="));
-  Serial.println(F("help          - Show this help message"));
-  Serial.println(F("status        - Show system status"));
-  Serial.println(F("calibrate     - Calibrate barometer with GPS altitude"));
-  Serial.println(F("storage       - Show storage statistics"));
-  Serial.println(F("display       - Toggle detailed display mode"));
-  Serial.println(F("test_ukf [s]  - Test UKF sensor fusion (s=seconds, default 5)"));
-  Serial.println(F("reset_ukf     - Reset UKF state estimator"));
-  Serial.println(F(""));
-  Serial.println(F("Debug Commands:"));
-  Serial.println(F("debug on/off  - Enable/disable all debugging"));
-  Serial.println(F("debug system  - Toggle system debug messages"));
-  Serial.println(F("debug sensor  - Toggle sensor debug messages"));
-  Serial.println(F("debug imu     - Toggle IMU debug messages"));
-  Serial.println(F("debug gps     - Toggle GPS debug messages"));
-  Serial.println(F("debug baro    - Toggle barometer debug messages"));
-  Serial.println(F("debug storage - Toggle storage debug messages"));
-  Serial.println(F("debug icm_raw - Toggle ICM raw data debug"));
-  Serial.println(F("debug status  - Toggle status summary display"));
-  Serial.println(F("debug all     - Enable all debug options"));
-  Serial.println(F("debug none    - Disable all debug options"));
+  Serial.println(F("\n=== TripleT Flight Commands ==="));
+  Serial.println(F("help      - Show this help message"));
+  Serial.println(F("status    - Show system status"));
+  Serial.println(F("calibrate - Calibrate barometer with GPS"));
+  Serial.println(F("storage   - Show storage statistics"));
+  Serial.println(F("display   - Toggle status display"));
+  Serial.println(F("csv [on|off] - Toggle CSV data output"));
+  
+  Serial.println(F("\n=== Debug Commands ==="));
+  Serial.println(F("debug system [on|off]  - System debug messages"));
+  Serial.println(F("debug sensor [on|off]  - Sensor data debug"));
+  Serial.println(F("debug gps [on|off]     - GPS data debug"));
+  Serial.println(F("debug baro [on|off]    - Barometer data debug"));
+  Serial.println(F("debug storage [on|off] - Storage operations debug"));
+  Serial.println(F("debug icmraw [on|off]  - ICM raw data debug"));
 }
 
 // Updated storage stats with more concise output
@@ -503,9 +495,7 @@ void printStorageStatistics() {
   Serial.println(F("-----------------------------"));
 }
 
-// Move the testUKF function to before processCommand so it's declared before it's used
 // Add this function declaration near other function declarations
-void testUKF(); // Prototype for testUKF to be defined later
 
 void processCommand(String command) {
   // Process single command
@@ -603,154 +593,49 @@ void processCommand(String command) {
     printStatusSummary();
   }
   else if (command == "calibrate") {
-    // Manual calibration command
-    if (!baroCalibrated) {
-      Serial.println(F("Starting barometric calibration with GPS..."));
-      Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
-      
-      // Change LED to purple to indicate calibration in progress
-      pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-      pixels.show();
-      
-      if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
-        Serial.println(F("Barometric calibration successful!"));
-        baroCalibrated = true;
-        // Change LED to green to indicate success
-        pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-        pixels.show();
-        delay(1000);
-      } else {
-        Serial.println(F("Barometric calibration timed out or failed."));
-        // Change LED to red to indicate failure
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-        pixels.show();
-        delay(1000);
-      }
+    if (gpsHasFix && gpsFixType >= 3) {
+      // Only calibrate if we have a 3D fix
+      baro_altitude_offset = gpsAltitudeMSL - (44330.0 * (1.0 - pow((pressure * 100.0) / 101325.0, 0.1903)));
+      baroCalibrated = true;
+      Serial.print(F("Barometer calibrated! Offset: "));
+      Serial.print(baro_altitude_offset, 2);
+      Serial.println(F("m"));
     } else {
-      Serial.println(F("Barometric calibration has already been performed."));
+      Serial.println(F("ERROR: Cannot calibrate without GPS 3D fix"));
     }
-  }
-  else if (command == "test_ukf" || command.startsWith("test_ukf ")) {
-    // Run state estimation test
-    int duration = 5000;  // Default 5 seconds
-    
-    // Check if duration was specified
-    if (command.length() > 8) {
-      String durationStr = command.substring(9);
-      duration = durationStr.toInt();
-      if (duration <= 0) {
-        duration = 5000;
-      } else {
-        duration = min(duration, 30) * 1000;  // Limit to 30 seconds
-      }
-    }
-    
-    Serial.print(F("Running UKF test for "));
-    Serial.print(duration / 1000);
-    Serial.println(F(" seconds..."));
-    
-    // Run the test
-    state_estimation_test(duration);
-  }
-  else if (command == "simple_ukf") {
-    // Use the simplified UKF functions
-    Serial.println(F("Initializing simplified UKF state estimator..."));
-    
-    // Initialize the simplified UKF
-    state_estimation_simple_init();
-    
-    // Set up a loop to run for 10 seconds
-    unsigned long startTime = millis();
-    unsigned long lastUpdate = 0;
-    unsigned long lastPrint = 0;
-    
-    Serial.println(F("Running simplified UKF for 10 seconds..."));
-    
-    while (millis() - startTime < 10000) {
-      // Read fresh sensor data
-      ICM_20948_read();
-      kx134_read();
-      
-      // Update at 100Hz
-      if (millis() - lastUpdate >= 10) {
-        // Select which accelerometer to use based on magnitude
-        float* accel_source = icm_accel;
-        float icm_acc_magnitude = sqrt(
-          icm_accel[0] * icm_accel[0] + 
-          icm_accel[1] * icm_accel[1] + 
-          icm_accel[2] * icm_accel[2]
-        );
-        
-        // Use KX134 for high-G scenarios if available
-        if (icm_acc_magnitude > 7.0f && kx134_accel_ready) {
-          accel_source = kx134_accel;
-        }
-        
-        // Process the data through simplified UKF
-        bool success = state_estimation_simple_update(accel_source, icm_gyro, icm_mag);
-        
-        // Print results every 500ms
-        if (millis() - lastPrint >= 500) {
-          Serial.println(F("\n--- Simplified UKF Output ---"));
-          
-          // Get Euler angles 
-          float roll_deg, pitch_deg, yaw_deg;
-          state_estimation_get_euler(roll_deg, pitch_deg, yaw_deg);
-          
-          // Convert to degrees for display
-          roll_deg *= 180.0f / PI;
-          pitch_deg *= 180.0f / PI;
-          yaw_deg *= 180.0f / PI;
-          
-          Serial.print(F("Attitude (roll, pitch, yaw): "));
-          Serial.print(roll_deg, 1); Serial.print(F("°, "));
-          Serial.print(pitch_deg, 1); Serial.print(F("°, "));
-          Serial.print(yaw_deg, 1); Serial.println(F("°"));
-          
-          // Get position and velocity
-          float vx, vy, vz, px, py, pz;
-          state_estimation_get_velocity(vx, vy, vz);
-          state_estimation_get_position(px, py, pz);
-          
-          Serial.print(F("Velocity (m/s): "));
-          Serial.print(vx, 2); Serial.print(F(", "));
-          Serial.print(vy, 2); Serial.print(F(", "));
-          Serial.println(vz, 2);
-          
-          Serial.print(F("Position (m): "));
-          Serial.print(px, 2); Serial.print(F(", "));
-          Serial.print(py, 2); Serial.print(F(", "));
-          Serial.println(pz, 2);
-          
-          Serial.print(F("UKF Update: "));
-          Serial.println(success ? F("OK") : F("FAILED"));
-          
-          lastPrint = millis();
-        }
-        
-        lastUpdate = millis();
-      }
-      
-      // Small delay to avoid hogging CPU
-      delay(1);
-    }
-    
-    Serial.println(F("Simplified UKF test complete"));
-  }
-  else if (command == "display") {
-    displayMode = !displayMode;
-    Serial.print(F("Display mode: "));
-    Serial.println(displayMode ? F("ON") : F("OFF"));
   }
   else if (command == "storage") {
     printStorageStatistics();
   }
-  else if (command == "reset_ukf") {
-    state_estimation_reset();
-    Serial.println(F("UKF state estimation reset"));
+  else if (command == "display") {
+    // Toggle display mode
+    enableStatusSummary = !enableStatusSummary;
+    Serial.print(F("Status display: "));
+    Serial.println(enableStatusSummary ? F("ON") : F("OFF"));
+  }
+  else if (command.startsWith("csv")) {
+    String csvMode = command.length() > 4 ? command.substring(4) : "";
+    csvMode.trim();
+    
+    if (csvMode == "on" || csvMode == "1") {
+      enableSerialCSV = true;
+      Serial.println(F("Serial CSV output enabled"));
+    }
+    else if (csvMode == "off" || csvMode == "0") {
+      enableSerialCSV = false;
+      Serial.println(F("Serial CSV output disabled"));
+    }
+    else {
+      // Toggle if no parameter
+      enableSerialCSV = !enableSerialCSV;
+      Serial.print(F("Serial CSV output: "));
+      Serial.println(enableSerialCSV ? F("ON") : F("OFF"));
+    }
   }
   else {
-    Serial.println(F("Unknown command. Type 'help' for available commands."));
+    Serial.print(F("Unknown command: "));
+    Serial.println(command);
+    Serial.println(F("Type 'help' for available commands"));
   }
 }
 
@@ -913,8 +798,6 @@ void setup() {
   ms5611_init();
   Serial.println(F("MS5611 initialized"));
   
-  // Initialize UKF state estimation
-  state_estimation_init();
   
   // Change LED to white before storage initialization
   pixels.setPixelColor(0, pixels.Color(25, 25, 25));
@@ -981,9 +864,6 @@ void loop() {
     // Read ICM-20948 IMU
     ICM_20948_read();
     
-    // Update UKF state estimation with latest sensor readings
-    state_estimation_update();
-      
     // Process flight state and events based on current measurements
     ProcessFlightState();
     
@@ -994,7 +874,7 @@ void loop() {
     
     // Data logging
     if (loggingEnabled && (currentTime - lastLogUpdate >= logInterval)) {
-      WriteLogData();
+      WriteLogData(false);
       lastLogUpdate = currentTime;
     }
     

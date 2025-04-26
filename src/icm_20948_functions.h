@@ -15,6 +15,7 @@ void ICM_20948_init();
 void ICM_20948_read();
 void ICM_20948_print();
 void ICM_20948_calibrate();
+bool ICM_20948_isReady();
 
 
 // Global variable declarations
@@ -26,6 +27,7 @@ extern float icm_gyro[3];   // Gyroscope data (deg/s)
 extern float icm_mag[3];    // Magnetometer data (uT)
 extern float icm_temp;      // Temperature in degrees C
 extern bool icm_data_available;  // Flag to indicate if data is ready
+extern bool icm20948_ready;      // Flag to indicate if ICM is ready
 extern uint16_t icm_data_header; // FIFO header for checking packet types
 
 #endif // ICM_20948_FUNCTIONS_H 

@@ -1,7 +1,7 @@
 // TripleT Flight Firmware
-// Current Version: v0.15
+// Current Version: v0.20
 // Current State: Alpha
-// Last Updated: 16/03/2025
+// Last Updated: 24/04/2025
 // **Notes**
 // This code started out life as a remake of the Blip Test Code from Joe Barnard @ BPS.Space
 // Nothing remains of the original code but that's where the concept originated.
@@ -39,8 +39,53 @@
 #include <SerialFlash.h>
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
+// Watchdog timer library
+#include <Watchdog_t4.h>
+#include <EEPROM.h>
+
+// Create the watchdog object
+WDT_T4<WDT1> watchdog;
+
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.15
+#define TRIPLET_FLIGHT_VERSION 0.20
+
+// Additional variables for apogee detection
+bool apogeeBackupTimer = false;
+bool useKX134 = true;
+int descendingCount = 0;
+
+// Flight state definition
+enum FlightState {
+  STARTUP,       // Initial state, hardware initialization
+  CALIBRATION,   // Calibration of sensors
+  PAD_IDLE,      // On pad, waiting for arm command
+  ARMED,         // Armed, waiting for liftoff
+  BOOST,         // Motor burning, acceleration > threshold
+  COAST,         // Free flight after motor burnout
+  APOGEE,        // At peak altitude
+  DROGUE_DEPLOY, // Drogue parachute deployment
+  DROGUE_DESCENT,// Descending under drogue
+  MAIN_DEPLOY,   // Main parachute deployment
+  MAIN_DESCENT,  // Descending under main parachute
+  LANDED,        // On ground
+  RECOVERY,      // Post-flight data transmission
+  ERROR          // Error state
+};
+
+// Global flight state variable
+FlightState flightState = STARTUP;
+
+// Global variable for data logging control
+bool log_next_datapoint = false;
+
+// State machine variables
+float maxAltitudeReached = 0.0;
+float launchAltitude = 0.0;
+bool landingDetectedFlag = false;
+unsigned long flightStartTime = 0;
+unsigned long lastStateChangeTime = 0;
+unsigned long boostEndTime = 0;
+float baro_altitude_offset = 0.0; // Calibration offset
 
 // Define the board type if not defined by platformio.ini
 #ifndef BOARD_TEENSY40
@@ -58,7 +103,6 @@
 #include "gps_functions.h"  // Include GPS functions header
 #include "ms5611_functions.h"
 #include "utility_functions.h"    // Include utility functions header
-#include "data_structures.h"  // Include our data structures
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
 
@@ -156,6 +200,349 @@ volatile bool detailedOutput = false;   // Add detailed data to be printed to co
 volatile bool enableSensorDebug = true; // Enable detailed sensor-related debug output
 volatile bool enableGPSDebug = false;   // Disable GPS library debug output completely
 
+// Sensor status tracking
+struct SensorStatus {
+  bool isWorking;
+  unsigned long lastValidReading;
+  int failureCount;
+  int consecutiveFailures;
+};
+
+// Initialize global sensor status variables
+SensorStatus barometerStatus = {true, 0, 0, 0};
+SensorStatus accelerometerStatus = {true, 0, 0, 0};
+SensorStatus gyroscopeStatus = {true, 0, 0, 0};
+SensorStatus magnetometerStatus = {true, 0, 0, 0};
+SensorStatus gpsStatus = {true, 0, 0, 0};
+
+// Sensor ready flags - use functions to check sensor status
+#define ms5607_ready ms5611Sensor.isConnected()
+#define kx134_accel_ready kx134Accel.dataReady()
+// Remove the macro and use the extern variable defined in ICM file
+extern bool icm20948_ready;
+
+// External declarations for ICM status
+extern bool ICM_20948_isReady(); 
+extern float icm_accel[3];
+extern float icm_gyro[3];
+extern float icm_mag[3];
+extern float icm_temp;
+
+// State timeout tracking
+unsigned long stateEntryTime = 0;
+#define STATE_TIMEOUT_MS 30000  // 30 seconds timeout for states
+
+// Configuration parameters for recovery system
+#define DROGUE_PRESENT true
+#define MAIN_PRESENT true
+#define MAIN_DEPLOY_ALTITUDE 100.0  // Deploy main parachute at 100m AGL
+#define BOOST_ACCEL_THRESHOLD 2.5   // Threshold to detect liftoff (g)
+#define COAST_ACCEL_THRESHOLD 0.5   // Threshold to detect end of boost (g)
+#define APOGEE_CONFIRMATION_COUNT 3  // Multiple readings required to confirm apogee
+#define LANDING_CONFIRMATION_COUNT 10 // Multiple readings required to confirm landing
+#define BACKUP_APOGEE_TIME 5000      // Time since boost end to assume apogee (ms)
+#define BUZZER_OUTPUT true          // Enable buzzer output
+
+// EEPROM configuration for non-volatile storage
+#define EEPROM_STATE_ADDR 0           // EEPROM address for flight state structure
+#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
+#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds
+
+// Flight state storage structure
+struct FlightStateData {
+  FlightState state;        // Current flight state
+  float launchAltitude;     // Stored launch altitude
+  float maxAltitude;        // Maximum altitude reached
+//  float currentAltitude;    // Current altitude (Removed - less critical to store, recalculate or use last reading)
+  unsigned long flightStartTime; // Store flight start time
+  unsigned long boostEndTime; // Store boost end time
+  unsigned long timestamp;  // Timestamp of last save
+  uint16_t signature;       // Validation signature
+};
+
+FlightStateData stateData; // Declare the global stateData variable
+unsigned long lastStateSave = 0; // Declare and initialize the lastStateSave variable
+
+// Global variable for watchdog status
+bool watchdogTriggered = false;
+
+// Error thresholds
+#define MAX_SENSOR_FAILURES 3
+#define BAROMETER_ERROR_THRESHOLD 10.0 // 10 hPa change between readings is suspicious
+#define ACCEL_ERROR_THRESHOLD 10.0 // 10g change between readings is suspicious
+#define GPS_TIMEOUT_MS 5000 // 5 seconds without GPS update is considered a failure
+
+// Forward declarations
+void checkSensorStatus();
+bool isSensorSuiteHealthy(FlightState currentState);
+float GetAccelMagnitude();
+float getBaroAltitude();
+bool IsStable();
+void detectBoostEnd();
+bool detectApogee();
+bool detectLanding();
+void watchdogCallback();
+void setLEDColor(uint8_t p, uint8_t r, uint8_t g, uint8_t b);
+void WriteLogData(bool forceLog);
+bool createNewLogFile();
+void closeAllFiles();
+void prepareForShutdown();
+// EEPROM Functions Forward Declarations
+void saveStateToEEPROM();
+bool loadStateFromEEPROM();
+void recoverFromPowerLoss();
+
+// Watchdog timer handler
+void watchdogHandler() {
+  watchdogTriggered = true;
+  // Emergency recovery actions could be added here
+  Serial.println(F("WATCHDOG TRIGGERED - SYSTEM RESET"));
+}
+
+// Check and update status of all sensors
+void checkSensorStatus() {
+  // Check barometer
+  static float lastPressure = pressure;
+  if (ms5611Sensor.isConnected() && fabs(pressure - lastPressure) < BAROMETER_ERROR_THRESHOLD) {
+    barometerStatus.isWorking = true;
+    barometerStatus.lastValidReading = millis();
+    barometerStatus.failureCount = 0;
+  } else if (ms5611Sensor.isConnected()) {
+    // Suspicious reading but sensor is connected
+    barometerStatus.failureCount++;
+    if (barometerStatus.failureCount > MAX_SENSOR_FAILURES) {
+      barometerStatus.isWorking = false;
+    }
+  } else {
+    barometerStatus.isWorking = false;
+  }
+  lastPressure = pressure;
+  
+  // Check accelerometer
+  static float lastAccelMag = 0;
+  float accelMag = GetAccelMagnitude();
+  if ((kx134_accel_ready || icm20948_ready) && fabs(accelMag - lastAccelMag) < ACCEL_ERROR_THRESHOLD) {
+    accelerometerStatus.isWorking = true;
+    accelerometerStatus.lastValidReading = millis();
+    accelerometerStatus.failureCount = 0;
+  } else if (kx134_accel_ready || icm20948_ready) {
+    // Suspicious reading but sensor is connected
+    accelerometerStatus.failureCount++;
+    if (accelerometerStatus.failureCount > MAX_SENSOR_FAILURES) {
+      accelerometerStatus.isWorking = false;
+    }
+  } else {
+    accelerometerStatus.isWorking = false;
+  }
+  lastAccelMag = accelMag;
+  
+  // Check gyroscope
+  if (icm20948_ready) {
+    gyroscopeStatus.isWorking = true;
+    gyroscopeStatus.lastValidReading = millis();
+  } else {
+    gyroscopeStatus.isWorking = false;
+  }
+  
+  // Check magnetometer
+  if (icm20948_ready) {
+    magnetometerStatus.isWorking = true;
+    magnetometerStatus.lastValidReading = millis();
+  } else {
+    magnetometerStatus.isWorking = false;
+  }
+  
+  // Check GPS
+  if (myGNSS.getPVT()) {
+    gpsStatus.isWorking = true;
+    gpsStatus.lastValidReading = millis();
+  } else if (millis() - gpsStatus.lastValidReading > GPS_TIMEOUT_MS) {
+    gpsStatus.isWorking = false;
+  }
+  
+  // Check if system is healthy overall
+  if (!isSensorSuiteHealthy(flightState) && flightState != ERROR) {
+    // If sensors are unhealthy and we're not already in ERROR state
+    Serial.println(F("SENSOR HEALTH CHECK FAILED - ENTERING ERROR STATE"));
+    flightState = ERROR;
+  }
+}
+
+// Check if all critical sensors are healthy
+bool isSensorSuiteHealthy(FlightState currentState) {
+  // For ground states, we only need GPS and barometer to be working
+  if (currentState <= ARMED) {
+    return barometerStatus.isWorking && gpsStatus.isWorking;
+  }
+  
+  // For boost and coast, we need accelerometer, gyro, and barometer
+  if (currentState <= COAST) {
+    return barometerStatus.isWorking && accelerometerStatus.isWorking && gyroscopeStatus.isWorking;
+  }
+  
+  // For apogee and descent, barometer is critical
+  if (currentState <= MAIN_DESCENT) {
+    return barometerStatus.isWorking;
+  }
+  
+  // For landing detection, we need either accelerometer or barometer
+  if (currentState == LANDED) {
+    return barometerStatus.isWorking || accelerometerStatus.isWorking;
+  }
+  
+  // Default case - require all sensors
+  return barometerStatus.isWorking && accelerometerStatus.isWorking && 
+         gyroscopeStatus.isWorking && gpsStatus.isWorking;
+}
+
+// Get state name as string (for logging/debugging)
+const char* getStateName(FlightState state) {
+  switch (state) {
+    case STARTUP: return "STARTUP";
+    case CALIBRATION: return "CALIBRATION";
+    case PAD_IDLE: return "PAD_IDLE";
+    case ARMED: return "ARMED";
+    case BOOST: return "BOOST";
+    case COAST: return "COAST";
+    case APOGEE: return "APOGEE";
+    case DROGUE_DEPLOY: return "DROGUE_DEPLOY";
+    case DROGUE_DESCENT: return "DROGUE_DESCENT";
+    case MAIN_DEPLOY: return "MAIN_DEPLOY";
+    case MAIN_DESCENT: return "MAIN_DESCENT";
+    case LANDED: return "LANDED";
+    case RECOVERY: return "RECOVERY";
+    case ERROR: return "ERROR";
+    default: return "UNKNOWN";
+  }
+}
+
+// Redundant apogee detection
+bool detectApogee() {
+  float currentAltitude = getBaroAltitude();
+  bool apogeeDetected = false;
+  
+  // Method 1: Barometric detection (primary)
+  if (ms5607_ready) {
+    // Track maximum altitude
+    if (currentAltitude > maxAltitudeReached) {
+      maxAltitudeReached = currentAltitude;
+      descendingCount = 0;
+    }
+    else if (currentAltitude < maxAltitudeReached - 1.0) {
+      // Altitude is decreasing significantly
+      descendingCount++;
+      
+      // Require multiple consecutive readings to confirm
+      if (descendingCount >= APOGEE_CONFIRMATION_COUNT) {
+        Serial.println(F("APOGEE DETECTED (barometric)"));
+        apogeeDetected = true;
+      }
+    }
+  }
+  
+  // Method 2: Accelerometer-based detection (backup)
+  if (!apogeeDetected && (kx134_accel_ready || icm20948_ready)) {
+    float accel_z = kx134_accel_ready ? kx134_accel[2] : icm_accel[2];
+    
+    // If Z acceleration is negative for several samples, we might be at apogee
+    static float prevAccel = 0;
+    static int accelNegativeCount = 0;
+    
+    if (accel_z < -0.1 && prevAccel < -0.1) {
+      accelNegativeCount++;
+      if (accelNegativeCount >= 5) {
+        Serial.println(F("APOGEE DETECTED (accelerometer)"));
+        apogeeDetected = true;
+        accelNegativeCount = 0;
+      }
+    } else if (accel_z > 0) {
+      accelNegativeCount = 0;
+    }
+    
+    prevAccel = accel_z;
+  }
+  
+  // Method 3: Time-based detection (last resort)
+  if (!apogeeDetected && boostEndTime > 0) {
+    // If we know when the boost phase ended, we can estimate apogee
+    if (millis() - boostEndTime > BACKUP_APOGEE_TIME) {
+      Serial.println(F("APOGEE DETECTED (time-based)"));
+      apogeeDetected = true;
+    }
+  }
+  
+  return apogeeDetected;
+}
+
+// Redundant landing detection
+bool detectLanding() {
+  static int stableCount = 0;
+  bool landingDetected = false;
+  
+  // Method 1: Accelerometer stability (primary)
+  if (kx134_accel_ready || icm20948_ready) {
+    float accel_magnitude = GetAccelMagnitude();
+    
+    // Check if acceleration is close to 1g (just gravity)
+    if (accel_magnitude > 0.95 && accel_magnitude < 1.05) {
+      stableCount++;
+    } else {
+      stableCount = 0;
+    }
+    
+    // Require extended stability to confirm landing
+    if (stableCount >= LANDING_CONFIRMATION_COUNT) {
+      landingDetected = true;
+    }
+  }
+  
+  // Method 2: Barometric stability (backup)
+  if (!landingDetected && ms5607_ready) {
+    static float lastAltitude = 0.0;
+    static int altitudeStableCount = 0;
+    
+    float currentAltitude = getBaroAltitude();
+    
+    // Check if altitude is stable
+    if (fabs(currentAltitude - lastAltitude) < 1.0) {
+      altitudeStableCount++;
+    } else {
+      altitudeStableCount = 0;
+    }
+    
+    lastAltitude = currentAltitude;
+    
+    // Require extended stability to confirm landing
+    if (altitudeStableCount >= LANDING_CONFIRMATION_COUNT) {
+      landingDetected = true;
+    }
+  }
+  
+  // If landing detected, log it
+  if (landingDetected && !landingDetectedFlag) {
+    Serial.println(F("LANDING DETECTED"));
+    landingDetectedFlag = true;
+    // Save state immediately on landing detection
+    saveStateToEEPROM();
+  }
+  
+  return landingDetected;
+}
+
+// Track boost end for time-based apogee detection
+void detectBoostEnd() {
+  float accel_magnitude = GetAccelMagnitude();
+  
+  // When acceleration drops below threshold, record the time
+  if (accel_magnitude < COAST_ACCEL_THRESHOLD && boostEndTime == 0) {
+    boostEndTime = millis();
+    Serial.println(F("BOOST END DETECTED"));
+    Serial.print(F("Time since startup: "));
+    Serial.print(boostEndTime / 1000.0);
+    Serial.println(F(" seconds"));
+  }
+}
+
 // Function to check available storage space
 void checkStorageSpace() {
   if (sdCardAvailable && SD.vol()) {
@@ -228,6 +615,9 @@ bool createNewLogFile() {
   loggingEnabled = true;
   Serial.println(F("Log file created successfully"));
   
+  // Save state after creating new log file
+  saveStateToEEPROM();
+  
   return true;
 }
 
@@ -251,8 +641,7 @@ void prepareForShutdown() {
   closeAllFiles();
   
   // Set LED to indicate shutdown
-  pixels.setPixelColor(0, pixels.Color(0, 0, 50)); // Blue during shutdown
-  pixels.show();
+  setLEDColor(0, 0, 0, 50); // Blue during shutdown
   
   // Final beep
   tone(BUZZER_PIN, 1000); delay(100); noTone(BUZZER_PIN);
@@ -343,77 +732,344 @@ void formatNumber(float input, byte columns, byte places)
   Serial.print(buffer); // Print the formatted number to the serial monitor
 }
 
+// Main flight state processor
+void ProcessFlightState() {
+  static FlightState prevState = STARTUP; // Initialize prevState for first check
+  
+  // Check for state timeouts
+  unsigned long stateTime = millis() - stateEntryTime;
+  if (stateTime > STATE_TIMEOUT_MS && flightState != STARTUP && flightState != CALIBRATION && 
+      flightState != PAD_IDLE && flightState != RECOVERY && flightState != ERROR) {
+    // If we're in a critical state and a timeout occurs, transition to ERROR
+    Serial.println(F("ERROR: State timeout occurred"));
+    flightState = ERROR;
+  }
+  
+  // Update last state change time if state changed
+  if (flightState != prevState) {
+    lastStateChangeTime = millis();
+    stateEntryTime = millis();
+    
+    // Log state change
+    Serial.print(F("Flight state changed: "));
+    Serial.print(getStateName(prevState));
+    Serial.print(F(" -> "));
+    Serial.println(getStateName(flightState));
+    
+    // Initialize state
+    switch (flightState) {
+      // REMOVED STARTUP and CALIBRATION cases - Handled in setup()
+      
+      case PAD_IDLE:
+        // Pad idle state initialization
+        setLEDColor(0, 0, 50, 0); // Green
+        // Store launch altitude
+        launchAltitude = getBaroAltitude();
+        break;
+      
+      case ARMED:
+        // Armed state initialization
+        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red
+        pixels.show();
+        // Arming beep is handled by the command processor
+        break;
+      
+      case BOOST:
+        // Boost state initialization
+        setLEDColor(0, 50, 30, 0); // Orange
+        flightStartTime = millis();
+        Serial.println(F("LIFTOFF!"));
+        // Clear any previous boost end time
+        boostEndTime = 0;
+        break;
+      
+      case COAST:
+        // Coast state initialization
+        setLEDColor(0, 0, 0, 50); // Blue
+        break;
+      
+      case APOGEE:
+        // Apogee state initialization
+        setLEDColor(0, 50, 0, 50); // Purple
+        Serial.print(F("Apogee detected at altitude: "));
+        Serial.print(getBaroAltitude() - launchAltitude);
+        Serial.println(F(" meters AGL"));
+        if (BUZZER_OUTPUT) {
+          tone(BUZZER_PIN, 3000, 200); // Apogee beep
+        }
+        break;
+      
+      case DROGUE_DEPLOY:
+        // Drogue deploy state initialization
+        setLEDColor(0, 50, 50, 0); // Yellow
+        if (DROGUE_PRESENT) {
+          Serial.println(F("Deploying drogue parachute"));
+          // Add code to fire drogue parachute pyro channel here
+        }
+        break;
+      
+      case DROGUE_DESCENT:
+        // Drogue descent state initialization
+        setLEDColor(0, 0, 50, 50); // Cyan
+        break;
+      
+      case MAIN_DEPLOY:
+        // Main deploy state initialization
+        setLEDColor(0, 50, 25, 0); // Orange
+        if (MAIN_PRESENT) {
+          Serial.println(F("Deploying main parachute"));
+          // Add code to fire main parachute pyro channel here
+        }
+        break;
+      
+      case MAIN_DESCENT:
+        // Main descent state initialization
+        setLEDColor(0, 0, 30, 0); // Green
+        break;
+      
+      case LANDED:
+        // Landed state initialization
+        setLEDColor(0, 0, 50, 0); // Green
+        Serial.println(F("Landed safely!"));
+        if (BUZZER_OUTPUT) {
+          // Play landing melody
+          tone(BUZZER_PIN, 2000, 100); delay(150);
+          tone(BUZZER_PIN, 2500, 100); delay(150);
+          tone(BUZZER_PIN, 3000, 100);
+        }
+        break;
+      
+      case RECOVERY:
+        // Recovery state initialization
+        setLEDColor(0, 0, 50, 0); // Green
+        Serial.println(F("Entering recovery mode"));
+        break;
+        
+      case ERROR:
+        // Error state initialization
+        setLEDColor(0, 50, 0, 0); // Red
+        break;
+    }
+    
+    prevState = flightState;
+    // Save state immediately on any state transition
+    saveStateToEEPROM();
+  }
+  
+  // STEP 2: State-specific processing
+  switch (flightState) {
+    // REMOVED STARTUP and CALIBRATION cases - Handled in setup()
+      
+    case PAD_IDLE:
+      // Check for arm command comes from processCommand
+      // Nothing to do here in automatic processing
+      break;
+      
+    case ARMED:
+      // Check for liftoff
+      if (kx134_accel_ready || icm20948_ready) {
+        float accel_magnitude = GetAccelMagnitude();
+        
+        // If acceleration exceeds threshold, transition to BOOST
+        if (accel_magnitude > BOOST_ACCEL_THRESHOLD) {
+          Serial.println(F("LIFTOFF DETECTED"));
+          Serial.print(F("Acceleration: "));
+          Serial.print(accel_magnitude);
+          Serial.println(F(" g"));
+          
+          flightState = BOOST;
+          // Force an immediate log entry
+          log_next_datapoint = true;
+        }
+      }
+      break;
+      
+    case BOOST:
+      // Check for motor burnout
+      detectBoostEnd();
+      
+      // If boost end detected, transition to COAST
+      if (boostEndTime > 0) {
+        flightState = COAST;
+      }
+      break;
+      
+    case COAST:
+      // Check for apogee
+      if (detectApogee()) {
+        flightState = APOGEE;
+        // Force an immediate log entry
+        log_next_datapoint = true;
+        saveStateToEEPROM(); // Save state immediately on apogee detection
+      }
+      break;
+      
+    case APOGEE:
+      // Short delay at apogee for stability
+      if (millis() - lastStateChangeTime > 500) {
+        flightState = DROGUE_DEPLOY;
+      }
+      break;
+      
+    case DROGUE_DEPLOY:
+      // Short delay to ensure pyro has fired
+      if (millis() - lastStateChangeTime > 1500) {
+        flightState = DROGUE_DESCENT;
+      }
+      break;
+      
+    case DROGUE_DESCENT: {
+      // Check for main deployment altitude
+      float altitude = getBaroAltitude();
+      float AGL = altitude - launchAltitude;
+      
+      if (AGL < MAIN_DEPLOY_ALTITUDE) {
+        flightState = MAIN_DEPLOY;
+        // Force an immediate log entry
+        log_next_datapoint = true;
+      }
+      break;
+    }
+      
+    case MAIN_DEPLOY:
+      // Short delay to ensure pyro has fired
+      if (millis() - lastStateChangeTime > 1500) {
+        flightState = MAIN_DESCENT;
+      }
+      break;
+      
+    case MAIN_DESCENT:
+      // Check for landing
+      if (detectLanding()) {
+        flightState = LANDED;
+        // Force an immediate log entry
+        log_next_datapoint = true;
+      }
+      break;
+      
+    case LANDED:
+      // Transition to recovery after a short delay
+      if (millis() - lastStateChangeTime > 10000) {
+        flightState = RECOVERY;
+      }
+      break;
+      
+    case RECOVERY:
+      // Terminal state, stay here until power off or reset
+      // Blink LED to indicate recovery mode
+      if ((millis() / 500) % 2) {
+        setLEDColor(0, 0, 20, 0); // Green
+      } else {
+        setLEDColor(0, 0, 0, 0); // Off
+      }
+      pixels.show();
+      break;
+      
+    case ERROR:
+      // Error state, blink red LED
+      if ((millis() / 250) % 2) {
+        setLEDColor(0, 20, 0, 0); // Red
+      } else {
+        setLEDColor(0, 0, 0, 0); // Off
+      }
+      pixels.show();
+      break;
+  }
+}
+
 // Updated printStatusSummary function without VT100 codes
 void printStatusSummary() {
-  // Print status summary regardless of system debug flag, as it's controlled by enableStatusSummary 
+  Serial.println(F("\n=== STATUS SUMMARY ==="));
   
   // Current time
   unsigned long currentMillis = millis();
   unsigned long seconds = currentMillis / 1000;
   unsigned long minutes = seconds / 60;
   unsigned long hours = minutes / 60;
-  Serial.println("\n=== STATUS SUMMARY ===");
   Serial.printf("Time: %02d:%02d:%02d\n", hours % 24, minutes % 60, seconds % 60);
   
+  // Flight state section
+  Serial.println("\n--- Flight State ---");
+  Serial.printf("Current State: %s\n", getStateName(flightState));
+  if (flightState >= BOOST) {
+    // Show flight timers if we're in flight
+    Serial.printf("Flight Time: %02d:%02d\n", 
+                (millis() - flightStartTime) / 60000, 
+                ((millis() - flightStartTime) / 1000) % 60);
+                
+    if (flightState >= APOGEE) {
+      // Show max altitude if we've reached apogee
+      Serial.printf("Max Altitude: %.2f m AGL\n", maxAltitudeReached - launchAltitude);
+    }
+  }
+  
   // GPS section
-  if (enableGPSDebug) {
-    Serial.println("\n--- GPS Status ---");
-    if (GPS_fixType > 0) {
-      Serial.printf("Position: %.6f, %.6f, Alt: %.2fm, Sat: %d, Fix: %d\n", 
-                  GPS_latitude / 10000000.0, GPS_longitude / 10000000.0, GPS_altitude / 1000.0, SIV, GPS_fixType);
-      Serial.printf("Speed: %.2f km/h, Course: %.2f°\n", GPS_speed / 1000.0 * 3.6, GPS_heading / 100000.0);
-    } else {
-      Serial.println("No GPS fix");
+  Serial.println("\n--- GPS Status ---");
+  Serial.printf("Fix Type: %d\n", GPS_fixType);
+  Serial.printf("Sats: %d\n", SIV);
+  Serial.printf("pDOP: %.2f\n", pDOP / 100.0);
+  
+  // Barometer status
+  Serial.println("\n--- Barometer Status ---");
+  Serial.printf("Pressure: %.2f hPa\n", pressure);
+  Serial.printf("Temperature: %.2f°C\n", temperature);
+  Serial.printf("Altitude: %.2f m\n", getBaroAltitude());
+  
+  // Accelerometer status
+  Serial.println("\n--- Accelerometer Status ---");
+  float accel_magnitude = GetAccelMagnitude();
+  Serial.printf("Acceleration: %.2f g\n", accel_magnitude);
+  
+  // Gyroscope status
+  Serial.println("\n--- Gyroscope Status ---");
+  if (gyroscopeStatus.isWorking) {
+    Serial.println("Gyroscope: OK");
+  } else {
+    Serial.println("Gyroscope: FAULT");
+  }
+  
+  // Storage status
+  Serial.println("\n--- Storage Status ---");
+  Serial.printf("SD Card: %s\n", sdCardAvailable ? "OK" : "UNAVAILABLE");
+  Serial.printf("External Flash: %s\n", flashAvailable ? "OK" : "UNAVAILABLE");
+  
+  // Flight metrics if in flight
+  if (flightState >= BOOST) {
+    Serial.println("\n--- Flight Metrics ---");
+    if (flightState >= BOOST) {
+      Serial.printf("Flight Time: %02d:%02d\n", 
+                  (millis() - flightStartTime) / 60000, 
+                  ((millis() - flightStartTime) / 1000) % 60);
     }
-  }
-  
-  // IMU section
-  if (enableIMUDebug) {
-    Serial.println("\n--- IMU Status ---");
-    Serial.printf("Temp: %.1f°C, Motion: %s\n", 
-                icm_temp, isStationary ? "STATIONARY" : "MOVING");
-  }
-  
-  // Barometer section
-  if (enableBaroDebug) {
-    Serial.println("\n--- Barometer ---");
-    if (baroCalibrated) {
-      // The pressure value is in hPa but the altitude formula expects Pa
-      // So we need to multiply by 100 to convert hPa to Pa
-      float pressurePa = pressure * 100.0; // Convert from hPa to Pa
-      float raw_altitude = 44330.0 * (1.0 - pow(pressurePa / 101325.0, 0.1903));
-      float calibrated_altitude = raw_altitude + baro_altitude_offset;
+    
+    if (boostEndTime > 0) {
+      Serial.printf("Boost Duration: %02d:%02d\n", 
+                  (boostEndTime - flightStartTime) / 60000, 
+                  ((boostEndTime - flightStartTime) / 1000) % 60);
+    }
+    
+    if (flightState >= APOGEE) {
+      Serial.printf("Max Altitude: %.2f m AGL\n", maxAltitudeReached - launchAltitude);
       
-      Serial.printf("Pressure: %.2f hPa, Temp: %.2f°C\n", pressure, temperature);
-      Serial.printf("Altitude: Raw=%.2fm, Calibrated=%.2fm\n", raw_altitude, calibrated_altitude);
-    } else {
-      Serial.println("Not calibrated");
+      if (baroCalibrated) {
+        Serial.printf("AGL: %.2f m\n", maxAltitudeReached - launchAltitude);
+      }
     }
   }
   
-  // Storage section
-  if (enableStorageDebug) {
-    Serial.println("\n--- Storage ---");
-    Serial.printf("SD Card: %s, Space: %s\n", 
-                sdCardPresent ? "Present" : "Not found", 
-                sdCardMounted ? String(availableSpace / 1024) + "KB free" : "Not mounted");
-    Serial.printf("Logging: %s\n", loggingEnabled ? "Enabled" : "Disabled");
+  // System health
+  Serial.println("\n--- System Health ---");
+  if (isSensorSuiteHealthy(flightState)) {
+    Serial.println("System: OK");
+  } else {
+    Serial.println("System: DEGRADED");
   }
   
-  // Debug status
-  Serial.println("\n--- Debug Status ---");
-  Serial.printf("System: %s, IMU: %s, GPS: %s, Baro: %s\n", 
-              enableSystemDebug ? "ON" : "OFF",
-              enableIMUDebug ? "ON" : "OFF",
-              enableGPSDebug ? "ON" : "OFF",
-              enableBaroDebug ? "ON" : "OFF");
-  Serial.printf("Storage: %s, ICM Raw: %s\n",
-              enableStorageDebug ? "ON" : "OFF",
-              enableICMRawDebug ? "ON" : "OFF");
-  Serial.printf("Serial CSV: %s\n",
-              enableSerialCSV ? "ON" : "OFF");
-
-  Serial.println("=====================\n");
+  // Watchdog status
+  Serial.println("\n--- Watchdog Status ---");
+  Serial.println(watchdogTriggered ? F("Watchdog: TRIGGERED") : F("Watchdog: OK"));
+  
+  Serial.println(F("---------------------------"));
 }
 
 // Updated help message with more compact formatting
@@ -447,7 +1103,6 @@ void printHelpMessage() {
   Serial.println(F("  5 - Toggle storage debug"));
   Serial.println(F("  6 - Toggle ICM raw debug"));
   Serial.println(F("  9 - Initiate Shutdown"));
-  Serial.println(F("  0 - Toggle CSV output"));
   
   // Other commands (alphabetic)
   Serial.println(F("\nOther Commands (Use letters):"));
@@ -465,6 +1120,16 @@ void printHelpMessage() {
   // Utility commands
   Serial.println(F("\nUtility Commands:"));
   Serial.println(F("  debug_all_off - Disable all debugging"));
+  Serial.println(F("  status - Display system status"));
+  Serial.println(F("  calibrate - Calibrate barometer with GPS"));
+  Serial.println(F("  arm - Arm the flight computer"));
+  
+  // Test commands
+  Serial.println(F("\nTest Commands:"));
+  Serial.println(F("  test_error - Simulate sensor error and force ERROR state"));
+  Serial.println(F("  test_watchdog - Simulate watchdog timeout"));
+  Serial.println(F("  clear_errors - Reset all error flags and return to normal operation"));
+  Serial.println(F("  status_sensors - Display detailed sensor status information"));
   
   Serial.println(F("\nLegacy commands still supported"));
   Serial.println(F("  sd - Toggle sensor debug"));
@@ -608,9 +1273,7 @@ void processCommand(String command) {
                 case 'h': // Calibrate
                     if (!baroCalibrated) {
                         // Change LED to purple to indicate calibration in progress
-                        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-                        pixels.show();
-
+                        setLEDColor(0, 50, 0, 50);
                         // ms5611_calibrate_with_gps();
                         // Serial.println(F("Starting barometric calibration with GPS..."));
                         // Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
@@ -619,14 +1282,13 @@ void processCommand(String command) {
                             Serial.println(F("Barometric calibration successful!"));
                             baroCalibrated = true;
                             // Change LED to green to indicate success
-                            pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-                            pixels.show();
+                            setLEDColor(0, 0, 50, 0);
                             delay(1000);
                         } else {
                             Serial.println(F("Barometric calibration timed out or failed."));
                             // Change LED to red to indicate failure
-                            pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-                            pixels.show();
+                            setLEDColor(0, 50, 0, 0);
+
                             delay(1000);
                         }
                     } else {
@@ -684,22 +1346,19 @@ void processCommand(String command) {
         Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
         
         // Change LED to purple to indicate calibration in progress
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-        pixels.show();
+        setLEDColor(0, 50, 0, 50);
         
         if (ms5611_calibrate_with_gps(60000)) {  // Wait up to 60 seconds for calibration
           Serial.println(F("Barometric calibration successful!"));
           baroCalibrated = true;
           // Change LED to green to indicate success
-          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-          pixels.show();
+          setLEDColor(0, 0, 50, 0);
           delay(1000);
         } else {
           Serial.println(F("Barometric calibration timed out or failed."));
           // Change LED to red to indicate failure
-          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-          pixels.show();
-          delay(1000);
+          setLEDColor(0, 50, 0, 0);
+           delay(1000);
         }
       } else {
         Serial.println(F("Barometric calibration has already been performed."));
@@ -707,6 +1366,21 @@ void processCommand(String command) {
     } else if (command == "help") {
       // Show help message
       printHelpMessage();
+    } else if (command == "arm") {
+      // Arm the flight computer (transition from PAD_IDLE to ARMED)
+      if (flightState == PAD_IDLE) {
+        if (baroCalibrated) {
+          flightState = ARMED;
+          Serial.println(F("*** ARMED! ***"));          
+        } else {
+          Serial.println(F("ERROR: Cannot arm - barometer not calibrated."));
+          Serial.println(F("Run 'calibrate' command first."));
+        }
+      } else {
+        Serial.println(F("ERROR: Cannot arm - not in PAD_IDLE state."));
+        Serial.println(F("Current state: "));
+        Serial.println(getStateName(flightState));
+      }
     }
     
     // Handle debug commands
@@ -817,202 +1491,332 @@ void processCommand(String command) {
       
       Serial.println(F("All debugging disabled"));
     }
+    // Error detection and watchdog test commands
+    else if (command == "test_error") {
+      // Simulate a sensor error by forcing the barometer to be marked as not working
+      barometerStatus.isWorking = false;
+      barometerStatus.failureCount = MAX_SENSOR_FAILURES + 1;
+      Serial.println(F("TEST: Simulating barometer failure"));
+      
+      // Force sensor health check
+      if (!isSensorSuiteHealthy(flightState)) {
+        Serial.println(F("TEST: Sensor suite health check failed"));
+        flightState = ERROR;
+        Serial.println(F("TEST: Entering ERROR state"));
+        // Set LED to red
+        setLEDColor(0, 255, 0, 0); // Red
+      }
+    }
+    else if (command == "test_watchdog") {
+      // Simulate a watchdog timeout by triggering the callback directly
+      Serial.println(F("TEST: Simulating watchdog timeout in 3 seconds..."));
+      delay(1000);
+      Serial.println(F("TEST: 2 seconds..."));
+      delay(1000);
+      Serial.println(F("TEST: 1 second..."));
+      delay(1000);
+      
+      // Call the watchdog handler directly
+      watchdogCallback();
+      
+      Serial.println(F("TEST: Watchdog callback executed"));
+      Serial.print(F("Current state: "));
+      Serial.println(getStateName(flightState));
+    }
+    else if (command == "clear_errors") {
+      // Reset all error flags and return to normal operation
+      Serial.println(F("Clearing all error flags"));
+      
+      // Reset sensor statuses
+      barometerStatus.isWorking = ms5611Sensor.isConnected();
+      barometerStatus.failureCount = 0;
+      barometerStatus.consecutiveFailures = 0;
+      
+      accelerometerStatus.isWorking = (kx134_accel_ready || icm20948_ready);
+      accelerometerStatus.failureCount = 0;
+      accelerometerStatus.consecutiveFailures = 0;
+      
+      gyroscopeStatus.isWorking = icm20948_ready;
+      gyroscopeStatus.failureCount = 0;
+      gyroscopeStatus.consecutiveFailures = 0;
+      
+      magnetometerStatus.isWorking = icm20948_ready;
+      magnetometerStatus.failureCount = 0;
+      magnetometerStatus.consecutiveFailures = 0;
+      
+      gpsStatus.isWorking = myGNSS.getPVT();
+      gpsStatus.failureCount = 0;
+      gpsStatus.consecutiveFailures = 0;
+      
+      // If we're in ERROR state, return to PAD_IDLE
+      if (flightState == ERROR) {
+        flightState = PAD_IDLE;
+        Serial.println(F("Returning to PAD_IDLE state from ERROR"));
+        setLEDColor(0, 0, 50, 0); // Green
+      }
+    }
+    else if (command == "status_sensors") {
+      // Print detailed sensor status information
+      Serial.println(F("=== Sensor Status ==="));
+      Serial.print(F("Barometer: "));
+      Serial.print(barometerStatus.isWorking ? F("OK") : F("FAILED"));
+      Serial.print(F(" (Failures: "));
+      Serial.print(barometerStatus.failureCount);
+      Serial.print(F(", Consecutive: "));
+      Serial.print(barometerStatus.consecutiveFailures);
+      Serial.println(F(")"));
+      
+      Serial.print(F("Accelerometer: "));
+      Serial.print(accelerometerStatus.isWorking ? F("OK") : F("FAILED"));
+      Serial.print(F(" (Failures: "));
+      Serial.print(accelerometerStatus.failureCount);
+      Serial.print(F(", Consecutive: "));
+      Serial.print(accelerometerStatus.consecutiveFailures);
+      Serial.println(F(")"));
+      
+      Serial.print(F("Gyroscope: "));
+      Serial.print(gyroscopeStatus.isWorking ? F("OK") : F("FAILED"));
+      Serial.print(F(" (Failures: "));
+      Serial.print(gyroscopeStatus.failureCount);
+      Serial.print(F(", Consecutive: "));
+      Serial.print(gyroscopeStatus.consecutiveFailures);
+      Serial.println(F(")"));
+      
+      Serial.print(F("Magnetometer: "));
+      Serial.print(magnetometerStatus.isWorking ? F("OK") : F("FAILED"));
+      Serial.print(F(" (Failures: "));
+      Serial.print(magnetometerStatus.failureCount);
+      Serial.print(F(", Consecutive: "));
+      Serial.print(magnetometerStatus.consecutiveFailures);
+      Serial.println(F(")"));
+      
+      Serial.print(F("GPS: "));
+      Serial.print(gpsStatus.isWorking ? F("OK") : F("FAILED"));
+      Serial.print(F(" (Failures: "));
+      Serial.print(gpsStatus.failureCount);
+      Serial.print(F(", Consecutive: "));
+      Serial.print(gpsStatus.consecutiveFailures);
+      Serial.println(F(")"));
+      
+      Serial.print(F("Sensor Suite Health: "));
+      Serial.println(isSensorSuiteHealthy(flightState) ? F("HEALTHY") : F("UNHEALTHY"));
+      
+      Serial.print(F("Current State: "));
+      Serial.println(getStateName(flightState));
+    }
+    else {
+      // Unknown command
+      Serial.print(F("Unknown command: "));
+      Serial.println(command);
+      Serial.println(F("Type 'help' for a list of available commands."));
+    }
 }
 
 void setup() {
-  // Wait for the Serial monitor to be opened.
+  // Initialize global flight state for clean start
+  flightState = STARTUP;
+  
+  // Initialize Serial
   Serial.begin(115200);
-  delay(500); // Give the serial port time to initialize
+  // Wait a bit for serial, but don't hang indefinitely
+  unsigned long serialWaitStart = millis();
+  while (!Serial && (millis() - serialWaitStart < 2000)) { delay(100); }
   
-  // Important: Disable all debugging immediately at startup
-  enableDetailedOutput = false;
-  enableSystemDebug = false;
-  enableSensorDebug = false;
-  enableIMUDebug = false;
-  enableGPSDebug = false;
-  enableBaroDebug = false;
-  enableStorageDebug = false;
-  enableICMRawDebug = false;
-  displayMode = false;
-  
-  // Initialize NeoPixel first for visual feedback
+  Serial.println(F("\n--- TripleT Flight Firmware Initializing --- "));
+  Serial.print(F("Version: ")); Serial.println(TRIPLET_FLIGHT_VERSION);
+  Serial.print(F("Board: ")); Serial.println(BOARD_NAME);
+
+  // --- STARTUP Phase --- 
+  Serial.println(F("[SETUP] STARTUP Phase"));
+
+  // Initialize NeoPixel for visual feedback
   pixels.begin();
   pixels.clear();
-  pixels.setPixelColor(0, pixels.Color(20, 0, 0)); // Red during startup
-  pixels.setPixelColor(1, pixels.Color(20, 0, 0)); // Red during startup
-  pixels.show();
+  setLEDColor(0, 20, 0, 0); // Red during startup
+  setLEDColor(1, 20, 0, 0); // Red during startup
   
-  // Startup Tone
-  delay(500);
-  tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN); delay(75);
-  noTone(BUZZER_PIN);
-  
-  // Change LED to orange to indicate waiting for serial
-  pixels.setPixelColor(0, pixels.Color(25, 12, 0)); // Orange during serial init
-  pixels.show();
-  
-  // Wait for serial connection with timeout
-  unsigned long serialWaitStart = millis();
-  while (!Serial && (millis() - serialWaitStart < 5000)) {
-    // Wait up to 5 seconds for serial connection
-    delay(100);
-  }
-  
-  Serial.print("TripleT Flight Firmware Alpha ");
-  Serial.println(TRIPLET_FLIGHT_VERSION);
-  Serial.print("Board: ");
-  Serial.println(BOARD_NAME);
-  
-  // Change LED to yellow during initialization
-  pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow during init
-  pixels.show();
+  // Initialize Watchdog
+  WDT_timings_t config;
+  config.trigger = 5; // seconds - Reset timeout
+  config.timeout = 10; // seconds - Actual timeout before firing callback
+  watchdog.begin(config);
+  watchdog.callback(watchdogHandler);
+  watchdog.feed(); // Initial feed
+  Serial.println(F("[SETUP] Watchdog initialized."));
 
-  // Setup SPI and I2C based on the selected board
+  // Startup Tone
+  tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN);
+
+  // Check for EEPROM recovery *before* major initializations
+  Serial.println(F("[SETUP] Checking for EEPROM state recovery..."));
+  recoverFromPowerLoss(); // This might change flightState from STARTUP
+
+  // If recovery changed state, log it and potentially skip some setup if resuming
+  if (flightState != STARTUP) {
+      Serial.print(F("[SETUP] Resuming from recovered state: ")); 
+      Serial.println(getStateName(flightState));
+      // Add any specific resume logic here if needed, otherwise proceed
+  }
+
+  watchdog.feed();
+
+  // Initialize I2C and SPI
+  Serial.println(F("[SETUP] Initializing I2C & SPI..."));
   #if defined(BOARD_TEENSY41)
-    // Teensy 4.1 with SDIO doesn't need explicit SPI setup for SD card
-    
-    // For other SPI devices (if any)
     SPI.begin();
-    
-    // Standard I2C setup
-  Wire.begin();
-  Wire.setClock(400000);
-  
-    Serial.println("Teensy 4.1 SPI and I2C initialized (SDIO mode for SD card)");
-  #else
-    // Teensy 4.0 and other boards with SPI SD card
-    SPI.setCS(SD_CS_PIN);
-    SPI.setMOSI(SD_MOSI_PIN);
-    SPI.setMISO(SD_MISO_PIN);
-    SPI.setSCK(SD_SCK_PIN);
-    SPI.begin();
-    
-    // Standard I2C setup
     Wire.begin();
     Wire.setClock(400000);
-    
-    Serial.println("Teensy SPI and I2C initialized");
+    Serial.println(F("[SETUP] Teensy 4.1 SPI/I2C (SDIO) Initialized."));
+  #else
+    // SPI.setCS(SD_CS_PIN); // Pins may vary, ensure defined elsewhere
+    // SPI.setMOSI(SD_MOSI_PIN);
+    // SPI.setMISO(SD_MISO_PIN);
+    // SPI.setSCK(SD_SCK_PIN);
+    SPI.begin();
+    Wire.begin();
+    Wire.setClock(400000);
+    Serial.println(F("[SETUP] Teensy 4.0 SPI/I2C Initialized."));
   #endif
-  // Scan the I2C bus for devices
-  scan_i2c();
+  scan_i2c(); // Scan bus after initialization
 
-  // Initialize GPS first to get accurate time
-  Serial.println(F("Initializing GPS module..."));
-  enableGPSDebug = false; // Disable GPS debug output
-  gps_init();
-  Serial.println(F("GPS module initialized"));
+  watchdog.feed();
   
-  // Wait for GPS to have valid date/time if possible
-  // Uses a blue "breathing" pattern on the LED to show it's waiting
-  Serial.println(F("Waiting for GPS time sync..."));
-  bool gpsTimeValid = false;
-  unsigned long gpsWaitStart = millis();
-  unsigned long lastLedUpdate = 0;
-  int brightness = 0;
-  int step = 5;
+  // Initialize Sensors (check return values)
+  Serial.println(F("[SETUP] Initializing Sensors..."));
+  setLEDColor(0, 25, 0, 25); // Purple during sensor init
   
-  while (!gpsTimeValid && (millis() - gpsWaitStart < 30000)) {  // Wait up to 30 seconds
-    // Update GPS data
-    gps_read();
-    
-    // Check if we have a valid year (2025 or later)
-    if (myGNSS.getYear() >= 2025) {
-      gpsTimeValid = true;
-      // Set LED to cyan to indicate valid GPS time
-      pixels.setPixelColor(0, pixels.Color(0, 50, 50));
-      pixels.show();
-      break;
-    }
-    
-    // Update "breathing" LED effect every 50ms
-    if (millis() - lastLedUpdate > 50) {
-      lastLedUpdate = millis();
-      brightness += step;
-      if (brightness >= 50) {
-        brightness = 50;
-        step = -step;
-      } else if (brightness <= 0) {
-        brightness = 0;
-        step = -step;
-      }
-      pixels.setPixelColor(0, pixels.Color(0, 0, brightness));
-      pixels.show();
-    }
-    
-    delay(100);
-  }
+  bool kx134_ok = kx134_init();
+  if (!kx134_ok) { Serial.println(F("[SETUP] WARNING: KX134 init failed")); }
+  else { Serial.println(F("[SETUP] KX134 Initialized.")); }
+  accelerometerStatus.isWorking = kx134_ok; // Update status based on init
   
-  if (gpsTimeValid) {
-    Serial.print(F("GPS time synced: "));
-  } else {
-    Serial.print(F("GPS time sync timeout. Current time: "));
-  }
-  
-  Serial.print(myGNSS.getYear());
-  Serial.print(F("-"));
-  Serial.print(myGNSS.getMonth());
-  Serial.print(F("-"));
-  Serial.print(myGNSS.getDay());
-  Serial.print(F(" "));
-  Serial.print(myGNSS.getHour());
-  Serial.print(F(":"));
-  Serial.print(myGNSS.getMinute());
-  Serial.print(F(":"));
-  Serial.println(myGNSS.getSecond());
-  
-  // Change LED to purple for other sensor initialization
-  pixels.setPixelColor(0, pixels.Color(25, 0, 25));
-  pixels.show();
-
-  // Now initialize other sensors
-  Serial.println(F("\nInitializing sensors..."));
-  if (!kx134_init()) {
-    Serial.println(F("WARNING: KX134 accelerometer initialization failed"));
-  } else {
-    Serial.println(F("KX134 accelerometer initialized"));
-  }
-  
+  // Call void init, then check status separately
   ICM_20948_init();
-  Serial.println(F("ICM-20948 initialized"));
+  bool icm_ok = ICM_20948_isReady(); // Check status after init call
+  if (!icm_ok) { Serial.println(F("[SETUP] WARNING: ICM-20948 check failed after init")); }
+  else { Serial.println(F("[SETUP] ICM-20948 Initialized.")); }
+  // Update status based on check
+  if (!kx134_ok) { accelerometerStatus.isWorking = icm_ok; } // Use ICM accel if KX134 failed
+  gyroscopeStatus.isWorking = icm_ok;
+  magnetometerStatus.isWorking = icm_ok;
+
+  // Call void init, then check status separately
+  ms5611_init(); 
+  bool ms5611_ok = ms5611Sensor.isConnected(); // Check status after init call
+  if (!ms5611_ok) { Serial.println(F("[SETUP] WARNING: MS5611 check failed after init")); }
+  else { Serial.println(F("[SETUP] MS5611 Initialized.")); }
+  barometerStatus.isWorking = ms5611_ok;
+
+  // Call void init, then check status separately
+  gps_init(); 
+  bool gps_ok = myGNSS.getPVT(); // Check status after init call
+  if (!gps_ok) { Serial.println(F("[SETUP] WARNING: GPS check failed after init")); }
+  else { Serial.println(F("[SETUP] GPS Initialized.")); }
+  gpsStatus.isWorking = gps_ok;
+
+  watchdog.feed();
   
-  ms5611_init();
-  Serial.println(F("MS5611 initialized"));
-  
-  // Change LED to white before storage initialization
-  pixels.setPixelColor(0, pixels.Color(25, 25, 25));
-  pixels.show();
-  
-  // Give extra time for SD card to stabilize
-  delay(500);
-  
-  // Initialize storage after GPS is ready
-  Serial.println(F("Initializing storage..."));
-  
-  // Initialize SD card
-  sdCardAvailable = initSDCard();
-  Serial.print(F("SD Card: "));
-  Serial.println(sdCardAvailable ? F("Available") : F("Not available"));
-    
-  if (sdCardAvailable) {
-    // Only try to create a log file if SD card is available
-    Serial.println(F("Creating new log file..."));
-    if (createNewLogFile()) {
-      Serial.println(F("Data logging ready."));
-    } else {
-      Serial.println(F("Failed to create log file, logging will be disabled."));
-      loggingEnabled = false;
-    }
-  } else {
-    Serial.println(F("WARNING: No storage available for data logging!"));
-    loggingEnabled = false;
+  // --- CALIBRATION Phase --- 
+  // Only perform calibration if starting fresh (not recovering into a flight state)
+  if (flightState == STARTUP) {
+      Serial.println(F("[SETUP] Entering CALIBRATION Phase"));
+      setLEDColor(0, 50, 50, 0); // Yellow during calibration
+      
+      // Attempt GPS Time Sync and Barometer Calibration
+      if (gpsStatus.isWorking && barometerStatus.isWorking) {
+          Serial.println(F("[SETUP] Waiting for GPS time sync & 3D Fix (max 60s)..."));
+          unsigned long calStart = millis();
+          bool gpsCalibrated = false;
+          while (millis() - calStart < 60000) {
+              watchdog.feed();
+              gps_read(); // Continuously read GPS
+              if (myGNSS.getYear() >= 2025 && myGNSS.getFixType() >= 3) { // Check for valid time and fix
+                  Serial.println(F("[SETUP] GPS time/fix OK. Attempting baro calibration (max 30s)..."));
+                  setLEDColor(0, 0, 50, 50); // Cyan for GPS ok/calibrating
+                  if (ms5611_calibrate_with_gps(30000)) { // Try calibrating
+                      baroCalibrated = true;
+                      Serial.println(F("[SETUP] Barometer calibration SUCCESSFUL."));
+                      setLEDColor(0, 0, 50, 0); // Green - calibration done
+                  } else {
+                      Serial.println(F("[SETUP] WARNING: Barometer calibration failed/timed out."));
+                      setLEDColor(0, 50, 0, 0); // Red - calibration failed
+                      delay(1000); // Show red briefly
+                      setLEDColor(0, 50, 50, 0); // Back to yellow
+                  }
+                  gpsCalibrated = true;
+                  break; // Exit calibration loop
+              }
+              delay(200); // Short delay
+          }
+          if (!gpsCalibrated) {
+              Serial.println(F("[SETUP] WARNING: GPS time sync/fix timeout during calibration phase."));
+              // Baro remains uncalibrated
+          }
+      } else {
+          Serial.println(F("[SETUP] Skipping calibration phase (GPS or Baro init failed)."));
+      }
+      // Set flightState based on calibration outcomes and overall health
+      // If critical sensors failed init OR calibration is required but failed,
+      // consider setting state to ERROR. For now, we allow loop() to handle later calibration.
+  } 
+  // If we recovered into a state like DROGUE_DESCENT, skip calibration phase
+  else {
+      Serial.println(F("[SETUP] Skipping CALIBRATION Phase due to recovered state."));
   }
   
-  // Change LED to green to indicate successful initialization
-  pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-  pixels.show();
+  watchdog.feed();
   
-  // Barometric calibration is now done via command
-  Serial.println(F("Use 'calibrate' command to perform barometric calibration with GPS"));
+  // Initialize Storage
+  Serial.println(F("[SETUP] Initializing Storage..."));
+  setLEDColor(0, 25, 25, 25); // White during storage init
+  delay(500); // Allow time for card stabilization
+  sdCardAvailable = initSDCard();
+  Serial.print(F("[SETUP] SD Card Available: ")); Serial.println(sdCardAvailable ? "Yes" : "No");
+  if (sdCardAvailable) {
+      if (createNewLogFile()) {
+          Serial.println(F("[SETUP] Log file created successfully."));
+      } else {
+          Serial.println(F("[SETUP] WARNING: Failed to create log file."));
+          loggingEnabled = false;
+      }
+  } else {
+      Serial.println(F("[SETUP] WARNING: SD Card not available, logging disabled."));
+      loggingEnabled = false;
+  }
+
+  watchdog.feed();
+
+  // --- Final Health Check & Set Initial State for Loop --- 
+  Serial.println(F("[SETUP] Performing final health check..."));
+  bool systemHealthy = isSensorSuiteHealthy(PAD_IDLE); // Check health required for PAD_IDLE
+  
+  // Set the state for loop() based on recovery and health checks
+  // If we recovered into a valid flight/post-flight state, keep it.
+  // If we started fresh (state is STARTUP), set based on health.
+  if (flightState == STARTUP) { // Only overwrite if we weren't in a recovered state
+      if (systemHealthy) {
+          flightState = PAD_IDLE;
+          Serial.println(F("[SETUP] System OK. Entering PAD_IDLE."));
+          setLEDColor(0, 0, 50, 0); // Green - ready
+      } else {
+          flightState = ERROR;
+          Serial.println(F("[SETUP] CRITICAL ERROR during setup. Entering ERROR state."));
+          setLEDColor(0, 50, 0, 0); // Red - error
+      }
+  } else {
+       Serial.print(F("[SETUP] Retaining recovered state: ")); Serial.println(getStateName(flightState));
+       // Update LED based on recovered state if needed (e.g., green for RECOVERY, red for ERROR)
+       if(flightState == ERROR) setLEDColor(0, 50, 0, 0); 
+       else if (flightState == RECOVERY) setLEDColor(0, 0, 20, 0);
+       // Add other recovered state LED colors if desired
+  }
+  pixels.show(); 
+
+  // Save the determined initial state
+  saveStateToEEPROM();
+
+  Serial.println(F("--- TripleT Flight Firmware Setup Complete --- "));
+  watchdog.feed(); // Final feed before loop
 }
 
 void loop() {
@@ -1025,124 +1829,130 @@ void loop() {
   static unsigned long lastGPSCheckTime = 0;
   static unsigned long lastStorageCheckTime = 0;
   static unsigned long lastFlushTime = 0;  // Track when we last flushed data
-  static bool sensorsUpdated = false;
+  static unsigned long lastSensorStatusCheckTime = 0; // Track when we last checked sensor health
+  static bool sensorsUpdated = false; // Flag to trigger logging after reads
   
-  // Check for serial commands
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    
-    // Pass command to our command handler function
-    processCommand(command);
-  }
+  // Feed the watchdog at the start of every loop
+  watchdog.feed();
   
-  // Read GPS data at GPS_POLL_INTERVAL
+  // Check for serial commands (currently commented out)
+  // if (Serial.available()) { ... processCommand ... }
+  
+  // --- Sensor Reading --- 
+  // Read GPS data periodically
   if (millis() - lastGPSReadTime >= GPS_POLL_INTERVAL) {
     lastGPSReadTime = millis();
-    gps_read();
-    sensorsUpdated = true;
+    if (gpsStatus.isWorking) { // Only read if initialized okay
+      gps_read();
+      sensorsUpdated = true;
+    }
 
-    // Check for automatic calibration opportunity
-    if (!baroCalibrated && pDOP < 300) {  // pDOP is stored as integer * 100
+    // --- Automatic Calibration Attempt (Fallback) ---
+    // Try auto-calibration if not calibrated yet and GPS fix is good.
+    // This provides robustness if setup calibration failed/timed out.
+    if (!baroCalibrated && gpsStatus.isWorking && barometerStatus.isWorking && pDOP < 300 && pDOP > 0) { // Check pDOP valid too
       static unsigned long lastCalibrationAttempt = 0;
-      static int calibrationAttempts = 0;
+      static int calibrationAttempts = 0; // Limit attempts
       static int validReadingsCount = 0;
       static bool readingStable = false;
       
-      // Only attempt calibration once every 30 seconds and limit to 3 attempts
+      // Only attempt periodically and limit total attempts
       if (millis() - lastCalibrationAttempt > 30000 && calibrationAttempts < 3) {
-        // Before starting calibration, ensure we have several good sensor readings
-        if (!readingStable) {
-          // Check if we have a valid barometer reading
-          int result = ms5611_read();
-          if (result == MS5611_READ_OK && pressure >= 800 && pressure <= 1100) {
-            validReadingsCount++;
-            Serial.print(F("Valid barometer reading #"));
-            Serial.print(validReadingsCount);
-            Serial.print(F(": Pressure = "));
-            Serial.print(pressure);
-            Serial.println(F(" hPa"));
-            
-            // Need at least 5 good readings before considering calibration
-            if (validReadingsCount >= 5) {
-              readingStable = true;
-              Serial.println(F("Barometer readings are stable. Ready for calibration."));
-            }
-          } else {
-            // Reset count if we get bad readings
-            validReadingsCount = 0;
-            Serial.println(F("Invalid barometer reading. Waiting for sensor to stabilize..."));
-            delay(200);
-            return; // Skip calibration for now
-          }
-          
+          // Check barometer stability first
           if (!readingStable) {
-            return; // Skip calibration until readings are stable
+              int result = ms5611_read(); // Need a fresh reading to check
+              if (result == MS5611_READ_OK && pressure >= 800 && pressure <= 1100) {
+                  validReadingsCount++;
+                  if (validReadingsCount >= 5) {
+                      readingStable = true;
+                      Serial.println(F("[LOOP] Baro readings stable, attempting auto-calibration..."));
+                  } else {
+                       if(enableSystemDebug) { Serial.print(F(".")); } // Indicate waiting for stable readings
+                  }
+              } else {
+                  validReadingsCount = 0; // Reset count on bad reading
+                  readingStable = false;
+              }
           }
-        }
-        
-        // Now we can attempt calibration
-        lastCalibrationAttempt = millis();
-        calibrationAttempts++;
-        
-        Serial.println(F("Good GPS fix detected (pDOP < 3.0), starting automatic barometric calibration..."));
-        
-        // Change LED to purple to indicate calibration in progress
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-        pixels.show();
-        
-        if (ms5611_calibrate_with_gps(30000)) {  // Wait up to 30 seconds for calibration
-          Serial.println(F("Automatic barometric calibration successful!"));
-          baroCalibrated = true;
-          // Change LED to green to indicate success
-          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-          pixels.show();
-          delay(1000);
-        } else {
-          Serial.println(F("Automatic barometric calibration timed out or failed."));
-          Serial.print(F("Attempt "));
-          Serial.print(calibrationAttempts);
-          Serial.println(F(" of 3"));
-          // Change LED to red to indicate failure
-          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-          pixels.show();
-          delay(1000);
           
-          // Reset stable reading flag to require fresh readings before next attempt
-          readingStable = false;
-          validReadingsCount = 0;
-        }
-      }
-    }
-  }
+          // If stable, attempt calibration
+          if (readingStable) {
+              lastCalibrationAttempt = millis();
+              calibrationAttempts++;
+              Serial.print(F("[LOOP] Auto Baro Cal Attempt #")); Serial.print(calibrationAttempts);
+              Serial.println(F(" (pDOP < 3.0)"));
+              setLEDColor(0, 50, 0, 50); // Purple for calibration attempt
+              
+              if (ms5611_calibrate_with_gps(30000)) { // 30 sec timeout
+                  Serial.println(F("[LOOP] Auto Baro Calibration SUCCESSFUL."));
+                  baroCalibrated = true;
+                  setLEDColor(0, 0, 50, 0); // Green
+                  delay(500);
+              } else {
+                  Serial.println(F("[LOOP] Auto Baro Calibration FAILED."));
+                  setLEDColor(0, 50, 0, 0); // Red
+                  delay(500);
+                  // Reset flags to allow retry after interval
+                  readingStable = false;
+                  validReadingsCount = 0; 
+              }
+              // Restore LED based on current flight state after attempt
+              // (ProcessFlightState will handle this on next iteration)
+          }
+      } // End periodic attempt check
+    } // End auto-calibration check
+  } // End GPS read interval
   
-  // Read barometer data at BARO_POLL_INTERVAL
+  // Read barometer data periodically
   if (millis() - lastBaroReadTime >= BARO_POLL_INTERVAL) {
     lastBaroReadTime = millis();
-    int result = ms5611_read();
-    if (result == MS5611_READ_OK) {
-      sensorsUpdated = true;
+    if (barometerStatus.isWorking) {
+        int result = ms5611_read();
+        if (result == MS5611_READ_OK) {
+            sensorsUpdated = true;
+        } else {
+            // Consider incrementing failure count here or rely on checkSensorStatus
+        }
     }
   }
   
-  // Read IMU data at 10Hz
-  if (millis() - lastIMUReadTime >= 100) {
+  // Read IMU data periodically
+  if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
-    ICM_20948_read();
-    sensorsUpdated = true;
+    if (gyroscopeStatus.isWorking || magnetometerStatus.isWorking || accelerometerStatus.isWorking) {
+        // Only read if ICM init was ok (or if using KX134 for accel)
+        ICM_20948_read(); // Assumes this reads accel/gyro/mag if available
+        sensorsUpdated = true;
+    }
   }
   
-  // Read accelerometer data at 10Hz
-  if (millis() - lastAccelReadTime >= 100) {
+  // Read KX134 Accelerometer data periodically (if used)
+  if (useKX134 && millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
-    kx134_read();
-    sensorsUpdated = true;
+    if (accelerometerStatus.isWorking) { // Check if KX134 specifically is working (if useKX134 is true)
+        kx134_read(); 
+        sensorsUpdated = true;
+    }
   }
   
-  // Log data immediately after any sensor update
+  // --- Data Logging --- 
+  // Log data if any sensor was updated in this iteration
   if (sensorsUpdated) {
-    WriteLogData(true);
+    WriteLogData(true); // Force log after sensor reads
     sensorsUpdated = false;
+  }
+  
+  // --- State Machine Processing ---
+  ProcessFlightState();
+  
+  // Feed watchdog right after state processing (can take time)
+  watchdog.feed(); 
+  
+  // --- Periodic Checks & Maintenance ---
+  // Check sensor health status periodically
+  if (millis() - lastSensorStatusCheckTime >= 1000) {
+    lastSensorStatusCheckTime = millis();
+    checkSensorStatus();
   }
   
   // Periodically check GPS connection - simplified approach
@@ -1182,7 +1992,325 @@ void loop() {
     lastDetailedTime = millis();
     ICM_20948_print();
   }
+  
+  // Save state periodically in loop
+  saveStateToEEPROM();
+  
+  // Reset the watchdog timer at the end of each loop as a safety measure
+  watchdog.feed();
 }
+
+// Check if rocket is stable (no significant motion)
+bool IsStable() {
+  float accel_magnitude = GetAccelMagnitude();
+  // Consider stable if acceleration is close to 1g (gravity only)
+  return (accel_magnitude > 0.95 && accel_magnitude < 1.05);
+}
+
+// Get current barometric altitude in meters
+float getBaroAltitude() {
+  if (!ms5611Sensor.isConnected()) {
+    return 0.0; // Barometer not ready
+  }
+  
+  // The pressure value is in hPa but the altitude formula expects Pa
+  // So we need to multiply by 100 to convert hPa to Pa
+  float pressurePa = pressure * 100.0;
+  
+  // Calculate altitude using the barometric formula
+  float raw_altitude = 44330.0 * (1.0 - pow(pressurePa / 101325.0, 0.1903));
+  
+  // Apply calibration offset if calibrated
+  if (baroCalibrated) {
+    return raw_altitude + baro_altitude_offset;
+  } else {
+    return raw_altitude;
+  }
+}
+
+// Helper function to get acceleration magnitude regardless of which accelerometer is available
+float GetAccelMagnitude() {
+  // Use KX134 if available, otherwise use ICM20948
+  if (kx134_accel_ready) {
+    return sqrt(kx134_accel[0] * kx134_accel[0] + 
+                kx134_accel[1] * kx134_accel[1] + 
+                kx134_accel[2] * kx134_accel[2]);
+  } else if (icm20948_ready) {
+    return sqrt(icm_accel[0] * icm_accel[0] + 
+                icm_accel[1] * icm_accel[1] + 
+                icm_accel[2] * icm_accel[2]);
+  }
+  
+  return 0.0; // No accelerometer available
+}
+
+// After the helper functions but before ProcessFlightState
+void handleSensorErrors() {
+  // Check barometer status
+  if (ms5607_ready) {
+    if (barometerStatus.consecutiveFailures > 0) barometerStatus.consecutiveFailures--;
+  } else {
+    barometerStatus.consecutiveFailures++;
+    if (barometerStatus.consecutiveFailures >= BAROMETER_ERROR_THRESHOLD) {
+      barometerStatus.isWorking = false;
+    }
+  }
+  
+  // Check accelerometer status (KX134 if available, otherwise ICM20948)
+  if (useKX134) {
+    if (kx134_accel_ready) {
+      if (accelerometerStatus.consecutiveFailures > 0) accelerometerStatus.consecutiveFailures--;
+    } else {
+      accelerometerStatus.consecutiveFailures++;
+      if (accelerometerStatus.consecutiveFailures >= ACCEL_ERROR_THRESHOLD) {
+        accelerometerStatus.isWorking = false;
+      }
+    }
+  } else {
+    if (icm20948_ready) {
+      if (accelerometerStatus.consecutiveFailures > 0) accelerometerStatus.consecutiveFailures--;
+    } else {
+      accelerometerStatus.consecutiveFailures++;
+      if (accelerometerStatus.consecutiveFailures >= ACCEL_ERROR_THRESHOLD) {
+        accelerometerStatus.isWorking = false;
+      }
+    }
+  }
+  
+  // Check GPS status
+  if (millis() - gpsStatus.lastValidReading < GPS_TIMEOUT_MS) {
+    if (gpsStatus.consecutiveFailures > 0) gpsStatus.consecutiveFailures--;
+  } else {
+    gpsStatus.consecutiveFailures++;
+    if (gpsStatus.consecutiveFailures >= GPS_TIMEOUT_MS / 1000) {
+      gpsStatus.isWorking = false;
+    }
+  }
+  
+  // Handle error state transition if critical sensors fail
+  if (flightState != ERROR && 
+      ((flightState < BOOST && !barometerStatus.isWorking) || 
+       !accelerometerStatus.isWorking)) {
+    // Critical sensor failure - transition to ERROR state
+    flightState = ERROR;
+    setLEDColor(0, 255, 0, 0); // Red for ERROR
+  }
+}
+
+void watchdogCallback() {
+  // This function is called when the watchdog times out
+  // In a real implementation, we might try to recover or set error flags
+  // For now, we'll just set the flight state to ERROR
+  flightState = ERROR;
+  setLEDColor(0, 255, 0, 0); // Red for ERROR
+}
+
+// Function to set LED color based on state
+void setLEDColor(uint8_t p, uint8_t r, uint8_t g, uint8_t b) {
+  // Set the color of the LED at pixel index p
+  // r, g, b are the red, green, and blue color values (0-255)
+  pixels.setPixelColor(p, pixels.Color(r, g, b));
+  pixels.show();
+}
+
+void checkWatchdog() {
+  // Reset the watchdog timer
+  watchdog.feed();
+  
+  // Check for state timeouts
+  unsigned long currentTime = millis();
+  
+  // For states that shouldn't last too long
+  if (flightState == BOOST && lastStateChangeTime > 0) {
+    if (currentTime - lastStateChangeTime > 10000) { // 10 seconds max in BOOST
+      // Backup transition if boost detection fails
+      flightState = COAST;
+      lastStateChangeTime = currentTime;
+    }
+  }
+  else if (flightState == COAST && lastStateChangeTime > 0) {
+    if (currentTime - lastStateChangeTime > 30000) { // 30 seconds max in COAST
+      // Backup transition if apogee detection fails
+      flightState = APOGEE;
+      lastStateChangeTime = currentTime;
+    }
+  }
+}
+
+// Add these variables near the other global variables
+unsigned long armingToneStartTime = 0;
+byte armingTonePhase = 0;
+bool playingArmingTone = false;
+
+// --- EEPROM Functions Implementation ---
+
+// Save current state to EEPROM
+void saveStateToEEPROM() {
+  unsigned long currentTime = millis();
+  
+  // Only save periodically or on critical state changes to reduce wear
+  // Critical states for immediate save: APOGEE, DROGUE_DEPLOY, MAIN_DEPLOY, LANDED, ERROR
+  bool forceSave = (flightState == APOGEE || flightState == DROGUE_DEPLOY ||
+                    flightState == MAIN_DEPLOY || flightState == LANDED || flightState == ERROR);
+  
+  if (!forceSave && (currentTime - lastStateSave < EEPROM_UPDATE_INTERVAL)) {
+    return; // Not time to save yet and not a critical state
+  }
+
+  // Update state data structure before saving
+  stateData.state = flightState;
+  stateData.launchAltitude = launchAltitude; // Assuming launchAltitude is global
+  stateData.maxAltitude = maxAltitudeReached; // Assuming maxAltitudeReached is global
+  stateData.flightStartTime = flightStartTime; // Assuming flightStartTime is global
+  stateData.boostEndTime = boostEndTime; // Assuming boostEndTime is global
+  stateData.timestamp = currentTime;
+  stateData.signature = EEPROM_SIGNATURE_VALUE;
+
+  // Write the whole structure to EEPROM
+  EEPROM.put(EEPROM_STATE_ADDR, stateData);
+
+  lastStateSave = currentTime; // Update the last save time
+
+  if (enableSystemDebug && (forceSave || (currentTime - lastStateSave) < 100)) { // Log forced saves or recent periodic saves
+      Serial.print(F("Flight state saved to EEPROM: "));
+      Serial.println(getStateName(flightState));
+  }
+}
+
+
+// Load state from EEPROM
+bool loadStateFromEEPROM() {
+  // Read the structure from EEPROM
+  EEPROM.get(EEPROM_STATE_ADDR, stateData);
+
+  // Validate data using the signature
+  if (stateData.signature != EEPROM_SIGNATURE_VALUE) {
+    Serial.println(F("No valid flight state found in EEPROM (invalid signature)"));
+    // Optional: Clear invalid data?
+    // stateData = {}; // Reset struct
+    // stateData.signature = 0;
+    // EEPROM.put(EEPROM_STATE_ADDR, stateData);
+    return false;
+  }
+
+  // Data is valid, print the recovered state
+  Serial.println(F("Found valid flight state in EEPROM:"));
+  Serial.print(F("  State: ")); Serial.println(getStateName(stateData.state));
+  Serial.print(F("  Launch Altitude: ")); Serial.println(stateData.launchAltitude);
+  Serial.print(F("  Max Altitude: ")); Serial.println(stateData.maxAltitude);
+  Serial.print(F("  Flight Start Time: ")); Serial.println(stateData.flightStartTime);
+  Serial.print(F("  Boost End Time: ")); Serial.println(stateData.boostEndTime);
+  Serial.print(F("  Timestamp: ")); Serial.println(stateData.timestamp);
+
+  return true;
+}
+
+// Recover state after a power loss/reset
+void recoverFromPowerLoss() {
+  if (!loadStateFromEEPROM()) {
+    // No valid data found, start fresh
+    flightState = STARTUP; // Ensure we start cleanly
+    launchAltitude = 0.0;
+    maxAltitudeReached = 0.0;
+    flightStartTime = 0;
+    boostEndTime = 0;
+    Serial.println(F("Starting fresh flight sequence."));
+    return;
+  }
+
+  // Valid data found, attempt recovery
+  Serial.print(F("Attempting recovery from state: "));
+  Serial.println(getStateName(stateData.state));
+
+  // Restore global variables from loaded data
+  launchAltitude = stateData.launchAltitude;
+  maxAltitudeReached = stateData.maxAltitude;
+  flightStartTime = stateData.flightStartTime;
+  boostEndTime = stateData.boostEndTime;
+  
+  // Determine the state to resume in
+  FlightState recoveredState = stateData.state;
+
+  switch (recoveredState) {
+    case STARTUP:
+    case CALIBRATION:
+    case PAD_IDLE:
+      // If reset occurred in these early states, just restart normally
+      flightState = STARTUP;
+      Serial.println(F("-> Restarting from STARTUP (recovery from early state)"));
+      break;
+
+    case ARMED:
+      // If reset while armed but not launched, return to PAD_IDLE for safety checks
+      flightState = PAD_IDLE;
+      Serial.println(F("-> Returning to PAD_IDLE (recovery from ARMED)"));
+      break;
+
+    case BOOST:
+    case COAST:
+      // If reset during ascent, this is dangerous.
+      // Safest assumption: We are past apogee and descending.
+      // Force DROGUE_DESCENT state. If drogue doesn't exist, logic might need refinement.
+      // We *could* try checking current altitude vs maxAltitude, but sensor readings might be unreliable immediately after reset.
+      flightState = DROGUE_DESCENT; // Assume descending under drogue
+      Serial.println(F("-> Assuming DROGUE_DESCENT (recovery from BOOST/COAST)"));
+      // Note: Pyros won't have fired. This state will proceed to check for MAIN deploy altitude.
+      // Might need manual intervention or ground command if this happens.
+      break;
+
+    case APOGEE:
+    case DROGUE_DEPLOY:
+      // If reset during/just after apogee or drogue deployment, we should try to ensure drogue is deployed.
+      // Go directly to DROGUE_DESCENT. The pyro won't fire again here, but it should have fired before the reset.
+      // If hardware allows checking pyro status, that would be better.
+      flightState = DROGUE_DESCENT;
+      Serial.println(F("-> Ensuring DROGUE_DESCENT (recovery from APOGEE/DROGUE_DEPLOY)"));
+      break;
+
+    case DROGUE_DESCENT:
+      // If reset during drogue descent, just resume in the same state.
+      flightState = DROGUE_DESCENT;
+      Serial.println(F("-> Resuming DROGUE_DESCENT"));
+      break;
+
+    case MAIN_DEPLOY:
+      // If reset during main deployment, ensure we proceed to main descent.
+      // Pyro should have fired before reset.
+      flightState = MAIN_DESCENT;
+      Serial.println(F("-> Ensuring MAIN_DESCENT (recovery from MAIN_DEPLOY)"));
+      break;
+
+    case MAIN_DESCENT:
+      // If reset during main descent, resume in the same state.
+      flightState = MAIN_DESCENT;
+      Serial.println(F("-> Resuming MAIN_DESCENT"));
+      break;
+
+    case LANDED:
+    case RECOVERY:
+      // If reset after landing or during recovery, go to RECOVERY state.
+      flightState = RECOVERY;
+      Serial.println(F("-> Entering RECOVERY (recovery from LANDED/RECOVERY)"));
+      break;
+
+    case ERROR:
+      // If reset while in ERROR state, remain in ERROR state.
+      flightState = ERROR;
+      Serial.println(F("-> Remaining in ERROR state (recovery from ERROR)"));
+      break;
+
+    default:
+      // Unknown state in EEPROM? Treat as error or restart.
+      Serial.println(F("-> Unknown state recovered! Returning to STARTUP."));
+      flightState = STARTUP;
+      break;
+  }
+  // Note: stateData struct is now loaded, but flightState global variable dictates the actual running state.
+  // Global variables like launchAltitude, maxAltitudeReached have been restored.
+}
+
+
+// --- End EEPROM Functions ---
 
 
 

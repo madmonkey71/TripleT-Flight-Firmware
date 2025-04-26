@@ -119,10 +119,14 @@ bool gps_read() {
     // Get basic positioning data
     GPS_latitude = myGNSS.getLatitude();
     GPS_longitude = myGNSS.getLongitude();
-    GPS_altitude = myGNSS.getAltitudeMSL();
+    GPS_altitude = myGNSS.getAltitude();       // Get altitude above ellipsoid
+    GPS_altitudeMSL = myGNSS.getAltitudeMSL(); // Get altitude above mean sea level
     GPS_speed = myGNSS.getGroundSpeed();
+    GPS_heading = myGNSS.getHeading();         // Get heading
     GPS_fixType = myGNSS.getFixType();
     SIV = myGNSS.getSIV();
+    pDOP = myGNSS.getPDOP();                   // Get position dilution of precision
+    RTK = myGNSS.getCarrierSolutionType();     // Get RTK solution status
     
     // Update GPS time variables if we have a valid fix
     if (GPS_fixType > 0) {
@@ -159,9 +163,24 @@ void gps_print() {
   Serial.print(GPS_altitude / 1000.0);
   Serial.println(" m");
   
+  Serial.print("  Alt MSL: ");
+  Serial.print(GPS_altitudeMSL / 1000.0);
+  Serial.print(" m | Heading: ");
+  Serial.print(GPS_heading / 100000.0, 2);
+  Serial.println(" deg");
+  
   Serial.print("  Speed: ");
   Serial.print(GPS_speed / 1000.0);
-  Serial.println(" m/s");
+  Serial.print(" m/s | pDOP: ");
+  Serial.print(pDOP / 100.0, 2);
+  
+  Serial.print(" | RTK: ");
+  switch(RTK) {
+    case 0: Serial.println("None"); break;
+    case 1: Serial.println("Float"); break;
+    case 2: Serial.println("Fixed"); break;
+    default: Serial.println(RTK); break;
+  }
   
   if (GPS_time_valid) {
     Serial.print("  Time: ");

@@ -12,11 +12,13 @@ extern bool enableSensorDebug;
 bool kx134_init() {
     Serial.println("Initializing KX134 accelerometer...");
     
-    // First try to begin communication
-    if (!kxAccel.begin()) {
-        Serial.println("KX134 initialization failed - could not communicate with device");
+    // First try to begin communication - Let library try default addresses (0x1E, 0x1F)
+    if (!kxAccel.begin()) { 
+        Serial.println("KX134 initialization failed - could not communicate with device on default addresses");
         return false;
     }
+    // Serial.print("KX134 Found at address: 0x"); // Can't access i2cAddr directly
+    // Serial.println(kxAccel.i2cAddr, HEX);
     
     // Perform software reset
     if (!kxAccel.softwareReset()) {
@@ -57,13 +59,15 @@ bool kx134_init() {
 
 void kx134_read(){
   // Query the KX134
-  if (kxAccel.dataReady())
-  {
+  // MODIFIED: Skip the dataReady check that's causing hangs
+  // if (kxAccel.dataReady())
+  // {
+    // Always try to read - the library will handle errors internally
     kxAccel.getAccelData(&kx134AccelData);
     kx134_accel[0] = kx134AccelData.xData;
     kx134_accel[1] = kx134AccelData.yData;
     kx134_accel[2] = kx134AccelData.zData;
-  }
+  // }
 }
 
 void kx134_print(){

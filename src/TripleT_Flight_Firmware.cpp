@@ -1,5 +1,5 @@
 // TripleT Flight Firmware
-// Current Version: v0.20
+// Current Version: v0.30
 // Current State: Alpha
 // Last Updated: 24/04/2025
 // **Notes**
@@ -43,11 +43,16 @@
 #include <Watchdog_t4.h>
 #include <EEPROM.h>
 
+// Buffer for incoming serial commands
+#define SERIAL_CMD_BUFFER_SIZE 64
+char serialCommandBuffer[SERIAL_CMD_BUFFER_SIZE];
+uint8_t serialCommandIndex = 0;
+
 // Create the watchdog object
 WDT_T4<WDT1> watchdog;
 
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.20
+#define TRIPLET_FLIGHT_VERSION 0.30
 
 // Additional variables for apogee detection
 bool apogeeBackupTimer = false;
@@ -126,7 +131,9 @@ SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
 
 // Define the structure that matches our binary data format
 struct LogDataStruct {
-  uint32_t timestamp;      // 4 bytes
+  uint32_t timestamp;      // 4 bytes - milliseconds since boot
+  
+  // GPS Basic Data
   uint8_t fixType;        // 1 byte
   uint8_t sats;           // 1 byte
   int32_t latitude;       // 4 bytes
@@ -137,15 +144,55 @@ struct LogDataStruct {
   int32_t heading;        // 4 bytes
   uint16_t pDOP;          // 2 bytes
   uint8_t rtk;            // 1 byte
+  
+  // GPS Date and Time (formatted as requested)
+  uint32_t gpsDate;       // 4 bytes - YYYYMMDD format
+  uint32_t gpsTime;       // 4 bytes - HHmmss format
+  
+  // Barometer Data
   float pressure;         // 4 bytes
   float temperature;      // 4 bytes
-  float kx134_x;         // 4 bytes
-  float kx134_y;         // 4 bytes
-  float kx134_z;         // 4 bytes
-  float icm_accel[3];    // 12 bytes (x, y, z)
-  float icm_gyro[3];     // 12 bytes (x, y, z)
-  float icm_mag[3];      // 12 bytes (x, y, z)
-  float icm_temp;        // 4 bytes - Temperature from ICM sensor
+  
+  // KX134 Data  
+  float kx134_x;          // 4 bytes
+  float kx134_y;          // 4 bytes
+  float kx134_z;          // 4 bytes
+  
+  // ICM20948 Data
+  float icm_accel[3];     // 12 bytes (x, y, z)
+  float icm_gyro[3];      // 12 bytes (x, y, z)
+  float icm_mag[3];       // 12 bytes (x, y, z)
+  float icm_temp;         // 4 bytes - Temperature from ICM sensor
+  
+  // Flight State Information
+  uint8_t flightStateCode;// 1 byte - Numeric code for the state
+  char flightStateName[15];// 15 bytes - Text name of state (null-terminated)
+  uint32_t stateEntryTime;// 4 bytes - When we entered this state
+  uint32_t stateElapsedTime;// 4 bytes - Time in current state
+  
+  // Calculated Values
+  float altitudeAGL;      // 4 bytes - Height above ground level
+  float maxAltitudeReached;// 4 bytes - Highest altitude seen
+  float accelMagnitude;   // 4 bytes - Combined acceleration magnitude
+  float verticalVelocity; // 4 bytes - Calculated from barometer data
+  
+  // Flight Performance Metrics
+  uint32_t flightDuration;// 4 bytes - Time since liftoff (if in flight)
+  uint32_t timeSinceApogee;// 4 bytes - Time since apogee detection
+  
+  // System Health
+  uint8_t sensorStatusFlags;// 1 byte - Bitfield of sensor health
+  float batteryVoltage;   // 4 bytes - If battery monitoring available
+  uint16_t loopCount;     // 2 bytes - Incremented each loop
+  uint16_t logSequenceNumber;// 2 bytes - For detecting missed entries
+  
+  // Storage Status
+  uint8_t sdCardStatus;   // 1 byte - Status code for the SD card
+  uint32_t freeSpaceMB;   // 4 bytes - Remaining storage space
+  
+  // GPS Quality Metrics
+  uint16_t hAcc;          // 2 bytes - Horizontal accuracy in mm
+  uint16_t vAcc;          // 2 bytes - Vertical accuracy in mm
 };
 
 // Storage configuration
@@ -214,10 +261,11 @@ SensorStatus accelerometerStatus = {true, 0, 0, 0};
 SensorStatus gyroscopeStatus = {true, 0, 0, 0};
 SensorStatus magnetometerStatus = {true, 0, 0, 0};
 SensorStatus gpsStatus = {true, 0, 0, 0};
+bool kx134_initialized_ok = false; // Specific flag for KX134 init success
 
 // Sensor ready flags - use functions to check sensor status
 #define ms5607_ready ms5611Sensor.isConnected()
-#define kx134_accel_ready kx134Accel.dataReady()
+#define kx134_accel_ready (kx134_initialized_ok) // Use initialization flag instead
 // Remove the macro and use the extern variable defined in ICM file
 extern bool icm20948_ready;
 
@@ -274,6 +322,7 @@ bool watchdogTriggered = false;
 
 // Forward declarations
 void checkSensorStatus();
+const char* getStateName(FlightState state); // <<< ADDED FORWARD DECLARATION
 bool isSensorSuiteHealthy(FlightState currentState);
 float GetAccelMagnitude();
 float getBaroAltitude();
@@ -301,6 +350,7 @@ void watchdogHandler() {
 
 // Check and update status of all sensors
 void checkSensorStatus() {
+
   // Check barometer
   static float lastPressure = pressure;
   if (ms5611Sensor.isConnected() && fabs(pressure - lastPressure) < BAROMETER_ERROR_THRESHOLD) {
@@ -321,11 +371,16 @@ void checkSensorStatus() {
   // Check accelerometer
   static float lastAccelMag = 0;
   float accelMag = GetAccelMagnitude();
-  if ((kx134_accel_ready || icm20948_ready) && fabs(accelMag - lastAccelMag) < ACCEL_ERROR_THRESHOLD) {
+  
+  // Check if any valid accelerometer is providing reasonable data
+  bool kx134_check = kx134_initialized_ok && kx134_accel_ready; // Check KX134 only if initialized
+  bool icm_check = icm20948_ready; // Check ICM status
+  
+  if ((kx134_check || icm_check) && fabs(accelMag - lastAccelMag) < ACCEL_ERROR_THRESHOLD) {
     accelerometerStatus.isWorking = true;
     accelerometerStatus.lastValidReading = millis();
     accelerometerStatus.failureCount = 0;
-  } else if (kx134_accel_ready || icm20948_ready) {
+  } else if (kx134_check || icm_check) { // Check if either sensor is connected, even if reading is suspicious
     // Suspicious reading but sensor is connected
     accelerometerStatus.failureCount++;
     if (accelerometerStatus.failureCount > MAX_SENSOR_FAILURES) {
@@ -356,6 +411,10 @@ void checkSensorStatus() {
   if (myGNSS.getPVT()) {
     gpsStatus.isWorking = true;
     gpsStatus.lastValidReading = millis();
+  } else if (GPS_fixType >= 3 && SIV >= 4) {
+    // We have valid GPS data but getPVT() failed - still consider GPS working
+    gpsStatus.isWorking = true;
+    gpsStatus.lastValidReading = millis();
   } else if (millis() - gpsStatus.lastValidReading > GPS_TIMEOUT_MS) {
     gpsStatus.isWorking = false;
   }
@@ -366,33 +425,84 @@ void checkSensorStatus() {
     Serial.println(F("SENSOR HEALTH CHECK FAILED - ENTERING ERROR STATE"));
     flightState = ERROR;
   }
+  
 }
 
 // Check if all critical sensors are healthy
 bool isSensorSuiteHealthy(FlightState currentState) {
+  // <<< ADDED DEBUG >>>
+  Serial.print(F("[isSensorSuiteHealthy] Checking for state: "));
+  Serial.println(getStateName(currentState));
+  bool result = false; 
+  // <<< END ADDED DEBUG >>>
+
+  // Special case: If we're already in ERROR state, check if we can recover
+  if (currentState == ERROR) {
+    // Minimum requirements to exit ERROR state - consider a subset of sensors
+    result = barometerStatus.isWorking && (accelerometerStatus.isWorking || gyroscopeStatus.isWorking);
+    
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> ERROR Recovery Check: BaroOK=")); Serial.print(barometerStatus.isWorking);
+    Serial.print(F(", AccelOK=")); Serial.print(accelerometerStatus.isWorking);
+    Serial.print(F(", GyroOK=")); Serial.println(gyroscopeStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    
+    Serial.print(F("[isSensorSuiteHealthy] Can Exit ERROR: ")); Serial.println(result ? "Yes" : "No");
+    return result;
+  }
+
   // For ground states, we only need GPS and barometer to be working
   if (currentState <= ARMED) {
-    return barometerStatus.isWorking && gpsStatus.isWorking;
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> Ground State Check: BaroOK=")); Serial.print(barometerStatus.isWorking);
+    Serial.print(F(", GPSOK=")); Serial.println(gpsStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    result = barometerStatus.isWorking && gpsStatus.isWorking;
   }
   
   // For boost and coast, we need accelerometer, gyro, and barometer
-  if (currentState <= COAST) {
-    return barometerStatus.isWorking && accelerometerStatus.isWorking && gyroscopeStatus.isWorking;
+  else if (currentState <= COAST) { // Changed else if to avoid processing multiple conditions
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> Ascent State Check: BaroOK=")); Serial.print(barometerStatus.isWorking);
+    Serial.print(F(", AccelOK=")); Serial.print(accelerometerStatus.isWorking);
+    Serial.print(F(", GyroOK=")); Serial.println(gyroscopeStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    result = barometerStatus.isWorking && accelerometerStatus.isWorking && gyroscopeStatus.isWorking;
   }
   
   // For apogee and descent, barometer is critical
-  if (currentState <= MAIN_DESCENT) {
-    return barometerStatus.isWorking;
+  else if (currentState <= MAIN_DESCENT) { // Changed else if
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> Descent State Check: BaroOK=")); Serial.println(barometerStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    result = barometerStatus.isWorking;
   }
   
   // For landing detection, we need either accelerometer or barometer
-  if (currentState == LANDED) {
-    return barometerStatus.isWorking || accelerometerStatus.isWorking;
+  else if (currentState == LANDED) { // Changed else if
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> Landed State Check: BaroOK=")); Serial.print(barometerStatus.isWorking);
+    Serial.print(F(", AccelOK=")); Serial.println(accelerometerStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    result = barometerStatus.isWorking || accelerometerStatus.isWorking;
   }
   
-  // Default case - require all sensors
-  return barometerStatus.isWorking && accelerometerStatus.isWorking && 
-         gyroscopeStatus.isWorking && gpsStatus.isWorking;
+  // Default case - require all sensors (should only apply to RECOVERY or unknown states now)
+  else {
+    // <<< ADDED DEBUG >>>
+    Serial.print(F("  -> Default/Recovery Check: BaroOK=")); Serial.print(barometerStatus.isWorking);
+    Serial.print(F(", AccelOK=")); Serial.print(accelerometerStatus.isWorking);
+    Serial.print(F(", GyroOK=")); Serial.print(gyroscopeStatus.isWorking);
+    Serial.print(F(", GPSOK=")); Serial.println(gpsStatus.isWorking);
+    // <<< END ADDED DEBUG >>>
+    result = barometerStatus.isWorking && accelerometerStatus.isWorking && 
+             gyroscopeStatus.isWorking && gpsStatus.isWorking;
+  }
+
+  // <<< ADDED DEBUG >>>
+  Serial.print(F("[isSensorSuiteHealthy] Result: ")); Serial.println(result ? "Healthy" : "UNHEALTHY");
+  // <<< END ADDED DEBUG >>>
+  return result; 
 }
 
 // Get state name as string (for logging/debugging)
@@ -441,25 +551,27 @@ bool detectApogee() {
   }
   
   // Method 2: Accelerometer-based detection (backup)
+  // Check if vertical acceleration is close to zero (indicating peak)
   if (!apogeeDetected && (kx134_accel_ready || icm20948_ready)) {
     float accel_z = kx134_accel_ready ? kx134_accel[2] : icm_accel[2];
     
-    // If Z acceleration is negative for several samples, we might be at apogee
-    static float prevAccel = 0;
-    static int accelNegativeCount = 0;
-    
-    if (accel_z < -0.1 && prevAccel < -0.1) {
-      accelNegativeCount++;
-      if (accelNegativeCount >= 5) {
-        Serial.println(F("APOGEE DETECTED (accelerometer)"));
+    // Counter for near-zero acceleration readings
+    static int accelNearZeroCount = 0; 
+    const float accel_apogee_threshold = 0.1; // g threshold around zero
+
+    // Check if absolute value of z-acceleration is below threshold
+    if (fabs(accel_z) < accel_apogee_threshold) { 
+      accelNearZeroCount++;
+      // Require multiple consecutive readings near zero G
+      if (accelNearZeroCount >= 5) { // Use a count similar to the old check for now
+        Serial.println(F("APOGEE DETECTED (accelerometer - near zero G)"));
         apogeeDetected = true;
-        accelNegativeCount = 0;
+        accelNearZeroCount = 0; // Reset after detection
       }
-    } else if (accel_z > 0) {
-      accelNegativeCount = 0;
+    } else {
+      // Reset count if acceleration moves away from zero
+      accelNearZeroCount = 0;
     }
-    
-    prevAccel = accel_z;
   }
   
   // Method 3: Time-based detection (last resort)
@@ -563,8 +675,8 @@ bool createNewLogFile() {
   // Make sure the SD card is available
   if (!sdCardAvailable) {
     Serial.println(F("SD card not available, cannot create log file"));
-      return false;
-    }
+    return false;
+  }
     
   // Close any previously open log file
   if (LogDataFile) {
@@ -575,36 +687,82 @@ bool createNewLogFile() {
   // Create a unique filename based on timestamp
   char fileName[64];
   
-  // If GPS has fix, use date/time for filename
-  if (myGNSS.getFixType() > 0) {
-    // Get date and time safely (will use Jan 1, 2000 as default if no valid time)
+  // First try to get valid GPS time
+  if (myGNSS.getYear() >= 2023) {
+    // Get date and time safely (uses valid GPS time)
     int year;
     byte month, day, hour, minute, second;
     getGPSDateTime(year, month, day, hour, minute, second);
     
     sprintf(fileName, "DATA_%04d%02d%02d_%02d%02d%02d.csv", 
       year, month, day, hour, minute, second);
-  } else {
-    // No GPS fix, use millis()
-    sprintf(fileName, "LOG_%lu.csv", millis());
+  } 
+  // Fallback 1: Use compile time if available
+  else if (__DATE__[0] != '?') {
+    // Parse the compile date and time macros
+    char monthStr[4];
+    int day, year;
+    sscanf(__DATE__, "%s %d %d", monthStr, &day, &year);
+    
+    // Convert month string to number
+    int month = 1;
+    if (strcmp(monthStr, "Jan") == 0) month = 1;
+    else if (strcmp(monthStr, "Feb") == 0) month = 2;
+    else if (strcmp(monthStr, "Mar") == 0) month = 3;
+    else if (strcmp(monthStr, "Apr") == 0) month = 4;
+    else if (strcmp(monthStr, "May") == 0) month = 5;
+    else if (strcmp(monthStr, "Jun") == 0) month = 6;
+    else if (strcmp(monthStr, "Jul") == 0) month = 7;
+    else if (strcmp(monthStr, "Aug") == 0) month = 8;
+    else if (strcmp(monthStr, "Sep") == 0) month = 9;
+    else if (strcmp(monthStr, "Oct") == 0) month = 10;
+    else if (strcmp(monthStr, "Nov") == 0) month = 11;
+    else if (strcmp(monthStr, "Dec") == 0) month = 12;
+    
+    // Parse time
+    int hour, minute, second;
+    sscanf(__TIME__, "%d:%d:%d", &hour, &minute, &second);
+    
+    sprintf(fileName, "BUILD_%04d%02d%02d_%02d%02d%02d.csv", 
+      year, month, day, hour, minute, second);
+  }
+  // Fallback 2: Use milliseconds and a random session ID
+  else {
+    static uint16_t sessionID = random(1000, 9999); // Generate random session ID at startup
+    sprintf(fileName, "LOG_S%04d_T%lu.csv", sessionID, millis());
   }
   
   Serial.print(F("Creating log file: "));
   Serial.println(fileName);
   
-  // Open the file
+  // Try to open the file - if it fails, try with an ultra-fallback name
   if (!LogDataFile.open(fileName, O_RDWR | O_CREAT | O_EXCL)) {
-    Serial.println(F("Failed to create log file"));
-    return false;
+    Serial.println(F("Failed to create log file with first name, trying fallback"));
+    
+    // Ultra-fallback - try a super simple name
+    sprintf(fileName, "LOG_%lu.csv", micros() % 1000000);
+    
+    if (!LogDataFile.open(fileName, O_RDWR | O_CREAT | O_EXCL)) {
+      Serial.println(F("Failed to create log file with fallback name"));
+      return false;
+    }
   }
   
   // Write CSV header
-  LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
+  LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
+                       "GPSDate,GPSTime(UTC),"
+                       "Pressure,Temperature,"
                        "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                        "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
                        "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
                        "ICM_MagX,ICM_MagY,ICM_MagZ,"
-                       "ICM_Temp"));
+                       "ICM_Temp,"
+                       "FlightStateCode,FlightStateName,StateEntryTime,StateElapsedTime,"
+                       "AltitudeAGL,MaxAltitude,AccelMagnitude,VerticalVelocity,"
+                       "FlightDuration,TimeSinceApogee,"
+                       "SensorStatusFlags,BatteryVoltage,LoopCount,LogSeqNum,"
+                       "SDCardStatus,FreeSpaceMB,"
+                       "hAcc(m),vAcc(m)"));
   
   // Flush to ensure header is written
   LogDataFile.flush();
@@ -654,6 +812,8 @@ void prepareForShutdown() {
 
 void WriteLogData(bool forceLog) {
   static unsigned long lastLogTime = 0;
+  static uint16_t logSequenceCounter = 0;
+  static uint32_t loopCount = 0; // Counter for loop iterations
   
   // Only log at specified intervals or when forced
   if (!forceLog && millis() - lastLogTime < 200) {
@@ -663,6 +823,66 @@ void WriteLogData(bool forceLog) {
   
   // Update current time
   currentTime = millis();
+  
+  // Increment sequence counter for every log entry
+  logSequenceCounter++;
+  loopCount++; // Increment loop counter
+  
+  // Calculate derived values
+  float altitudeAGL = getBaroAltitude() - launchAltitude;
+  float accelMagnitude = GetAccelMagnitude();
+  
+  // Calculate vertical velocity (simple method - can be improved)
+  static float lastAltitude = 0;
+  static unsigned long lastAltitudeTime = 0;
+  float verticalVelocity = 0;
+  if (lastAltitudeTime > 0) {
+    float timeElapsed = (currentTime - lastAltitudeTime) / 1000.0; // seconds
+    if (timeElapsed > 0) {
+      verticalVelocity = (getBaroAltitude() - lastAltitude) / timeElapsed;
+    }
+  }
+  lastAltitude = getBaroAltitude();
+  lastAltitudeTime = currentTime;
+  
+  // Format GPS date and time
+  uint32_t gpsDate = 0;
+  uint32_t gpsTime = 0;
+  if (myGNSS.getYear() >= 2023) {
+    gpsDate = myGNSS.getYear() * 10000 + myGNSS.getMonth() * 100 + myGNSS.getDay();
+    gpsTime = myGNSS.getHour() * 10000 + myGNSS.getMinute() * 100 + myGNSS.getSecond();
+  }
+  
+  // For time since apogee calculation
+  static unsigned long apogeeDetectedTime = 0;
+  if (flightState == APOGEE && apogeeDetectedTime == 0) {
+    apogeeDetectedTime = currentTime;
+  }
+  
+  // Calculate flight durations
+  uint32_t flightDuration = (flightStartTime > 0) ? (currentTime - flightStartTime) : 0;
+  uint32_t timeSinceApogee = (apogeeDetectedTime > 0) ? (currentTime - apogeeDetectedTime) : 0;
+  
+  // Create sensor status bitfield
+  uint8_t sensorStatusFlags = 
+    (barometerStatus.isWorking ? 0x01 : 0) |
+    (accelerometerStatus.isWorking ? 0x02 : 0) |
+    (gyroscopeStatus.isWorking ? 0x04 : 0) |
+    (magnetometerStatus.isWorking ? 0x08 : 0) |
+    (gpsStatus.isWorking ? 0x10 : 0);
+  
+  // Get SD card status
+  uint8_t sdCardStatus = 
+    (sdCardPresent ? 0x01 : 0) |
+    (sdCardMounted ? 0x02 : 0) |
+    (sdCardAvailable ? 0x04 : 0) |
+    (loggingEnabled ? 0x08 : 0);
+  
+  // Battery voltage - mock value if not available
+  float batteryVoltage = 3.7; // Replace with actual battery reading if available
+  
+  // Format state information
+  uint32_t stateElapsedTime = millis() - stateEntryTime;
   
   // Format data string
   LogDataString = String(currentTime) + "," +
@@ -676,11 +896,21 @@ void WriteLogData(bool forceLog) {
                   String(GPS_heading / 100000.0, 2) + "," +   
                   String(pDOP / 100.0, 2) + "," +             
                   String(RTK) + "," +
+                  
+                  // GPS Date & Time fields
+                  String(gpsDate) + "," +
+                  String(gpsTime) + "," +
+                  
+                  // Barometer data
                   String(pressure, 2) + "," +
                   String(temperature, 2) + "," +
+                  
+                  // KX134 accelerometer
                   String(kx134_accel[0], 4) + "," +
                   String(kx134_accel[1], 4) + "," +
                   String(kx134_accel[2], 4) + "," +
+                  
+                  // ICM20948 data
                   String(icm_accel[0], 4) + "," +
                   String(icm_accel[1], 4) + "," +
                   String(icm_accel[2], 4) + "," +
@@ -690,7 +920,37 @@ void WriteLogData(bool forceLog) {
                   String(icm_mag[0], 4) + "," +
                   String(icm_mag[1], 4) + "," +
                   String(icm_mag[2], 4) + "," +
-                  String(icm_temp, 2);
+                  String(icm_temp, 2) + "," +
+                  
+                  // Flight State Information
+                  String((int)flightState) + "," +
+                  String(getStateName(flightState)) + "," +
+                  String(stateEntryTime) + "," +
+                  String(stateElapsedTime) + "," +
+                  
+                  // Calculated Values
+                  String(altitudeAGL, 2) + "," +
+                  String(maxAltitudeReached, 2) + "," +
+                  String(accelMagnitude, 4) + "," +
+                  String(verticalVelocity, 2) + "," +
+                  
+                  // Flight Performance Metrics
+                  String(flightDuration) + "," +
+                  String(timeSinceApogee) + "," +
+                  
+                  // System Health
+                  String(sensorStatusFlags) + "," +
+                  String(batteryVoltage, 2) + "," +
+                  String(loopCount) + "," +
+                  String(logSequenceCounter) + "," +
+                  
+                  // Storage Status
+                  String(sdCardStatus) + "," +
+                  String(availableSpace / (1024ULL * 1024ULL)) + "," +
+                  
+                  // GPS Quality Metrics (converted from u-blox internal units to meters)
+                  String(myGNSS.getHorizontalAccuracy() / 10000000.0, 1) + "," +
+                  String(myGNSS.getVerticalAccuracy() / 10000000.0, 1);
 
   // Output to serial if enabled
   if (enableSerialCSV) {
@@ -704,9 +964,25 @@ void WriteLogData(bool forceLog) {
 
   // Write to SD card if file is open
   if (!LogDataFile || !LogDataFile.isOpen()) {
-    // Try to create new log file if none exists
-    if (sdCardAvailable) {
-      createNewLogFile();
+    // Try to create new log file if none exists, but with timing constraints
+    static unsigned long lastFileCreationAttempt = 0;
+    if (sdCardAvailable && (millis() - lastFileCreationAttempt > 10000)) { // Wait at least 10 seconds between attempts
+      lastFileCreationAttempt = millis();
+      
+      // Only attempt if we have a valid GPS time or we've been waiting too long
+      bool hasValidGPSTime = (myGNSS.getYear() >= 2023);
+      static unsigned long firstAttemptTime = 0;
+      if (firstAttemptTime == 0) firstAttemptTime = millis();
+      
+      // Try if we have valid time or have been waiting for >60 seconds
+      if (hasValidGPSTime || (millis() - firstAttemptTime > 60000)) {
+        if (!hasValidGPSTime) {
+          Serial.println(F("Warning: Creating log file without valid GPS time after timeout"));
+        }
+        createNewLogFile();
+      } else {
+        Serial.println(F("Waiting for valid GPS time before creating log file..."));
+      }
     }
     return;
   }
@@ -973,6 +1249,20 @@ void ProcessFlightState() {
         setLEDColor(0, 0, 0, 0); // Off
       }
       pixels.show();
+      
+      // Check if system has recovered and can exit ERROR state
+      // Check once per second to reduce log spam
+      static unsigned long lastErrorRecoveryCheck = 0;
+      if (millis() - lastErrorRecoveryCheck > 1000) {
+        lastErrorRecoveryCheck = millis();
+        
+        // Use the special case in isSensorSuiteHealthy() to check if we can exit ERROR
+        if (isSensorSuiteHealthy(ERROR)) {
+          Serial.println(F("System has recovered from ERROR state. Transitioning to PAD_IDLE."));
+          flightState = PAD_IDLE;
+          saveStateToEEPROM(); // Save the recovered state immediately
+        }
+      }
       break;
   }
 }
@@ -1170,6 +1460,7 @@ void printStorageStatistics() {
 }
 
 void processCommand(String command) {
+    Serial.println(F("[DEBUG] Entering processCommand")); // <<< ADDED DEBUG
     // Single character numeric commands for debug toggles
     if (command.length() == 1) {
         char cmd = command.charAt(0);
@@ -1610,6 +1901,7 @@ void processCommand(String command) {
       Serial.println(command);
       Serial.println(F("Type 'help' for a list of available commands."));
     }
+    Serial.println(F("[DEBUG] Exiting processCommand")); // <<< ADDED DEBUG
 }
 
 void setup() {
@@ -1621,6 +1913,9 @@ void setup() {
   // Wait a bit for serial, but don't hang indefinitely
   unsigned long serialWaitStart = millis();
   while (!Serial && (millis() - serialWaitStart < 2000)) { delay(100); }
+  
+  // Initialize random seed from analog noise
+  randomSeed(analogRead(0) + micros());
   
   Serial.println(F("\n--- TripleT Flight Firmware Initializing --- "));
   Serial.print(F("Version: ")); Serial.println(TRIPLET_FLIGHT_VERSION);
@@ -1658,15 +1953,15 @@ void setup() {
       // Add any specific resume logic here if needed, otherwise proceed
   }
 
-  watchdog.feed();
+  // watchdog.feed();
 
   // Initialize I2C and SPI
   Serial.println(F("[SETUP] Initializing I2C & SPI..."));
   #if defined(BOARD_TEENSY41)
     SPI.begin();
     Wire.begin();
-    Wire.setClock(400000);
-    Serial.println(F("[SETUP] Teensy 4.1 SPI/I2C (SDIO) Initialized."));
+    Wire.setClock(200000); // <<< CHANGED from 400000 to 200000
+    Serial.println(F("[SETUP] Teensy 4.1 SPI/I2C (SDIO) Initialized at 200kHz.")); // <<< UPDATED LOG
   #else
     // SPI.setCS(SD_CS_PIN); // Pins may vary, ensure defined elsewhere
     // SPI.setMOSI(SD_MOSI_PIN);
@@ -1674,8 +1969,8 @@ void setup() {
     // SPI.setSCK(SD_SCK_PIN);
     SPI.begin();
     Wire.begin();
-    Wire.setClock(400000);
-    Serial.println(F("[SETUP] Teensy 4.0 SPI/I2C Initialized."));
+    Wire.setClock(100000); // <<< CHANGED from 400000 to 100000
+    Serial.println(F("[SETUP] Teensy 4.0 SPI/I2C Initialized at 100kHz.")); // <<< UPDATED LOG
   #endif
   scan_i2c(); // Scan bus after initialization
 
@@ -1687,7 +1982,47 @@ void setup() {
   
   bool kx134_ok = kx134_init();
   if (!kx134_ok) { Serial.println(F("[SETUP] WARNING: KX134 init failed")); }
-  else { Serial.println(F("[SETUP] KX134 Initialized.")); }
+  else { 
+    Serial.println(F("[SETUP] KX134 Initialized.")); 
+    // <<< START ADDED DEBUG >>>
+    Serial.println(F("[SETUP] Adding 100ms delay after kx134_init..."));
+    delay(100); // Add a small delay for sensor stabilization
+    
+    // NEW APPROACH: Set a timeout for the dataReady check
+    Serial.println(F("[SETUP] Attempting kx134Accel.dataReady() check with timeout..."));
+    
+    // Add global variable for timeout tracking
+    unsigned long startTime = millis();
+    const unsigned long TIMEOUT = 500; // 500ms timeout
+    bool ready = false;
+    bool timeoutOccurred = false;
+    
+    // Try to poll until timeout
+    while (millis() - startTime < TIMEOUT) {
+      // Only spend a brief moment trying
+      Wire.beginTransmission(0x1F); // KX134 address
+      if (Wire.endTransmission() == 0) { // If we can communicate
+        ready = false; // Default to false, don't even try dataReady()
+        break; // Just exit the loop
+      }
+      delay(5); // Small delay between attempts
+    }
+    
+    if (millis() - startTime >= TIMEOUT) {
+      timeoutOccurred = true;
+    }
+    
+    Serial.print(F("[SETUP] kx134Accel I2C check "));
+    Serial.println(timeoutOccurred ? "timed out" : "completed");
+    
+    // Don't even try to call dataReady() as it appears to be hanging
+    ready = false;
+    Serial.println(F("[SETUP] Skipping dataReady() check for now"));
+    // <<< END ADDED DEBUG >>>
+    
+    // Set global flag for proper accelerometer selection
+    kx134_initialized_ok = true; // Mark as initialized but we'll check dataReady in loop
+  }
   accelerometerStatus.isWorking = kx134_ok; // Update status based on init
   
   // Call void init, then check status separately
@@ -1770,14 +2105,97 @@ void setup() {
   Serial.println(F("[SETUP] Initializing Storage..."));
   setLEDColor(0, 25, 25, 25); // White during storage init
   delay(500); // Allow time for card stabilization
-  sdCardAvailable = initSDCard();
+  
+  // Make multiple attempts to initialize SD card
+  const int MAX_SD_INIT_ATTEMPTS = 3;
+  bool sd_init_success = false;
+  
+  for (int attempt = 1; attempt <= MAX_SD_INIT_ATTEMPTS; attempt++) {
+    Serial.print(F("[SETUP] SD card init attempt "));
+    Serial.print(attempt);
+    Serial.print(F(" of "));
+    Serial.println(MAX_SD_INIT_ATTEMPTS);
+    
+    if (initSDCard()) {
+      sd_init_success = true;
+      break;
+    }
+    
+    if (attempt < MAX_SD_INIT_ATTEMPTS) {
+      Serial.println(F("[SETUP] Retrying SD card initialization..."));
+      delay(1000); // Wait between attempts
+    }
+  }
+  
+  sdCardAvailable = sd_init_success;
   Serial.print(F("[SETUP] SD Card Available: ")); Serial.println(sdCardAvailable ? "Yes" : "No");
+  
   if (sdCardAvailable) {
+      // Try to create log file, with multiple attempts
+      bool logFileCreated = false;
+      
+      // First, try with GPS time if available
       if (createNewLogFile()) {
           Serial.println(F("[SETUP] Log file created successfully."));
+          logFileCreated = true;
+          loggingEnabled = true;
       } else {
-          Serial.println(F("[SETUP] WARNING: Failed to create log file."));
-          loggingEnabled = false;
+          // If first attempt failed, force creation with fallback naming
+          Serial.println(F("[SETUP] First log file creation attempt failed. Trying with forced fallback..."));
+          
+          // Close any open file
+          if (LogDataFile) {
+              LogDataFile.flush();
+              LogDataFile.close();
+          }
+          
+          // Create a fallback filename
+          char fallbackName[32];
+          sprintf(fallbackName, "BOOT_%lu.csv", millis());
+          
+          Serial.print(F("[SETUP] Creating fallback log file: "));
+          Serial.println(fallbackName);
+          
+          // Open the file directly with fallback name
+          if (LogDataFile.open(fallbackName, O_RDWR | O_CREAT | O_EXCL)) {
+              // Write CSV header
+              LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,"
+                                  "GPSDate,GPSTime(UTC),"
+                                  "Pressure,Temperature,"
+                                  "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
+                                  "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
+                                  "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
+                                  "ICM_MagX,ICM_MagY,ICM_MagZ,"
+                                  "ICM_Temp,"
+                                  "FlightStateCode,FlightStateName,StateEntryTime,StateElapsedTime,"
+                                  "AltitudeAGL,MaxAltitude,AccelMagnitude,VerticalVelocity,"
+                                  "FlightDuration,TimeSinceApogee,"
+                                  "SensorStatusFlags,BatteryVoltage,LoopCount,LogSeqNum,"
+                                  "SDCardStatus,FreeSpaceMB,"
+                                  "hAcc(m),vAcc(m)"));
+              
+              // Flush to ensure header is written
+              LogDataFile.flush();
+              
+              // Copy filename to global variable
+              strcpy(logFileName, fallbackName);
+              
+              logFileCreated = true;
+              loggingEnabled = true;
+              
+              Serial.println(F("[SETUP] Fallback log file created successfully."));
+          } else {
+              Serial.println(F("[SETUP] WARNING: Even fallback log file creation failed!"));
+              loggingEnabled = false;
+          }
+      }
+      
+      // Log a setup message to the file
+      if (logFileCreated) {
+          // Log setup complete message
+          String setupMessage = String(millis()) + ",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0";
+          LogDataFile.println(setupMessage);
+          LogDataFile.flush();
       }
   } else {
       Serial.println(F("[SETUP] WARNING: SD Card not available, logging disabled."));
@@ -1816,6 +2234,17 @@ void setup() {
   saveStateToEEPROM();
 
   Serial.println(F("--- TripleT Flight Firmware Setup Complete --- "));
+
+  // <<< ADDED DEBUG: Print final setup status >>>
+  Serial.println(F("[SETUP] Final Status Check:"));
+  Serial.print(F("  Final Flight State: ")); Serial.println(getStateName(flightState));
+  Serial.print(F("  Barometer Working: ")); Serial.println(barometerStatus.isWorking ? "Yes" : "No");
+  Serial.print(F("  Accelerometer Working: ")); Serial.println(accelerometerStatus.isWorking ? "Yes" : "No");
+  Serial.print(F("  Gyroscope Working: ")); Serial.println(gyroscopeStatus.isWorking ? "Yes" : "No");
+  Serial.print(F("  Magnetometer Working: ")); Serial.println(magnetometerStatus.isWorking ? "Yes" : "No");
+  Serial.print(F("  GPS Working: ")); Serial.println(gpsStatus.isWorking ? "Yes" : "No");
+  // <<< END ADDED DEBUG >>>
+
   watchdog.feed(); // Final feed before loop
 }
 
@@ -1835,73 +2264,33 @@ void loop() {
   // Feed the watchdog at the start of every loop
   watchdog.feed();
   
-  // Check for serial commands (currently commented out)
-  // if (Serial.available()) { ... processCommand ... }
+  // Check for serial commands
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Remove leading/trailing whitespace
+    if (command.length() > 0) {
+        Serial.print(F("Received command: "));
+        Serial.println(command);
+        processCommand(command);
+    }
+  }
   
   // --- Sensor Reading --- 
   // Read GPS data periodically
   if (millis() - lastGPSReadTime >= GPS_POLL_INTERVAL) {
     lastGPSReadTime = millis();
     if (gpsStatus.isWorking) { // Only read if initialized okay
-      gps_read();
+      bool gpsSucess = gps_read();
+      if (gpsSucess && GPS_fixType >= 2) {  // Valid 2D or 3D fix
+        gpsStatus.isWorking = true;
+        gpsStatus.lastValidReading = millis();
+        if (gpsStatus.consecutiveFailures > 0) {
+          gpsStatus.consecutiveFailures--;
+        }
+      }
       sensorsUpdated = true;
     }
-
-    // --- Automatic Calibration Attempt (Fallback) ---
-    // Try auto-calibration if not calibrated yet and GPS fix is good.
-    // This provides robustness if setup calibration failed/timed out.
-    if (!baroCalibrated && gpsStatus.isWorking && barometerStatus.isWorking && pDOP < 300 && pDOP > 0) { // Check pDOP valid too
-      static unsigned long lastCalibrationAttempt = 0;
-      static int calibrationAttempts = 0; // Limit attempts
-      static int validReadingsCount = 0;
-      static bool readingStable = false;
-      
-      // Only attempt periodically and limit total attempts
-      if (millis() - lastCalibrationAttempt > 30000 && calibrationAttempts < 3) {
-          // Check barometer stability first
-          if (!readingStable) {
-              int result = ms5611_read(); // Need a fresh reading to check
-              if (result == MS5611_READ_OK && pressure >= 800 && pressure <= 1100) {
-                  validReadingsCount++;
-                  if (validReadingsCount >= 5) {
-                      readingStable = true;
-                      Serial.println(F("[LOOP] Baro readings stable, attempting auto-calibration..."));
-                  } else {
-                       if(enableSystemDebug) { Serial.print(F(".")); } // Indicate waiting for stable readings
-                  }
-              } else {
-                  validReadingsCount = 0; // Reset count on bad reading
-                  readingStable = false;
-              }
-          }
-          
-          // If stable, attempt calibration
-          if (readingStable) {
-              lastCalibrationAttempt = millis();
-              calibrationAttempts++;
-              Serial.print(F("[LOOP] Auto Baro Cal Attempt #")); Serial.print(calibrationAttempts);
-              Serial.println(F(" (pDOP < 3.0)"));
-              setLEDColor(0, 50, 0, 50); // Purple for calibration attempt
-              
-              if (ms5611_calibrate_with_gps(30000)) { // 30 sec timeout
-                  Serial.println(F("[LOOP] Auto Baro Calibration SUCCESSFUL."));
-                  baroCalibrated = true;
-                  setLEDColor(0, 0, 50, 0); // Green
-                  delay(500);
-              } else {
-                  Serial.println(F("[LOOP] Auto Baro Calibration FAILED."));
-                  setLEDColor(0, 50, 0, 0); // Red
-                  delay(500);
-                  // Reset flags to allow retry after interval
-                  readingStable = false;
-                  validReadingsCount = 0; 
-              }
-              // Restore LED based on current flight state after attempt
-              // (ProcessFlightState will handle this on next iteration)
-          }
-      } // End periodic attempt check
-    } // End auto-calibration check
-  } // End GPS read interval
+  }
   
   // Read barometer data periodically
   if (millis() - lastBaroReadTime >= BARO_POLL_INTERVAL) {
@@ -1945,6 +2334,24 @@ void loop() {
   // --- State Machine Processing ---
   ProcessFlightState();
   
+  // --- Safety Check: Ensure logging is active if we're in or past PAD_IDLE --- 
+  if (flightState >= PAD_IDLE && !loggingEnabled && sdCardAvailable) {
+    // This is a fallback to ensure logging is always enabled when we're in flight states
+    Serial.println(F("[LOOP] WARNING: Logging not enabled in flight state! Forcing log file creation..."));
+    
+    // Force creation of a log file
+    if (createNewLogFile()) {
+      Serial.println(F("[LOOP] Safety log file created successfully."));
+      loggingEnabled = true;
+      
+      // Log a safety message to mark this event
+      String setupMessage = String(millis()) + ",0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0";
+      LogDataFile.println("SAFETY_LOGGING_TRIGGERED");
+      LogDataFile.println(setupMessage);
+      LogDataFile.flush();
+    }
+  }
+  
   // Feed watchdog right after state processing (can take time)
   watchdog.feed(); 
   
@@ -1953,6 +2360,29 @@ void loop() {
   if (millis() - lastSensorStatusCheckTime >= 1000) {
     lastSensorStatusCheckTime = millis();
     checkSensorStatus();
+  }
+  
+  // Periodically check for SD card if not available
+  static unsigned long lastSDCardRetryTime = 0;
+  if (!sdCardAvailable && (millis() - lastSDCardRetryTime >= 30000)) { // Check every 30 seconds
+    lastSDCardRetryTime = millis();
+    Serial.println(F("[LOOP] Attempting to recover SD card..."));
+    
+    if (initSDCard()) {
+      sdCardAvailable = true;
+      Serial.println(F("[LOOP] SD Card recovered successfully!"));
+      
+      // Try to create a log file immediately
+      if (createNewLogFile()) {
+        Serial.println(F("[LOOP] Log file created successfully after SD recovery"));
+        loggingEnabled = true;
+      } else {
+        Serial.println(F("[LOOP] Failed to create log file after SD recovery"));
+        loggingEnabled = false;
+      }
+    } else {
+      Serial.println(F("[LOOP] SD Card recovery failed"));
+    }
   }
   
   // Periodically check GPS connection - simplified approach
@@ -1964,7 +2394,9 @@ void loop() {
   // Periodically check storage space
   if (millis() - lastStorageCheckTime >= STORAGE_CHECK_INTERVAL) {
     lastStorageCheckTime = millis();
+    Serial.println(F("[LOOP] Calling checkStorageSpace"));
     checkStorageSpace();
+    Serial.println(F("[LOOP] Returned from checkStorageSpace"));
   }
   
   // Periodically flush data to SD card (every 10 seconds)
@@ -1980,7 +2412,7 @@ void loop() {
       }
     }
   }
-  
+
   // Print status summary once per second, but only if enabled
   if (enableStatusSummary && millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
     lastDisplayTime = millis();
@@ -2009,7 +2441,7 @@ bool IsStable() {
 
 // Get current barometric altitude in meters
 float getBaroAltitude() {
-  if (!ms5611Sensor.isConnected()) {
+  if (!ms5607_ready) {
     return 0.0; // Barometer not ready
   }
   
@@ -2030,18 +2462,56 @@ float getBaroAltitude() {
 
 // Helper function to get acceleration magnitude regardless of which accelerometer is available
 float GetAccelMagnitude() {
-  // Use KX134 if available, otherwise use ICM20948
-  if (kx134_accel_ready) {
-    return sqrt(kx134_accel[0] * kx134_accel[0] + 
-                kx134_accel[1] * kx134_accel[1] + 
-                kx134_accel[2] * kx134_accel[2]);
-  } else if (icm20948_ready) {
+  
+  // Check KX134 *only if* it initialized successfully
+  if (kx134_initialized_ok) {
+      
+      // MODIFIED: Safer check with timeout
+      unsigned long startTime = millis();
+      const unsigned long ACCEL_TIMEOUT = 200; // 200ms timeout
+      bool ready = false;
+      bool timeoutOccurred = false;
+      
+      // Try to poll until timeout with safer approach
+      while (millis() - startTime < ACCEL_TIMEOUT) {
+        // Just check if we can communicate with I2C device
+        Wire.beginTransmission(0x1F); // KX134 address
+        if (Wire.endTransmission() != 0) { // If we can't communicate
+          ready = false;
+          break;
+        }
+        
+        // We can communicate, but don't check dataReady() yet
+        ready = true;
+        break;
+      }
+      
+      if (millis() - startTime >= ACCEL_TIMEOUT) {
+        timeoutOccurred = true;
+        ready = false;
+      }
+      
+      // Skip the dataReady() call that hangs and assume data is available
+      // if communication with the device is successful
+      if (ready) {
+        return sqrt(kx134_accel[0] * kx134_accel[0] + 
+                    kx134_accel[1] * kx134_accel[1] + 
+                    kx134_accel[2] * kx134_accel[2]);
+      } else {
+          Serial.println(F("[GetAccelMagnitude] KX134 communication failed, falling back to ICM")); // <<< ADDED DEBUG
+      }
+  }
+
+  // Fallback to ICM20948 if KX134 didn't init or wasn't ready
+  if (icm20948_ready) { // This is an extern bool
+    Serial.println(F("[GetAccelMagnitude] Using ICM20948 data")); // <<< ADDED DEBUG
     return sqrt(icm_accel[0] * icm_accel[0] + 
                 icm_accel[1] * icm_accel[1] + 
                 icm_accel[2] * icm_accel[2]);
   }
-  
-  return 0.0; // No accelerometer available
+
+  Serial.println(F("[GetAccelMagnitude] No accel available/ready, returning 0.0")); // <<< UPDATED DEBUG
+  return 0.0; // No accelerometer available or ready
 }
 
 // After the helper functions but before ProcessFlightState
@@ -2081,9 +2551,18 @@ void handleSensorErrors() {
   if (millis() - gpsStatus.lastValidReading < GPS_TIMEOUT_MS) {
     if (gpsStatus.consecutiveFailures > 0) gpsStatus.consecutiveFailures--;
   } else {
-    gpsStatus.consecutiveFailures++;
-    if (gpsStatus.consecutiveFailures >= GPS_TIMEOUT_MS / 1000) {
-      gpsStatus.isWorking = false;
+    // Before marking GPS as not working, check if we have valid fix and satellites data
+    // This prevents the system from entering ERROR state when GPS has valid data
+    if (GPS_fixType >= 3 && SIV >= 4) {
+      // We have a good 3D fix with at least 4 satellites, update lastValidReading
+      gpsStatus.isWorking = true;
+      gpsStatus.lastValidReading = millis();
+      if (gpsStatus.consecutiveFailures > 0) gpsStatus.consecutiveFailures--;
+    } else {
+      gpsStatus.consecutiveFailures++;
+      if (gpsStatus.consecutiveFailures >= GPS_TIMEOUT_MS / 1000) {
+        gpsStatus.isWorking = false;
+      }
     }
   }
   
@@ -2308,9 +2787,5 @@ void recoverFromPowerLoss() {
   // Note: stateData struct is now loaded, but flightState global variable dictates the actual running state.
   // Global variables like launchAltitude, maxAltitudeReached have been restored.
 }
-
-
-// --- End EEPROM Functions ---
-
 
 

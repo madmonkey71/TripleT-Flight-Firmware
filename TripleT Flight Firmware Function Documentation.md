@@ -1,4 +1,5 @@
 # TripleT Flight Firmware Function Documentation
+## Version 0.30
 
 ## Flow Diagram
 
@@ -200,8 +201,8 @@ This section details the functions defined in the main firmware file, tracing th
 ### Flight Logic & Control
 
 **`detectApogee()`**
-*   **Purpose:** Analyzes altitude data (likely from the barometer) to detect when the rocket has reached its highest point (apogee).
-*   **Called By:** `ProcessFlightState()` (within the `FLIGHT` state)
+*   **Purpose:** Detects apogee using multiple redundant methods: 1) Checks for decreasing barometric altitude (MS5611) over several readings. 2) Checks for near-zero vertical acceleration (KX134 or ICM-20948) over several readings. 3) Uses a time-based backup relative to the end of the boost phase. Returns `true` if apogee is detected by any method.
+*   **Called By:** `ProcessFlightState()` (in `COAST` state)
 *   **Trace:** `ProcessFlightState()` -> `loop()`
 
 **`deployMainChute()`**
@@ -265,7 +266,6 @@ This section details the functions defined in the main firmware file, tracing th
 Based on the current analysis of `src/TripleT_Flight_Firmware.cpp`:
 
 *   **`IsStable()`:** This function was likely part of an older calibration or state check mechanism. It does not appear to be called anywhere in the current code.
-*   **`handleSensorErrors()`:** While sensor errors are checked (e.g., during init), this specific centralized handler function doesn't seem to be called. Error handling appears integrated into the initialization and read functions.
 *   **`checkWatchdog()`:** The watchdog is fed in the main loop (`watchdog.feed()`), but this specific function to *check* its status (other than the hardware handler `watchdogHandler`) isn't called.
 *   **`formatNumber(float num, int precision)`:** This utility might be useful, but it's not currently called by `logData` or `printData` or other formatting functions.
 
@@ -277,6 +277,145 @@ Based on the current analysis of `src/TripleT_Flight_Firmware.cpp`:
 
 *(This section is a placeholder. Documentation for functions defined in included `.h` files like `sensor_utils.h`, `gps_functions.h`, `kx134_registers.h`, `ms5611_registers.h`, `ICM_20948_registers.h`, `eeprom_map.h`, `state_machine.h`, etc., needs to be generated separately by analyzing those specific files.)*
 
+### GPS Module Functions (`src/gps_functions.cpp`)
+
+**`gps_init()`**
+*   **Purpose:** Initializes the GPS module (u-blox) including configuring the I2C communication, setting navigation frequency (5Hz), enabling required messages (UBX format), and configuring Auto-PVT mode. Sets initial GPS time values to defaults (Jan 1, 2000).
+*   **Called By:** `setup()`
+*   **Trace:** Direct call from `setup()`
+
+**`checkGPSConnection()`**
+*   **Purpose:** Verifies communication with the GPS module by attempting to read the navigation frequency. Returns true if the GPS is responding.
+*   **Called By:** `loop()` (in periodic GPS check interval section)
+*   **Trace:** Direct call from `loop()` every GPS_CHECK_INTERVAL milliseconds
+
+**`gps_read()`**
+*   **Purpose:** Reads position, velocity, and time data from the GPS module using the getPVT() function. Updates global variables for GPS_latitude, GPS_longitude, GPS_altitude, GPS_speed, GPS_fixType, SIV (satellites in view), and GPS time information.
+*   **Called By:** `loop()` (in GPS data polling section)
+*   **Trace:** Direct call from `loop()` every GPS_POLL_INTERVAL milliseconds
+
+**`gps_print()`**
+*   **Purpose:** Formats and prints GPS data in human-readable format to the Serial monitor. Includes fix type, satellite count, position, speed, and time.
+*   **Called By:** `gps_read()` (when enableGPSDebug is true)
+*   **Trace:** `gps_read()` -> `loop()`
+
+**`getGPSDateTime()`**
+*   **Purpose:** Safely provides GPS date/time values via reference parameters. Returns current values if valid, or defaults to Jan 1, 2000 if no valid time is available.
+*   **Called By:** `createNewLogFile()` (when creating log files with timestamp-based names)
+*   **Trace:** `createNewLogFile()` -> `setup()` / `loop()` (when recovering SD card)
+
+**`setGPSDebugging()`**
+*   **Purpose:** Controls debug output from the GPS module. Enables or disables debugging messages on the Serial monitor. Uses a special technique with multiple calls to ensure the setting takes effect.
+*   **Called By:** `gps_init()`, `checkGPSConnection()`, indirectly via command processing
+*   **Trace:** Various paths, primarily during initialization and troubleshooting
+
+### GPS Status Monitoring
+
+**`checkSensorStatus()`**
+*   **Purpose:** Checks the status of all sensors including GPS. For GPS specifically, it verifies communication with getPVT() and also checks GPS_fixType and SIV values to determine if GPS should be considered working. Updates gpsStatus.isWorking and gpsStatus.lastValidReading timestamp.
+*   **Called By:** `loop()` (periodically every 1000ms)
+*   **Trace:** Direct call from `loop()` at regular intervals
+
+**`handleSensorErrors()`**
+*   **Purpose:** Monitors sensor error conditions and manages error recovery. For GPS specifically, it checks if the time since last valid reading exceeds GPS_TIMEOUT_MS (5000ms) while also checking GPS_fixType and SIV as redundant indicators of GPS health. Updates consecutive failures counter and may mark GPS as not working after repeated failures.
+*   **Called By:** Note in documentation: This was previously marked as potentially unused, but it is now called by the system to check sensor errors and determine if a transition to ERROR state is needed.
+*   **Trace:** Called by checkSensorStatus() -> `loop()`
+
+**`isSensorSuiteHealthy()`**
+*   **Purpose:** Determines if the flight computer's sensor suite is healthy enough for the current flight state. Different flight states have different sensor requirements - for ground states (STARTUP through ARMED), both GPS and barometer must be working; for recovery states, all sensors including GPS must be working.
+*   **Called By:** `checkSensorStatus()`, `setup()` (during final health check)
+*   **Trace:** `checkSensorStatus()` -> `loop()` / Direct call from `setup()`
+
+### Utility Functions (`src/utility_functions.cpp`)
+
+#### I2C and Hardware Interface
+
+**`scan_i2c()`**
+*   **Purpose:** Performs a scan of the I2C bus (addresses 1-127) to detect connected devices. Attempts to identify known sensors (GPS, barometer, IMU, accelerometer) by their I2C addresses. Outputs a formatted table of found devices to the Serial monitor.
+*   **Called By:** `processCommand()` (when the "scan" command is entered)
+*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
+
+**`initNeoPixel()`**
+*   **Purpose:** Initializes the RGB LED (NeoPixel) with appropriate brightness (50%) and turns it off initially. Used for status indication throughout the flight.
+*   **Called By:** `setup()`
+*   **Trace:** Direct call from `setup()`
+
+#### SD Card Management
+
+**`initSDCard()`**
+*   **Purpose:** Performs robust initialization of the SD card with multiple retry attempts. Includes physical card detection (if supported), initialization via SD.begin(), and a read/write test to verify functionality. Updates global flags (sdCardPresent, sdCardMounted, sdCardAvailable) and calculates available space.
+*   **Called By:** `setup()`, `loop()` (during periodic SD card retry)
+*   **Trace:** Direct call from `setup()` / Periodic check in `loop()`
+
+**`listRootDirectory()`**
+*   **Purpose:** Lists all files in the root directory of the SD card with detailed information (name, size, date/time). Produces a formatted table and summary statistics (file count, total size).
+*   **Called By:** `processCommand()` (when the "dir" or "ls" command is entered)
+*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
+
+**`checkStorageSpace()`**
+*   **Purpose:** Updates the available space calculation for the SD card. Called periodically to ensure accurate space reporting and to detect when storage is running low.
+*   **Called By:** `loop()` (at STORAGE_CHECK_INTERVAL intervals)
+*   **Trace:** Direct call from `loop()` periodically
+
+#### Debug and Formatting Functions
+
+**`printDebugHeader(const char* title)`**
+*   **Purpose:** Formats and prints a section header for debug output with visual emphasis.
+*   **Called By:** Various debug print functions including `printStatusSummary()`, `printStorageStatistics()`
+*   **Trace:** Various paths, all related to debug output
+
+**`printDebugValue(const char* label, float value, int precision)`**
+*   **Purpose:** Formats and prints a labeled value with specified precision for debug output.
+*   **Called By:** Various status and debug functions
+*   **Trace:** Various paths, mostly via `printStatusSummary()`
+
+**`printDebugValueWithUnit(const char* label, float value, const char* unit, int precision)`**
+*   **Purpose:** Similar to printDebugValue but includes a unit with the value.
+*   **Called By:** Status and calibration reporting functions
+*   **Trace:** Various debug printing paths
+
+**`printDebugPair/Triple/Quad`**
+*   **Purpose:** Formats and prints 2, 3, or 4 related values (such as vector components) with a single label.
+*   **Called By:** Sensor data display functions, particularly for accelerometer/gyroscope/magnetometer vector data
+*   **Trace:** Various paths including `printStatusSummary()`, `ICM_20948_print()`
+
+**`printDebugState(const char* label, const char* state)`**
+*   **Purpose:** Formats and prints a labeled state string (like flight state names).
+*   **Called By:** Status reporting functions
+*   **Trace:** Various status output paths including `printStatusSummary()`
+
+**`printDebugBoolean(const char* label, bool value)`**
+*   **Purpose:** Formats and prints a labeled boolean value as "ON" or "OFF" for readability.
+*   **Called By:** Various status functions when displaying flags or enabled/disabled features
+*   **Trace:** Various paths including `printStatusSummary()`, `printStorageStatistics()`
+
+**`printDebugDivider()`**
+*   **Purpose:** Prints a visual divider line for separating sections in debug output.
+*   **Called By:** Various debug print functions
+*   **Trace:** Various debug output paths
+
+**`formatNumber(float input, byte columns, byte places)`**
+*   **Purpose:** Formats a floating-point number with specified column width and decimal places for consistent display in serial output.
+*   **Called By:** `WriteLogData()` for data logging formatting, various debug print functions
+*   **Trace:** Various paths related to data output formatting
+
+#### Status Display Functions
+
+**`printStatusSummary()`**
+*   **Purpose:** Provides a comprehensive formatted summary of the flight computer's status including sensor readings, GPS data, flight state, and system health. Organizes information into logical sections for readability.
+*   **Called By:** `loop()` (at DISPLAY_INTERVAL intervals when enableStatusSummary is true)
+*   **Trace:** Direct call from `loop()` periodically
+
+**`printHelpMessage()`**
+*   **Purpose:** Outputs a help guide explaining available serial commands and their usage to assist with ground testing and debugging.
+*   **Called By:** `processCommand()` (when "help" or "?" command is entered)
+*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
+
+**`printStorageStatistics()`**
+*   **Purpose:** Outputs detailed information about storage media (SD card/Flash) including capacity, used space, free space, and logging status.
+*   **Called By:** `processCommand()` (when "storage" command is entered)
+*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
+
 ---
 
-This documentation reflects the state of the firmware after the recent refactoring. 
+This documentation reflects the state of the firmware after the recent refactoring.

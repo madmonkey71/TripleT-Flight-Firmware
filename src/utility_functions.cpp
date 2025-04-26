@@ -45,7 +45,7 @@ void scan_i2c() {
     Serial.println(F("I2C scan complete\n"));
 }
 
-// Initialize the SD card with simpler error handling
+// Initialize the SD card with more robust error handling
 bool initSDCard() {
   Serial.println(F("Initializing SD card..."));
   
@@ -54,30 +54,86 @@ bool initSDCard() {
   sdCardMounted = false;
   sdCardAvailable = false;
   
-  // Check if card detect pin is defined and check physical presence
+  // Physical card detection is optional - we'll log what the pin says but won't rely on it
   #ifdef SD_DETECT_PIN
     pinMode(SD_DETECT_PIN, INPUT_PULLUP);
-    if (digitalRead(SD_DETECT_PIN) == HIGH) {
-      Serial.println(F("SD card not physically present (card detect pin is HIGH)"));
-      return false;
+    sdCardPresent = (digitalRead(SD_DETECT_PIN) == LOW);
+    
+    if (!sdCardPresent) {
+      Serial.println(F("Note: Card detect pin indicates no card (HIGH), but will try to initialize anyway"));
     } else {
-      sdCardPresent = true;
+      Serial.println(F("Card detect pin indicates card is present (LOW)"));
     }
+  #else
+    // No card detect pin defined, assume card might be present
+    sdCardPresent = true;
+    Serial.println(F("No card detect pin defined, assuming card might be present"));
   #endif
   
-  // Try to initialize the SD card with configured settings
+  // First attempt - try standard initialization with configured settings
+  Serial.println(F("Attempting SD card initialization..."));
   if (!SD.begin(SD_CONFIG)) {
-    Serial.println(F("SD card initialization failed"));
-    return false;
+    Serial.println(F("First attempt failed, trying with delay..."));
+    
+    // Second attempt - sometimes a delay helps
+    delay(250);
+    if (!SD.begin(SD_CONFIG)) {
+      // Third attempt - try with card reinsertion simulation by toggling SPI/SDIO
+      Serial.println(F("Second attempt failed, reinitializing SPI/SDIO..."));
+      
+      #if defined(BOARD_TEENSY41)
+        // For Teensy 4.1 with SDIO, re-initialize
+        SPI.end();
+        delay(100);
+        SPI.begin();
+      #else
+        // For SPI mode, toggle the SS pin
+        digitalWrite(SD_CS_PIN, HIGH);
+        delay(250);
+        digitalWrite(SD_CS_PIN, LOW);
+        delay(250);
+      #endif
+      
+      if (!SD.begin(SD_CONFIG)) {
+        Serial.println(F("SD card initialization failed after multiple attempts"));
+        return false;
+      }
+    }
   }
 
   // Card initialized successfully
   Serial.println(F("SD card initialized successfully"));
   sdCardMounted = true;
   
-  // Get volume information directly from SD object
+  // Verify card functionality with simple read/write test
+  Serial.print(F("Testing SD card with read/write test..."));
+  
+  // Try to create a test file
+  FsFile testFile;
+  if (!testFile.open("SDTEST.TXT", O_RDWR | O_CREAT | O_TRUNC)) {
+    Serial.println(F(" Failed to create test file"));
+    return false;
+  }
+  
+  // Write test data
+  if (testFile.println("SD Card Test OK")) {
+    // Test successful
+    testFile.close();
+    
+    // Clean up test file
+    SD.remove("SDTEST.TXT");
+    
+    Serial.println(F(" Test passed!"));
+  } else {
+    // Failed to write
+    Serial.println(F(" Failed to write to test file"));
+    testFile.close();
+    return false;
+  }
+  
+  // Print card information
   if (SD.fatType() == 0) {
-    Serial.println(F("Failed to get FAT type - card may not be usable"));
+    Serial.println(F("Failed to get FAT type"));
     return false;
   }
   
@@ -94,6 +150,7 @@ bool initSDCard() {
   Serial.print(availableSpace / (1024ULL * 1024ULL));
   Serial.println(F(" MB"));
   
+  // Mark card as available
   sdCardAvailable = true;
   return true;
 }

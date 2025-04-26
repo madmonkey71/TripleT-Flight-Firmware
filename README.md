@@ -3,9 +3,19 @@
 An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microcontrollers, designed for model rockets and high-power rocketry applications.
 
 ## Project Status
-**Current Version**: v0.15 (Alpha)
+**Current Version**: v0.30 (Alpha)
 
 ### Recent Updates
+- ✅ Enhanced flight state detection and management:
+  - Implemented comprehensive flight state machine with 14 distinct states
+  - Added redundant apogee detection using barometric, accelerometer, and time-based methods
+  - Improved landing detection with multiple confirmation methods
+  - Added boost phase detection and motor burnout identification
+- ✅ Added EEPROM state persistence for recovery from power loss
+- ✅ Implemented robust error handling and recovery:
+  - Added watchdog timer to prevent system lockups
+  - Improved sensor health monitoring with automatic recovery procedures
+  - Enhanced error detection and graceful degradation
 - ✅ Improved barometric sensor calibration:
   - Enhanced MS5611 initialization with multiple readings to ensure stability
   - Added validation checks for pressure readings (800-1100 hPa range)
@@ -21,9 +31,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Basic diagnostic tools
 - ✅ GPS/Barometer calibration
 - ✅ Configurable debug outputs
-- 🚧 Flight state detection (In Progress)
-- 🚧 Apogee Detection (Planned)
-- 🚧 Parachute deployment control (Planned)
+- ✅ Flight state detection (liftoff, boost, coast, apogee, descent)
+- ✅ Apogee detection (using multiple redundant methods)
+- ✅ Parachute deployment control (drogue and main deployment logic)
+- ✅ Error detection and recovery
+- ✅ State persistence and power loss recovery
 - 🚧 Enhanced telemetry (Planned)
 - 🚧 Thrust vector control (Planned)
 - 🚧 Live Transmission of data via radio (Planned)
@@ -71,6 +83,17 @@ TripleT Flight Firmware is an open-source flight controller software built for T
   - Robust calibration with validation checks for pressure and GPS data
   - Visual feedback via LED indicators (purple during calibration, green for success, red for failure)
   - Limited retry mechanism to prevent infinite calibration loops
+- **Flight State Machine**: Sophisticated flight state detection and management system
+  - 14 distinct flight states from startup through recovery
+  - Redundant detection methods for critical events (liftoff, apogee, landing)
+  - Automatic state transitions with configurable parameters
+- **Error Handling & Recovery**: Robust error detection and recovery mechanisms
+  - Watchdog timer to prevent system lockups
+  - Sensor health monitoring with graceful degradation
+  - Automatic recovery procedures when possible
+- **State Persistence**: EEPROM-based state storage for recovery from power loss or resets
+  - Saves critical flight parameters (altitude, state, timestamps)
+  - Automatic recovery to appropriate state after power interruption
 - **Comprehensive Data Collection**:
   - GPS position, altitude, speed, and fix quality
   - Barometric pressure, temperature, and calibrated altitude
@@ -103,7 +126,7 @@ TripleT Flight Firmware is an open-source flight controller software built for T
    - Connect buzzer, servos, and other components to designated pins
 
 4. **Compile and Upload**:
-   - Select your target board (teensy40 or teensy41)
+   - Select your target board (TripleTFlight, teensy41 or teensy40)
    - Compile and upload using PlatformIO
 
 ## Usage
@@ -130,9 +153,15 @@ The firmware supports both single-character and extended commands:
 | `h`     | Calibrate barometer with GPS |
 | `i`     | Display IMU data |
 | `j`     | Toggle status summary |
+| `9`     | Initiate system shutdown |
 | `debug_all_off` | Disable all debugging output |
 | `calibrate` | Manually calibrate barometer with GPS |
 | `help`  | Show help message |
+| `arm`   | Arm the flight computer (transition to ARMED state) |
+| `test_error` | Simulate sensor error (for testing) |
+| `test_watchdog` | Simulate watchdog timeout (for testing) |
+| `clear_errors` | Reset all error flags and return to normal operation |
+| `status_sensors` | Display detailed sensor status information |
 
 ### Debug Options
 
@@ -172,12 +201,15 @@ For detailed documentation, please refer to:
 
 ## Future Enhancements
 
-- Flight state detection (launch, apogee, descent)
-- Parachute deployment control
-- Flight stabilization via thrust vector control implementation
 - Enhanced telemetry and wireless data transmission
+- Flight stabilization via thrust vector control implementation
 - Improved power management and battery monitoring
 - User-configurable settings saved to flash
+- Live data transmission via radio
+- Custom smartphone companion app for ground control
+- Advanced filtering algorithms for sensor fusion
+- Auto-diagnostics and self-testing capabilities
+- Dual-deployment redundancy systems
 
 ## Acknowledgements
 

@@ -19,6 +19,12 @@ long GPS_heading = 0;
 int pDOP = 0;
 byte RTK = 0;
 
+// Make cached accuracy values directly accessible global variables
+uint16_t GPS_hAcc = 0;
+uint16_t GPS_vAcc = 0;
+unsigned long last_accuracy_update = 0;
+#define GPS_ACCURACY_UPDATE_INTERVAL 30000 // Only update accuracy every 30 seconds
+
 // GPS time variables with default values for Jan 1, 2000
 int GPS_year = 2000;
 byte GPS_month = 1;
@@ -70,6 +76,11 @@ void gps_init() {
   GPS_second = 0;
   GPS_time_valid = false;
   
+  // Initialize accuracy values
+  GPS_hAcc = 0;
+  GPS_vAcc = 0;
+  last_accuracy_update = 0;
+  
   // Initialize GPS connection
   Wire.begin();
   
@@ -114,8 +125,13 @@ bool checkGPSConnection() {
 }
 
 bool gps_read() {
+  // TIMING DEBUG - Start
+  unsigned long gps_start_time = millis();
+  
   // Update GPS data if available
-  if (myGNSS.getPVT()) {
+  bool pvt_result = myGNSS.getPVT();
+  
+  if (pvt_result) {
     // Get basic positioning data
     GPS_latitude = myGNSS.getLatitude();
     GPS_longitude = myGNSS.getLongitude();
@@ -128,6 +144,14 @@ bool gps_read() {
     pDOP = myGNSS.getPDOP();                   // Get position dilution of precision
     RTK = myGNSS.getCarrierSolutionType();     // Get RTK solution status
     
+    // Update accuracy values periodically (every 30 seconds)
+    // We are only updating these values every 30 seconds as it is a very slow operation (2+ seconds)
+    if (GPS_fixType >= 2 && (millis() - last_accuracy_update > GPS_ACCURACY_UPDATE_INTERVAL)) {
+      // Get accuracy values
+      GPS_hAcc = myGNSS.getHorizontalAccuracy();
+      GPS_vAcc = myGNSS.getVerticalAccuracy();
+    }
+    
     // Update GPS time variables if we have a valid fix
     if (GPS_fixType > 0) {
       GPS_year = myGNSS.getYear();
@@ -138,14 +162,31 @@ bool gps_read() {
       GPS_second = myGNSS.getSecond();
       GPS_time_valid = true;
     }
-    
     // Debug print if enabled
     if (enableGPSDebug) {
       gps_print();
     }
     return true;
   }
+  
+  // TIMING DEBUG - Not available case
+  unsigned long gps_end_time = millis();
+  if (gps_end_time - gps_start_time > 100) {
+    Serial.print(F("SLOW GPS-nodata: "));
+    Serial.print(gps_end_time - gps_start_time);
+    Serial.println(F("ms"));
+  }
+  
   return false;
+}
+
+// Functions to get the cached accuracy values
+uint16_t getGPSHorizontalAccuracy() {
+  return GPS_hAcc;
+}
+
+uint16_t getGPSVerticalAccuracy() {
+  return GPS_vAcc;
 }
 
 void gps_print() {
@@ -181,6 +222,12 @@ void gps_print() {
     case 2: Serial.println("Fixed"); break;
     default: Serial.println(RTK); break;
   }
+  
+  Serial.print("  Accuracy: H: ");
+  Serial.print(GPS_hAcc / 1000.0);
+  Serial.print(" m, V: ");
+  Serial.print(GPS_vAcc / 1000.0);
+  Serial.println(" m");
   
   if (GPS_time_valid) {
     Serial.print("  Time: ");

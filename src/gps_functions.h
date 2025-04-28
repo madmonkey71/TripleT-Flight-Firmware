@@ -21,6 +21,10 @@ extern long GPS_heading;
 extern int pDOP;
 extern byte RTK;
 
+// Add direct access to cached GPS accuracy values
+extern uint16_t GPS_hAcc;
+extern uint16_t GPS_vAcc;
+
 // GPS time variables with default values for Jan 1, 2000
 extern int GPS_year;
 extern byte GPS_month;
@@ -38,6 +42,10 @@ extern bool checkGPSConnection();
 
 // Function to get GPS date/time safely (uses defaults if no valid time)
 extern void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute, byte& second);
+
+// New functions to get cached GPS accuracy values
+extern uint16_t getGPSHorizontalAccuracy();
+extern uint16_t getGPSVerticalAccuracy();
 
 // New function to control GPS debugging
 void setGPSDebugging(bool enable);

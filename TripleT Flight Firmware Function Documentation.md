@@ -1,4 +1,4 @@
-# TripleT Flight Firmware Function Documentation
+fff# TripleT Flight Firmware Function Documentation
 ## Version 0.30
 
 ## Flow Diagram
@@ -140,7 +140,7 @@ This section details the functions defined in the main firmware file, tracing th
 *   **Trace:** `readSensors()` -> `loop()`
 
 **`readGPS()`**
-*   **Purpose:** Reads and parses data from the GPS module. Updates global GPS variables.
+*   **Purpose:** Reads and parses data from the GPS fmodule. Updates global GPS variables.
 *   **Called By:** `readSensors()`, `periodicChecks()` (for recovery mode)
 *   **Trace:** `readSensors()` -> `loop()` / `periodicChecks()` -> `loop()`
 
@@ -392,7 +392,7 @@ Based on the current analysis of `src/TripleT_Flight_Firmware.cpp`:
 **`printDebugDivider()`**
 *   **Purpose:** Prints a visual divider line for separating sections in debug output.
 *   **Called By:** Various debug print functions
-*   **Trace:** Various debug output paths
+*   **Trace:** Various debug output pathsfffffffffff
 
 **`formatNumber(float input, byte columns, byte places)`**
 *   **Purpose:** Formats a floating-point number with specified column width and decimal places for consistent display in serial output.

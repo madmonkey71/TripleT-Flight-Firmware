@@ -33,10 +33,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Configurable debug outputs
 - ✅ Flight state detection (liftoff, boost, coast, apogee, descent)
 - ✅ Apogee detection (using multiple redundant methods)
-- ✅ Parachute deployment control (drogue and main deployment logic)
+- ✅ Initial Parachute deployment control (drogue and main deployment logic)
 - ✅ Error detection and recovery
-- ✅ State persistence and power loss recovery
+- ✅ Basic State persistence and power loss recovery
 - 🚧 Enhanced telemetry (Planned)
+- 🚧 Initial Parachute deployment control (drogue and main deployment logic)
 - 🚧 Thrust vector control (Planned)
 - 🚧 Live Transmission of data via radio (Planned)
 
@@ -70,10 +71,12 @@ TripleT Flight Firmware is an open-source flight controller software built for T
 - **Storage**:
   - SD Card (connected via SPI on Teensy 4.0, via SDIO on Teensy 4.1)
 - **Other Components**:
-  - Optional: Buzzer (pin 23)
-  - Optional: WS2812 LEDs (pin 7)
   - Optional: Servo motors for TVC (pins 0, 1)
   - Optional: Pyro channels (pins 5, 6, 7, 8)
+  **Desirable additions**
+  - 8Mb of additional flash
+  - Optional: Buzzer (pin 23)
+  - Optional: WS2812 LEDs (pin 7)
 
 ## Features
 
@@ -119,6 +122,7 @@ TripleT Flight Firmware is an open-source flight controller software built for T
    - SparkFun_u-blox_GNSS_Arduino_Library
    - MS5611 library
    - SparkFun ICM-20948 IMU library
+   - T4 Watchdog library
 
 3. **Hardware Connections**:
    - Connect sensors via I2C (SDA/SCL)
@@ -193,6 +197,48 @@ The system supports calibration of the barometric altitude using GPS data:
 - Manual calibration via the `h` command or `calibrate` command
 - Visual feedback via LED (purple during calibration, green for success, red for failure)
 - Detailed debug output to diagnose calibration issues
+
+### Configuration
+
+Key firmware features can be configured by modifying `#define` statements in `src/config.h`:
+
+- `ENABLE_WATCHDOG`: Set to `true` (default) to enable the hardware watchdog timer, which helps recover from system hangs. Set to `false` to disable the watchdog, which can be useful during debugging or testing when breakpoints might cause the watchdog to reset the system unintentionally.
+- **Features & Hardware Presence**:
+  - `DROGUE_PRESENT`: `true` if a drogue parachute is physically present and should be controlled.
+  - `MAIN_PRESENT`: `true` if a main parachute is physically present and should be controlled.
+  - `BUZZER_OUTPUT`: `true` to enable audible feedback via the buzzer.
+  - `USE_KX134`: `true` to utilize the KX134 high-G accelerometer (typically alongside the ICM-20948).
+- **Pin Definitions**:
+  - `FLASH_CS_PIN`: Chip Select pin for the external serial flash memory (if used).
+  - `NEOPIXEL_PIN`: Data pin for the WS2812 NeoPixel LEDs.
+  - `BUZZER_PIN`: Pin connected to the buzzer.
+- **NeoPixel Configuration**:
+  - `NEOPIXEL_COUNT`: The number of NeoPixel LEDs connected.
+- **Flight Logic Parameters**:
+  - `MAIN_DEPLOY_ALTITUDE`: Target altitude (in meters Above Ground Level - AGL) for main parachute deployment.
+  - `BOOST_ACCEL_THRESHOLD`: Acceleration threshold (in g) to detect liftoff.
+  - `COAST_ACCEL_THRESHOLD`: Acceleration threshold (in g) to detect the end of the boost phase (motor burnout).
+  - `APOGEE_CONFIRMATION_COUNT`: Number of consecutive readings required to confirm apogee detection.
+  - `LANDING_CONFIRMATION_COUNT`: Number of consecutive readings required to confirm landing.
+- **Sensor Error & Timeout Thresholds**:
+  - `MAX_SENSOR_FAILURES`: General threshold for maximum sensor failures before marking a sensor as non-functional (currently used implicitly in some checks).
+  - `BAROMETER_ERROR_THRESHOLD`: Maximum acceptable pressure change (in hPa) between consecutive barometer readings.
+  - `ACCEL_ERROR_THRESHOLD`: Maximum acceptable acceleration change (in g) between consecutive accelerometer readings.
+  - `GPS_TIMEOUT_MS`: Maximum time (in milliseconds) without a valid GPS update before considering the GPS to have failed.
+- **Storage & Logging Configuration**:
+  - `SD_CARD_MIN_FREE_SPACE`: Minimum required free space (in bytes) on the SD card for logging to continue.
+  - `SD_CACHE_SIZE`: Cache size factor for SD card operations (used by SdFat).
+  - `LOG_PREALLOC_SIZE`: Size (in bytes) to pre-allocate for the log file on the SD card to improve performance.
+  - `DISABLE_SDCARD_LOGGING`: `true` to completely disable logging to the SD card (useful for testing without an SD card).
+  - `MAX_LOG_ENTRIES`: Maximum number of log entries to buffer in RAM before forcing a flush to the SD card.
+  - `FLUSH_INTERVAL`: Maximum time (in milliseconds) between flushes of the log buffer to the SD card, even if the buffer isn't full.
+  - `MAX_BUFFER_SIZE`: Maximum size (in bytes) allocated for a single log entry string in the RAM buffer.
+  - `EXTERNAL_FLASH_MIN_FREE_SPACE`: Minimum required free space (in bytes) on the external flash memory (if used).
+- **EEPROM Configuration**:
+  - `EEPROM_STATE_ADDR`: Starting memory address in EEPROM where the flight state data is stored.
+  - `EEPROM_SIGNATURE_VALUE`: A magic number used to validate the integrity of the data stored in EEPROM.
+- **SD Card Driver Configuration (Board Specific)**:
+  - These settings (`SD_CONFIG`, `SD_BUF_SIZE`, `SD_DETECT_PIN`, `SD_CS_PIN`) configure the SdFat library for the specific board (Teensy 4.1 SDIO or Teensy 4.0 SPI) and optimize performance. They are typically handled automatically based on the detected board type.
 
 ## Documentation
 

@@ -1,6 +1,7 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "config.h"
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -179,6 +180,7 @@ void applyMagnetometerCalibration() {
 
 // Read data from the ICM-20948 sensor
 void ICM_20948_read() {
+  unsigned long startTime = millis();
   static unsigned long lastErrorPrintTime = 0;
   static unsigned long lastDetailedDebugTime = 0;
   
@@ -186,7 +188,16 @@ void ICM_20948_read() {
   icm20948_ready = (myICM.status == ICM_20948_Stat_Ok);
   
   if (myICM.dataReady()) {
+    unsigned long beforeGetAGMT = millis();
     myICM.getAGMT();  // Get the latest data
+    unsigned long afterGetAGMT = millis();
+    
+    // Check if getAGMT took a long time
+    if (afterGetAGMT - beforeGetAGMT > 100) {
+      Serial.print("SLOW ICM getAGMT: ");
+      Serial.print(afterGetAGMT - beforeGetAGMT);
+      Serial.println(" ms");
+    }
     
     // Convert accelerometer data from mg to g and store in global array
     icm_accel[0] = myICM.accX() / 1000.0f;
@@ -243,6 +254,15 @@ void ICM_20948_read() {
       Serial.println("ICM-20948: No new data available");
     }
     icm_data_available = false;
+  }
+
+  // Check total execution time
+  unsigned long endTime = millis();
+  unsigned long duration = endTime - startTime;
+  if (duration > 100) {
+    Serial.print("SLOW ICM_20948_read: ");
+    Serial.print(duration);
+    Serial.println(" ms");
   }
 }
 

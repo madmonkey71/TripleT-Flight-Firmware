@@ -14,13 +14,32 @@
 #endif
 
 // --- Master Feature Switches ---
-#define ENABLE_WATCHDOG true                     // Enable/Disable the hardware watchdog timer
+#define ENABLE_WATCHDOG 1                 // Enable/Disable the hardware watchdog timer (1=Enabled, 0=Disabled)
 
 // --- Features & Hardware Presence ---
-#define DROGUE_PRESENT true
-#define MAIN_PRESENT true 
-#define BUZZER_OUTPUT true                       // Enable buzzer output
-#define USE_KX134 true                           // Use KX134 high-g sensor alongside ICM20948
+// Configure parachute presence. At least MAIN must be present.
+#define DROGUE_PRESENT 1 // 1 = Present, 0 = Not Present
+#define MAIN_PRESENT 1   // 1 = Present, 0 = Not Present
+
+// --- Automatically derive deployment type and check for errors ---
+#if MAIN_PRESENT == 0
+  // Invalid: Main MUST be present
+  #error "Invalid Parachute Configuration: MAIN_PRESENT must be 1."
+#elif DROGUE_PRESENT == 1 && MAIN_PRESENT == 1
+  // Both Drogue and Main are present
+  #define DUAL_DEPLOY 1
+  #define SINGLE_DEPLOY 0
+#elif DROGUE_PRESENT == 0 && MAIN_PRESENT == 1
+  // Only Main is present
+  #define DUAL_DEPLOY 0
+  #define SINGLE_DEPLOY 1
+#else // DROGUE_PRESENT == 1 && MAIN_PRESENT == 0 (Handled by first #if)
+  // This case should technically not be reached due to the first #if, but included for completeness
+  #error "Invalid Parachute Configuration: Logic error - Main must be present."
+#endif
+
+#define BUZZER_OUTPUT 1                   // Enable buzzer output (1=Enabled, 0=Disabled)
+#define USE_KX134 1                       // Use KX134 high-g sensor alongside ICM20948 (1=Use, 0=Don't Use)
 
 // --- Pin Definitions ---
 #define FLASH_CS_PIN 6                           // CS pin for Serial Flash (if used)
@@ -63,39 +82,39 @@
 #define EEPROM_SIGNATURE_VALUE 0xABCD           // Signature to validate EEPROM data
 
 // --- SD Card Driver Configuration (Platform Specific) ---
-#if defined(BOARD_TEENSY41)
-  // For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
-  #ifndef SD_CONFIG
-  #define SD_CONFIG SdioConfig(FIFO_SDIO)
-  #endif
-  #ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
-  #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
-  #endif
-  #ifndef SD_DETECT_PIN // Card detect pin for built-in socket
-  #define SD_DETECT_PIN 39
-  #endif
-#else
-  // For other boards (Teensy 4.0, etc.), use standard SPI with optimized settings
-  #ifndef SD_CS_PIN
-  #define SD_CS_PIN 10  // CS pin for SD card
-  #endif
-  #ifndef SD_CONFIG
-  #define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
-  #endif
-  #ifndef SD_BUF_SIZE // Buffer size for SdFat library operations
-  #define SD_BUF_SIZE 8192  // 8KB buffer for SD card operations on non-Teensy 4.1 boards
-  #endif
-  #ifndef SD_DETECT_PIN // Card detect pin (if available)
-  #define SD_DETECT_PIN 9
-  #endif
-  // SPI Pins (only relevant if using SPI mode)
-  // #ifndef SD_MOSI_PIN
-  // #define SD_MOSI_PIN 11
-  // #endif
-  // #ifndef SD_MISO_PIN
-  // #define SD_MISO_PIN 12
-  // #endif
-  // #ifndef SD_SCK_PIN
-  // #define SD_SCK_PIN 13
-  // #endif
-#endif 
+
+// For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
+#ifndef SD_CONFIG
+#define SD_CONFIG SdioConfig(FIFO_SDIO)
+#endif
+#ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
+#define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
+#endif
+#ifndef SD_DETECT_PIN // Card detect pin for built-in socket
+#define SD_DETECT_PIN 39
+#endif
+
+/* For other boards (Teensy 4.0, etc.), use standard SPI with optimized settings
+#ifndef SD_CS_PIN
+#define SD_CS_PIN 10  // CS pin for SD card
+#endif
+#ifndef SD_CONFIG
+#define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
+#endif
+#ifndef SD_BUF_SIZE // Buffer size for SdFat library operations
+#define SD_BUF_SIZE 8192  // 8KB buffer for SD card operations on non-Teensy 4.1 boards
+#endif
+#ifndef SD_DETECT_PIN // Card detect pin (if available)
+#define SD_DETECT_PIN 9
+#endif
+*/
+// SPI Pins (only relevant if using SPI mode)
+// #ifndef SD_MOSI_PIN
+// #define SD_MOSI_PIN 11
+// #endif
+// #ifndef SD_MISO_PIN
+// #define SD_MISO_PIN 12
+// #endif
+// #ifndef SD_SCK_PIN
+// #define SD_SCK_PIN 13
+// #endif

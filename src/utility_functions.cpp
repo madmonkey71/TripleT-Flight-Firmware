@@ -1,11 +1,7 @@
 #include "utility_functions.h"
-#include "config.h"
 
 // Define the pixels variable
 Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
-
-// Global variable definitions for variables declared in utility_functions.h
-String FileDateString = "";
 
 void scan_i2c() {
   Serial.println(F("\nI2C Scanner"));
@@ -49,114 +45,39 @@ void scan_i2c() {
     Serial.println(F("I2C scan complete\n"));
 }
 
-// Initialize the SD card with more robust error handling
+// Initialize the SD card with simpler error handling
 bool initSDCard() {
-  Serial.println(F("Initializing SD card with optimized settings..."));
+  Serial.println(F("Initializing SD card..."));
   
   // Reset SD card flags
   sdCardPresent = false;
   sdCardMounted = false;
   sdCardAvailable = false;
   
-  // Physical card detection is optional - we'll log what the pin says but won't rely on it
+  // Check if card detect pin is defined and check physical presence
   #ifdef SD_DETECT_PIN
     pinMode(SD_DETECT_PIN, INPUT_PULLUP);
-    sdCardPresent = (digitalRead(SD_DETECT_PIN) == LOW);
-    
-    if (!sdCardPresent) {
-      Serial.println(F("Note: Card detect pin indicates no card (HIGH), but will try to initialize anyway"));
+    if (digitalRead(SD_DETECT_PIN) == HIGH) {
+      Serial.println(F("SD card not physically present (card detect pin is HIGH)"));
+      return false;
     } else {
-      Serial.println(F("Card detect pin indicates card is present (LOW)"));
+      sdCardPresent = true;
     }
-  #else
-    // No card detect pin defined, assume card might be present
-    sdCardPresent = true;
-    Serial.println(F("No card detect pin defined, assuming card might be present"));
   #endif
   
-  // Pre-allocate cache memory for better performance
-  static uint8_t* sdCardBuffer = nullptr;
-  
-  if (!sdCardBuffer) {
-    sdCardBuffer = (uint8_t*)malloc(SD_BUF_SIZE);
-    if (!sdCardBuffer) {
-      Serial.println(F("WARNING: Unable to allocate SD buffer memory, using default buffer"));
-    } else {
-      Serial.print(F("Allocated "));
-      Serial.print(SD_BUF_SIZE);
-      Serial.println(F(" bytes for SD card buffer"));
-    }
-  }
-  
-  // First attempt - try standard initialization with configured settings
-  Serial.println(F("Attempting SD card initialization..."));
-  
-  // Try initialization with standard settings
+  // Try to initialize the SD card with configured settings
   if (!SD.begin(SD_CONFIG)) {
-    Serial.println(F("First attempt failed, trying with delay..."));
-    
-    // Second attempt - sometimes a delay helps
-    delay(250);
-    if (!SD.begin(SD_CONFIG)) {
-      // Third attempt - try with card reinsertion simulation by toggling SPI/SDIO
-      Serial.println(F("Second attempt failed, reinitializing SPI/SDIO..."));
-      
-      #if defined(BOARD_TEENSY41)
-        // For Teensy 4.1 with SDIO, re-initialize
-        SPI.end();
-        delay(100);
-        SPI.begin();
-      #else
-        // For SPI mode, toggle the SS pin
-        digitalWrite(SD_CS_PIN, HIGH);
-        delay(250);
-        digitalWrite(SD_CS_PIN, LOW);
-        delay(250);
-      #endif
-      
-      if (!SD.begin(SD_CONFIG)) {
-        Serial.println(F("SD card initialization failed after multiple attempts"));
-        return false;
-      }
-    }
+    Serial.println(F("SD card initialization failed"));
+    return false;
   }
 
   // Card initialized successfully
   Serial.println(F("SD card initialized successfully"));
   sdCardMounted = true;
   
-  // Optimize SD card settings (if supported by board)
-  // Note: Advanced optimizations removed as they're not supported on this hardware
-  
-  // Verify card functionality with simple read/write test
-  Serial.print(F("Testing SD card with read/write test..."));
-  
-  // Try to create a test file
-  FsFile testFile;
-  if (!testFile.open("SDTEST.TXT", O_RDWR | O_CREAT | O_TRUNC)) {
-    Serial.println(F(" Failed to create test file"));
-    return false;
-  }
-  
-  // Write test data
-  if (testFile.println("SD Card Test OK")) {
-    // Test successful
-    testFile.close();
-    
-    // Clean up test file
-    SD.remove("SDTEST.TXT");
-    
-    Serial.println(F(" Test passed!"));
-  } else {
-    // Failed to write
-    Serial.println(F(" Failed to write to test file"));
-    testFile.close();
-    return false;
-  }
-  
-  // Print card information
+  // Get volume information directly from SD object
   if (SD.fatType() == 0) {
-    Serial.println(F("Failed to get FAT type"));
+    Serial.println(F("Failed to get FAT type - card may not be usable"));
     return false;
   }
   
@@ -173,15 +94,6 @@ bool initSDCard() {
   Serial.print(availableSpace / (1024ULL * 1024ULL));
   Serial.println(F(" MB"));
   
-  // Set optimal cluster pre-allocation size
-  uint32_t clusterSize = SD.vol()->bytesPerCluster();
-  Serial.print(F("Cluster size: "));
-  Serial.print(clusterSize);
-  Serial.println(F(" bytes"));
-  
-  // Enhanced error handling removed as it's not supported
-  
-  // Mark card as available
   sdCardAvailable = true;
   return true;
 }

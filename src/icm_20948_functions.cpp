@@ -1,7 +1,6 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include "config.h"
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -14,7 +13,6 @@ float icm_mag[3] = {0.0f, 0.0f, 0.0f};    // Magnetometer data (uT)
 float icm_temp = 0.0f;                    // Temperature in degrees C
 float icm_q0 = 1.0f, icm_q1 = 0.0f, icm_q2 = 0.0f, icm_q3 = 0.0f;  // Quaternion components (w,x,y,z)
 bool icm_data_available = false;          // Flag to indicate if data is ready
-bool icm20948_ready = false;              // Flag to indicate if ICM is ready
 uint16_t icm_data_header = 0;             // FIFO header for checking packet types
 
 // ICM-20948 IMU object
@@ -180,24 +178,11 @@ void applyMagnetometerCalibration() {
 
 // Read data from the ICM-20948 sensor
 void ICM_20948_read() {
-  unsigned long startTime = millis();
   static unsigned long lastErrorPrintTime = 0;
   static unsigned long lastDetailedDebugTime = 0;
   
-  // Update the ready flag
-  icm20948_ready = (myICM.status == ICM_20948_Stat_Ok);
-  
-  if (myICM.dataReady()) {
-    unsigned long beforeGetAGMT = millis();
+    if (myICM.dataReady()) {
     myICM.getAGMT();  // Get the latest data
-    unsigned long afterGetAGMT = millis();
-    
-    // Check if getAGMT took a long time
-    if (afterGetAGMT - beforeGetAGMT > 100) {
-      Serial.print("SLOW ICM getAGMT: ");
-      Serial.print(afterGetAGMT - beforeGetAGMT);
-      Serial.println(" ms");
-    }
     
     // Convert accelerometer data from mg to g and store in global array
     icm_accel[0] = myICM.accX() / 1000.0f;
@@ -254,15 +239,6 @@ void ICM_20948_read() {
       Serial.println("ICM-20948: No new data available");
     }
     icm_data_available = false;
-  }
-
-  // Check total execution time
-  unsigned long endTime = millis();
-  unsigned long duration = endTime - startTime;
-  if (duration > 100) {
-    Serial.print("SLOW ICM_20948_read: ");
-    Serial.print(duration);
-    Serial.println(" ms");
   }
 }
 
@@ -365,10 +341,4 @@ void ICM_20948_print() {
   Serial.print(icm_temp, 1);
   Serial.println("°C");
 
-}
-
-// Function to check if the ICM-20948 is ready
-bool ICM_20948_isReady() {
-  icm20948_ready = (myICM.status == ICM_20948_Stat_Ok && myICM.dataReady());
-  return icm20948_ready;
 } 

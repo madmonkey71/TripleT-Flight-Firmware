@@ -4,7 +4,7 @@
 MS5611 ms5611Sensor(0x77);
 float pressure = 0;
 float temperature = 0;
-extern float baro_altitude_offset; // Use extern since it's defined in main file
+float baro_altitude_offset = 0.0f;
 bool baro_calibration_done = false;
 
 // Declare the global variable from main

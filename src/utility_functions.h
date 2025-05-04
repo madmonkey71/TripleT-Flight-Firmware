@@ -11,6 +11,9 @@
 #include <MS5611.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 
+// Include LogData definition before it's used in function declarations
+#include "data_structures.h"
+
 // SD Card Configuration
 #if defined(BOARD_TEENSY41)
   // For Teensy 4.1, use the built-in SD card socket with SDIO mode
@@ -77,10 +80,10 @@ extern bool flashAvailable;
 extern String FileDateString;
 
 // External logging variables
-extern String LogDataString;
 extern unsigned long currentTime;
 extern bool baroCalibrated;
 extern const char* BOARD_NAME;
+extern bool enableSystemDebug; // Flag for system debug messages
 
 // External sensor data
 extern SFE_UBLOX_GNSS myGNSS;
@@ -111,6 +114,8 @@ void printStorageStatistics();
 void checkStorageSpace();
 void handleCommand(const String& command);
 void listRootDirectory(); // Function to list files in the root directory
+float get_accel_magnitude(); // Calculate acceleration magnitude from available sensors
+String logDataToString(const LogData& data); // Convert LogData struct to CSV string
 
 // Debug formatting functions
 void printDebugHeader(const char* title);

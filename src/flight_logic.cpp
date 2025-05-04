@@ -1,8 +1,8 @@
 #include "flight_logic.h"
 #include "config.h"        // For flight parameters and configuration
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
-#include "utility_functions.h" // For getBaroAltitude() and GetAccelMagnitude()
-#include "ms5611_functions.h"  // For ms5611_ready macro/function
+#include "utility_functions.h" // For get_accel_magnitude()
+#include "ms5611_functions.h"  // For ms5611_get_altitude()
 
 // --- External Globals Needed ---
 // Flight state and parameters
@@ -29,7 +29,7 @@ void saveStateToEEPROM();
 
 // Redundant apogee detection
 bool detectApogee() {
-  float currentAltitude = getBaroAltitude();
+  float currentAltitude = ms5611_get_altitude();
   bool apogeeDetected = false;
 
   // Method 1: Barometric detection (primary)
@@ -94,7 +94,7 @@ bool detectLanding() {
 
   // Method 1: Accelerometer stability (primary)
   if (kx134_accel_ready || icm20948_ready) {
-    float accel_magnitude = GetAccelMagnitude();
+    float accel_magnitude = get_accel_magnitude();
 
     // Check if acceleration is close to 1g (just gravity)
     if (accel_magnitude > 0.95 && accel_magnitude < 1.05) {
@@ -114,7 +114,7 @@ bool detectLanding() {
     static float lastAltitude = 0.0;
     static int altitudeStableCount = 0;
 
-    float currentAltitude = getBaroAltitude();
+    float currentAltitude = ms5611_get_altitude();
 
     // Check if altitude is stable
     if (fabs(currentAltitude - lastAltitude) < 1.0) {
@@ -144,7 +144,7 @@ bool detectLanding() {
 
 // Track boost end for time-based apogee detection
 void detectBoostEnd() {
-  float accel_magnitude = GetAccelMagnitude();
+  float accel_magnitude = get_accel_magnitude();
 
   // When acceleration drops below threshold, record the time
   if (accel_magnitude < COAST_ACCEL_THRESHOLD && boostEndTime == 0) {
@@ -158,7 +158,7 @@ void detectBoostEnd() {
 
 // Check if rocket is stable (no significant motion)
 bool IsStable() {
-  float accel_magnitude = GetAccelMagnitude();
+  float accel_magnitude = get_accel_magnitude();
   // Consider stable if acceleration is close to 1g (gravity only)
   return (accel_magnitude > 0.95 && accel_magnitude < 1.05);
 } 

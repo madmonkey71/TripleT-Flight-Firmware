@@ -125,6 +125,9 @@ FsFile IdleDataFile;
 uint64_t totalSpace;
 uint64_t usedSpace;
 
+// Sequence number for logging
+static unsigned long logSequenceNumber = 0;
+
 // Additional global variables for data logging
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS
 char logFileName[32] = ""; // To store the current log file name
@@ -176,9 +179,9 @@ bool createNewLogFile() {
   // Make sure the SD card is available
   if (!sdCardAvailable) {
     Serial.println(F("SD card not available, cannot create log file"));
-      return false;
-    }
-    
+    return false;
+  }
+  
   // Close any previously open log file
   if (LogDataFile) {
     LogDataFile.flush();
@@ -211,8 +214,9 @@ bool createNewLogFile() {
     return false;
   }
   
-  // Write CSV header
-  LogDataFile.println(F("Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
+  // Write CSV header according to LogData struct in data_structures.h
+  // NOTE: Keep this manually synchronized with the LogData struct definition!
+  LogDataFile.println(F("SeqNum,Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
                        "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                        "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
                        "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
@@ -272,41 +276,35 @@ void WriteLogData(bool forceLog) {
   }
   lastLogTime = millis();
   
-  // Update current time
-  currentTime = millis();
-  
-  // Format data string
-  LogDataString = String(currentTime) + "," +
-                  String(GPS_fixType) + "," +
-                  String(SIV) + "," +
-                  String(GPS_latitude / 10000000.0, 6) + "," +
-                  String(GPS_longitude / 10000000.0, 6) + "," +
-                  String(GPS_altitude / 1000.0, 2) + "," +
-                  String(GPS_altitudeMSL / 1000.0, 2) + "," + 
-                  String(GPS_speed / 1000.0, 2) + "," +       
-                  String(GPS_heading / 100000.0, 2) + "," +   
-                  String(pDOP / 100.0, 2) + "," +             
-                  String(RTK) + "," +
-                  String(pressure, 2) + "," +
-                  String(temperature, 2) + "," +
-                  String(kx134_accel[0], 4) + "," +
-                  String(kx134_accel[1], 4) + "," +
-                  String(kx134_accel[2], 4) + "," +
-                  String(icm_accel[0], 4) + "," +
-                  String(icm_accel[1], 4) + "," +
-                  String(icm_accel[2], 4) + "," +
-                  String(icm_gyro[0], 4) + "," +
-                  String(icm_gyro[1], 4) + "," +
-                  String(icm_gyro[2], 4) + "," +
-                  String(icm_mag[0], 4) + "," +
-                  String(icm_mag[1], 4) + "," +
-                  String(icm_mag[2], 4) + "," +
-                  String(icm_temp, 2);
+  // --- Populate LogData Struct --- 
+  LogData logEntry;
+  logEntry.seqNum = logSequenceNumber++; // Increment and assign sequence number
+  logEntry.timestamp = millis(); // Use current millis() for timestamp
+  logEntry.fixType = GPS_fixType;
+  logEntry.sats = SIV;
+  logEntry.latitude = GPS_latitude;
+  logEntry.longitude = GPS_longitude;
+  logEntry.altitude = GPS_altitude;
+  logEntry.altitudeMSL = GPS_altitudeMSL;
+  logEntry.speed = GPS_speed;
+  logEntry.heading = GPS_heading;
+  logEntry.pDOP = pDOP;
+  logEntry.rtk = RTK;
+  logEntry.pressure = pressure;
+  logEntry.temperature = temperature;
+  memcpy(logEntry.kx134_accel, kx134_accel, sizeof(kx134_accel)); // Copy KX134 array
+  memcpy(logEntry.icm_accel, icm_accel, sizeof(icm_accel));      // Copy ICM accel array
+  memcpy(logEntry.icm_gyro, icm_gyro, sizeof(icm_gyro));        // Copy ICM gyro array
+  memcpy(logEntry.icm_mag, icm_mag, sizeof(icm_mag));          // Copy ICM mag array
+  logEntry.icm_temp = icm_temp;
+  // --------------------------------
 
   // Output to serial if enabled
   if (enableSerialCSV) {
-    Serial.println(LogDataString);
+    // Convert struct to string and print
+    Serial.println(logDataToString(logEntry)); 
   }
+
 
   // If SD card not available, just return
   if (!sdCardAvailable) {
@@ -317,14 +315,20 @@ void WriteLogData(bool forceLog) {
   if (!LogDataFile || !LogDataFile.isOpen()) {
     // Try to create new log file if none exists
     if (sdCardAvailable) {
-      createNewLogFile();
-    }
-    return;
+      createNewLogFile(); // Attempt to open/create file
+      // Check again if file is now open after attempting creation
+      if (!LogDataFile || !LogDataFile.isOpen()) {
+        return; // Still couldn't open, exit
+      }
+    } else {
+       return; // SD not available, exit
+    } 
   }
   
-  // Write data to file
-  if (!LogDataFile.println(LogDataString)) {
+  // Write data to file as text
+  if (!LogDataFile.println(logDataToString(logEntry))) {
     Serial.println(F("Failed to write to log file"));
+    // Consider closing/reopening file or other error handling here
     return;
   }
   
@@ -985,7 +989,8 @@ void setup() {
   // Give extra time for SD card to stabilize
   delay(500);
   
-  // Initialize storage after GPS is ready
+#if !DISABLE_SDCARD_LOGGING
+  // Initialize storage only if logging is enabled
   Serial.println(F("Initializing storage..."));
   
   // Initialize SD card
@@ -1003,11 +1008,19 @@ void setup() {
       loggingEnabled = false;
     }
   } else {
-    Serial.println(F("WARNING: No storage available for data logging!"));
+    // This case handles if initSDCard() failed even though logging is enabled
+    Serial.println(F("WARNING: Storage initialization failed! Logging disabled."));
     loggingEnabled = false;
   }
-  
-  // Change LED to green to indicate successful initialization
+#else // DISABLE_SDCARD_LOGGING is true
+  // Ensure logging is explicitly disabled if the flag is set
+  Serial.println(F("SD Card logging disabled by configuration."));
+  sdCardAvailable = false;
+  loggingEnabled = false;
+  sdCardPresent = false;
+  sdCardMounted = false;
+#endif // !DISABLE_SDCARD_LOGGING
+  // Change LED to green to indicate successful initialization (regardless of SD status)
   pixels.setPixelColor(0, pixels.Color(0, 50, 0));
   pixels.show();
   
@@ -1139,7 +1152,15 @@ void loop() {
     sensorsUpdated = true;
   }
   
-  // Log data immediately after any sensor update
+  
+  #if DISABLE_SDCARD_LOGGING
+  // Logging disabled by configuration, ensure flags are false and exit immediately.
+  sdCardPresent = false;
+  sdCardMounted = false;
+  sdCardAvailable = false;
+  return false;
+#endif
+// Log data immediately after any sensor update
   if (sensorsUpdated) {
     WriteLogData(true);
     sensorsUpdated = false;

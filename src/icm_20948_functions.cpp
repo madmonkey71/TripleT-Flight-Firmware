@@ -195,12 +195,12 @@ void ICM_20948_read() {
     icm_gyro[2] = myICM.gyrZ() * DEG_TO_RAD;
     
     // Store magnetometer data in global array (uT)
-        icm_mag[0] = myICM.magX();
-        icm_mag[1] = myICM.magY();
-        icm_mag[2] = myICM.magZ();
+    icm_mag[0] = myICM.magX();
+    icm_mag[1] = myICM.magY();
+    icm_mag[2] = myICM.magZ();
 
     // Store temperature in global variable (C)
-        icm_temp = myICM.temp();
+    icm_temp = myICM.temp();
     
     // Print detailed raw sensor data every second for debugging
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {

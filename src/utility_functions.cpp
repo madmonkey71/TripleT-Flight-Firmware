@@ -307,6 +307,8 @@ String logDataToString(const LogData& data) {
   output += String(data.longitude / 10000000.0, 6) + ","; // Convert to float degrees
   output += String(data.altitude / 1000.0, 2) + ",";    // Convert mm to m
   output += String(data.altitudeMSL / 1000.0, 2) + ","; // Convert mm to m
+  output += String(data.raw_altitude, 2) + ",";        // Already in meters
+  output += String(data.calibrated_altitude, 2) + ",";  // Already in meters
   output += String(data.speed / 1000.0, 2) + ",";       // Convert mm/s to m/s
   output += String(data.heading / 100000.0, 2) + ",";   // Convert 1e5 deg to deg
   output += String(data.pDOP / 100.0, 2) + ",";         // Convert 100 * pDOP to pDOP

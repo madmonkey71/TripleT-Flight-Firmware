@@ -9,21 +9,12 @@
 // I also learned bits from @LabRatMatt from YouTube and instructables
 // It has been heavily modifed from the original as I've chosen the Teensy 4.0 and different sensors.
 
-// Getting started with implementing the data collecting from the sensors.
-// Once we have all the sensors behaving we'll start looking to do more of the actual rocket fucntions.
-// the I2C scanner find the following
+// Moved Commentary to the README.md file
 
 // 22:04:03.459 -> Device found at address 0x1F  (unknown chip) assumed to be the GPS
 // 22:04:03.459 -> Device found at address 0x42  (PCA9685) maybe the KX134 ?
 // 22:04:03.459 -> Device found at address 0x69  (MPU6050,MPU9050,MPU9250,ITG3701,L3G4200D)
 // 22:04:03.459 -> Device found at address 0x77  (BMP085,BMA180,BMP280,MS5611)
-
-// Currently working (well partially)
-// We can detect the module and pull some data from it.
-// SparkFun 9DoF IMU (ICM_20948)
-// SparkFun UBlox ZOE-M8Q
-// SparkFun KX134 
-// MS5611 (is detected not 100% sure on the data just yet)
 
 // Include all the needed libraries.
 #include <Arduino.h>
@@ -73,13 +64,13 @@ const char* BOARD_NAME = "Teensy 4.1";
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object
 extern float pressure;
 extern float temperature;
-extern float kx134_accel[3];
+// extern float kx134_accel[3];
 
 // Define sensor objects
 SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
 
 // Global variables for ICM_20948 IMU data are defined in icm_20948_functions.cpp
-
+/*
 // Define the structure that matches our binary data format
 struct LogDataStruct {
   uint32_t timestamp;      // 4 bytes
@@ -103,7 +94,7 @@ struct LogDataStruct {
   float icm_mag[3];      // 12 bytes (x, y, z)
   float icm_temp;        // 4 bytes - Temperature from ICM sensor
 };
-
+*/
 // Storage configuration
 #define SD_CARD_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
@@ -216,7 +207,7 @@ bool createNewLogFile() {
   
   // Write CSV header according to LogData struct in data_structures.h
   // NOTE: Keep this manually synchronized with the LogData struct definition!
-  LogDataFile.println(F("SeqNum,Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
+  LogDataFile.println(F("SeqNum,Timestamp,FixType,Sats,Lat,Long,Alt,AltMSL,RawAltitude,CalibratedAltitude,Speed,Heading,pDOP,RTK,Pressure,Temperature,"
                        "KX134_AccelX,KX134_AccelY,KX134_AccelZ,"
                        "ICM_AccelX,ICM_AccelY,ICM_AccelZ,"
                        "ICM_GyroX,ICM_GyroY,ICM_GyroZ,"
@@ -286,6 +277,19 @@ void WriteLogData(bool forceLog) {
   logEntry.longitude = GPS_longitude;
   logEntry.altitude = GPS_altitude;
   logEntry.altitudeMSL = GPS_altitudeMSL;
+  // Calculate and add raw and calibrated altitude
+  if (pressure > 0) { // Ensure pressure is valid
+    logEntry.raw_altitude = 44330.0 * (1.0 - pow(pressure / STANDARD_SEA_LEVEL_PRESSURE, 0.1903));
+    if (baroCalibrated) {
+      logEntry.calibrated_altitude = logEntry.raw_altitude + baro_altitude_offset;
+    } else {
+      logEntry.calibrated_altitude = logEntry.raw_altitude; // If not calibrated, log raw altitude as calibrated altitude
+    }
+  } else {
+    logEntry.raw_altitude = 0.0f; // Log 0.0 if pressure is not positive
+    logEntry.calibrated_altitude = 0.0f; // Log 0.0 if pressure is not positive
+  }
+  // --------------------------------
   logEntry.speed = GPS_speed;
   logEntry.heading = GPS_heading;
   logEntry.pDOP = pDOP;
@@ -297,7 +301,7 @@ void WriteLogData(bool forceLog) {
   memcpy(logEntry.icm_gyro, icm_gyro, sizeof(icm_gyro));        // Copy ICM gyro array
   memcpy(logEntry.icm_mag, icm_mag, sizeof(icm_mag));          // Copy ICM mag array
   logEntry.icm_temp = icm_temp;
-  // --------------------------------
+
 
   // Output to serial if enabled
   if (enableSerialCSV) {

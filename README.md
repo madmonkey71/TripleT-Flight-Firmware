@@ -20,15 +20,17 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 		 - ✅ Long
 		 - ✅ Lat
 		 - ✅ Altitude
-	 - [ ] Verify KX134 data array
-	 - [ ] Verify ICM_20948 data arrays
-		 - [ ] Accel
-		 - [ ] Gyro
-		 - [ ] Mag
+	 - ✅ Baro Altitude not getting logged.
+	 - ✅ Verify KX134 data array
+	 - ✅ Verify ICM_20948 data arrays
+		 - ✅ Accel
+		 - ✅ Gyro
+		 - ✅ Mag
 	 - [ ] SDCard Write issues
 		 - [ ] Verify without SDCard
 		 - [ ] Adjust when logging starts (State: Armed)
-		 - [ ] 
+ - [ ] Verify Output to Telemetry viewer
+ - [ ] 
   
 
 

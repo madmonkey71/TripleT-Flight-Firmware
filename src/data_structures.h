@@ -17,6 +17,8 @@ typedef struct {
   int32_t longitude;      // Degrees * 1e7
   int32_t altitude;       // Altitude above ellipsoid (mm)
   int32_t altitudeMSL;    // Altitude above mean sea level (mm)
+  float raw_altitude;     // Raw altitude from barometer (m)
+  float calibrated_altitude; // Calibrated altitude from barometer (m)
   int32_t speed;          // Ground speed (mm/s)
   int32_t heading;        // Heading of motion (deg * 1e5)
   uint16_t pDOP;          // Position Dilution of Precision (unitless * 100)

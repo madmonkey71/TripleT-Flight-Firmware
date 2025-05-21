@@ -4,28 +4,34 @@
 
 An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microcontrollers, designed for model rockets and high-power rocketry applications.
 
-## Project Status
-**Current Version**: v0.30 (Alpha)
-**BROKEN**
+## Project Lead
+**Matthew Thom** - Project Lead and Primary Developer
+
+## Project Status - Alpha (at best)
+**Current Version**: v0.20
 
 ### Recent Updates
-- ✅ Enhanced flight state detection and management:
-  - Implemented comprehensive flight state machine with 14 distinct states
-  - Added redundant apogee detection using barometric, accelerometer, and time-based methods
-  - Improved landing detection with multiple confirmation methods
-  - Added boost phase detection and motor burnout identification
-- ✅ Added EEPROM state persistence for recovery from power loss
-- ✅ Implemented robust error handling and recovery:
-  - Added watchdog timer to prevent system lockups
-  - Improved sensor health monitoring with automatic recovery procedures
-  - Enhanced error detection and graceful degradation
-- ✅ Improved barometric sensor calibration:
-  - Enhanced MS5611 initialization with multiple readings to ensure stability
-  - Added validation checks for pressure readings (800-1100 hPa range)
-  - Implemented better GPS validation during calibration
-  - Added limits to prevent infinite calibration loops (max 3 attempts with 30-second intervals)
-  - Added detailed debugging information to diagnose calibration issues
-- ✅ Fixed synchronization between calibration status flags
+ - [ ] Take stock of where I am and what's been lost. I'm not sure that I'll ever know 100%
+ - ✅ Get the firmware to build
+ - ✅ Test it
+ - [ ] Bugs
+	 - ✅ Test GPS
+	 - ✅ Fix GPS numbers (verified with a Type 2 fix)
+		 - ✅ Long
+		 - ✅ Lat
+		 - ✅ Altitude
+	 - [ ] Verify KX134 data array
+	 - [ ] Verify ICM_20948 data arrays
+		 - [ ] Accel
+		 - [ ] Gyro
+		 - [ ] Mag
+	 - [ ] SDCard Write issues
+		 - [ ] Verify without SDCard
+		 - [ ] Adjust when logging starts (State: Armed)
+		 - [ ] 
+  
+
+
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
@@ -37,20 +43,10 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Flight state detection (liftoff, boost, coast, apogee, descent)
 - ✅ Apogee detection (using multiple redundant methods)
 - ✅ Initial Parachute deployment control (drogue and main deployment logic)
-- ✅ Error detection and recovery
-- ✅ Basic State persistence and power loss recovery
 - 🚧 Enhanced telemetry (Planned)
 - 🚧 Initial Parachute deployment control (drogue and main deployment logic)
 - 🚧 Thrust vector control (Planned)
 - 🚧 Live Transmission of data via radio (Planned)
-
-### Removed from project
-These weren't working out as I'd hoped so I removed them and will pivot to something else once I've figured out what
-- ✅ Quaternion and Euler angle-based orientation tracking
-- ✅ Stationary detection
-
-## Project Lead
-**Matthew Thom** - Project Lead and Primary Developer
 
 ### AI Assistance
 This project utilizes AI assistance for:

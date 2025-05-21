@@ -28,4 +28,4 @@ extern float icm_temp;      // Temperature in degrees C
 extern bool icm_data_available;  // Flag to indicate if data is ready
 extern uint16_t icm_data_header; // FIFO header for checking packet types
 
-#endif // ICM_20948_FUNCTIONS_H 
+#endif // ICM_20948_FUNCTIONS_H

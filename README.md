@@ -1,11 +1,12 @@
 # TripleT Flight Firmware
 
-** ALERT ** Thanks to a broken workflow on my end I have broken the project and the files are all over the place. Please do NOT use until further update
+**ALERT** Thanks to a broken workflow on my end I have broken the project and the files are all over the place. Please do NOT use until further update
 
 An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microcontrollers, designed for model rockets and high-power rocketry applications.
 
 ## Project Status
 **Current Version**: v0.30 (Alpha)
+**BROKEN**
 
 ### Recent Updates
 - ✅ Enhanced flight state detection and management:

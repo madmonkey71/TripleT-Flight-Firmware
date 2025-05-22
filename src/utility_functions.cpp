@@ -1,6 +1,18 @@
 #include "utility_functions.h"
 #include "data_structures.h" // Include LogData definition
+#include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
 #include <cmath> // Include for sqrt()
+#include <stdio.h> // For snprintf
+// Required for dtostrf typically, though often included by Arduino.h
+#if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_TEENSY)
+#include <stdlib.h> 
+#else
+// For other AVR, dtostrf might be in stdlib.h or avr/dtostrf.h if not in global scope
+// This is a common include pattern, but might need adjustment for specific older AVR toolchains
+#include <stdlib.h> 
+// #include <avr/dtostrf.h> // Fallback for some AVR toolchains
+#endif
+
 
 // Define the pixels variable
 Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -292,42 +304,100 @@ float get_accel_magnitude() {
   return 0.0; // No accelerometer available or ready or data is zero
 }
 
-// Helper function to convert LogData struct to a CSV formatted String
-// NOTE: Keep this manually synchronized with the LogData struct definition in data_structures.h!
-String logDataToString(const LogData& data) {
-  String output = "";
-  // Reserve reasonable space to reduce reallocations
-  output.reserve(300);
+// Helper function to convert LogData struct to a CSV formatted char array.
+// This function is now driven by the LOG_COLUMNS definition.
+// Uses a static buffer, so the result should be used or copied immediately.
+const char* logDataToString(const LogData& data) {
+  static char buffer[512]; // Static buffer for the log string. Max length estimated around 375 previously.
+  char tempFloatBuffer[20]; // Temporary buffer for dtostrf conversions.
+  int current_buf_offset = 0;  // Current write position in 'buffer'.
+  const char* baseAddress = reinterpret_cast<const char*>(&data);
 
-  output += String(data.seqNum) + ",";
-  output += String(data.timestamp) + ",";
-  output += String(data.fixType) + ",";
-  output += String(data.sats) + ",";
-  output += String(data.latitude / 10000000.0, 6) + ","; // Convert to float degrees
-  output += String(data.longitude / 10000000.0, 6) + ","; // Convert to float degrees
-  output += String(data.altitude / 1000.0, 2) + ",";    // Convert mm to m
-  output += String(data.altitudeMSL / 1000.0, 2) + ","; // Convert mm to m
-  output += String(data.raw_altitude, 2) + ",";        // Already in meters
-  output += String(data.calibrated_altitude, 2) + ",";  // Already in meters
-  output += String(data.speed / 1000.0, 2) + ",";       // Convert mm/s to m/s
-  output += String(data.heading / 100000.0, 2) + ",";   // Convert 1e5 deg to deg
-  output += String(data.pDOP / 100.0, 2) + ",";         // Convert 100 * pDOP to pDOP
-  output += String(data.rtk) + ",";
-  output += String(data.pressure, 2) + ",";
-  output += String(data.temperature, 2) + ",";
-  output += String(data.kx134_accel[0], 4) + ",";
-  output += String(data.kx134_accel[1], 4) + ",";
-  output += String(data.kx134_accel[2], 4) + ",";
-  output += String(data.icm_accel[0], 4) + ",";
-  output += String(data.icm_accel[1], 4) + ",";
-  output += String(data.icm_accel[2], 4) + ",";
-  output += String(data.icm_gyro[0], 4) + ",";
-  output += String(data.icm_gyro[1], 4) + ",";
-  output += String(data.icm_gyro[2], 4) + ",";
-  output += String(data.icm_mag[0], 4) + ",";
-  output += String(data.icm_mag[1], 4) + ",";
-  output += String(data.icm_mag[2], 4) + ",";
-  output += String(data.icm_temp, 2);
+  for (size_t i = 0; i < LOG_COLUMN_COUNT; ++i) {
+    const LogColumnDescriptor_t* desc = &LOG_COLUMNS[i];
+    const void* field_ptr = baseAddress + desc->offset;
+    int written_chars = 0;
 
-  return output;
-} 
+    // Ensure buffer has space before writing. Account for potential comma and null terminator.
+    // Max typical float string: "-123.123456" (11) + comma (1) + null (1) = 13. tempFloatBuffer is 20.
+    // Max typical uint32_t string: "4294967295" (10) + comma (1) + null (1) = 12.
+    if (current_buf_offset >= (int)(sizeof(buffer) - (sizeof(tempFloatBuffer) + 2))) { 
+        Serial.println(F("logDataToString buffer nearly full! Skipping remaining fields."));
+        break; 
+    }
+
+    switch (desc->type) {
+        case TYPE_UINT32:
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset,
+                                     "%lu", *static_cast<const uint32_t*>(field_ptr));
+            break;
+        case TYPE_UINT8:
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset,
+                                     "%u", *static_cast<const uint8_t*>(field_ptr));
+            break;
+        case TYPE_INT32_AS_FLOAT_SCALED_1E7_P6: // For Latitude/Longitude
+            dtostrf(*static_cast<const int32_t*>(field_ptr) / 10000000.0, 1, 6, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        case TYPE_INT32_AS_FLOAT_SCALED_1E3_P2: // For Altitude, AltitudeMSL, Speed
+            dtostrf(*static_cast<const int32_t*>(field_ptr) / 1000.0, 1, 2, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        case TYPE_INT32_AS_FLOAT_SCALED_1E5_P2: // For Heading
+            dtostrf(*static_cast<const int32_t*>(field_ptr) / 100000.0, 1, 2, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        case TYPE_UINT16_AS_FLOAT_SCALED_1E2_P2: // For pDOP
+            dtostrf(*static_cast<const uint16_t*>(field_ptr) / 100.0, 1, 2, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        case TYPE_FLOAT_P2: // For direct floats like pressure, temperature, altitudes from baro, icm_temp
+            dtostrf(*static_cast<const float*>(field_ptr), 1, 2, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        case TYPE_FLOAT_P4: // For sensor float arrays (accel, gyro, mag)
+            dtostrf(*static_cast<const float*>(field_ptr), 1, 4, tempFloatBuffer);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "%s", tempFloatBuffer);
+            break;
+        default:
+            Serial.print(F("Unknown type in logDataToString: ")); Serial.println(desc->type);
+            written_chars = snprintf(buffer + current_buf_offset, sizeof(buffer) - current_buf_offset, "ERR");
+            break;
+    }
+
+    if (written_chars > 0) {
+        current_buf_offset += written_chars;
+    } else if (written_chars < 0) {
+        // snprintf encoding error or buffer too small from the start
+        Serial.println(F("logDataToString snprintf error or buffer too small!"));
+        // Ensure buffer is null-terminated safely if an error occurs mid-string
+        if(current_buf_offset < (int)sizeof(buffer)) buffer[current_buf_offset] = '\0';
+        else buffer[sizeof(buffer)-1] = '\0';
+        return buffer; // Return immediately with what we have
+    }
+
+
+    if (i < LOG_COLUMN_COUNT - 1) {
+      if (current_buf_offset < (int)sizeof(buffer) - 1) { // Check space for comma
+        buffer[current_buf_offset++] = ',';
+      } else {
+        Serial.println(F("logDataToString buffer overflow (comma)!"));
+        break; 
+      }
+    }
+  }
+  
+  // Final null termination, ensuring it's within bounds
+  if(current_buf_offset < (int)sizeof(buffer)){
+    buffer[current_buf_offset] = '\0'; 
+  } else {
+    buffer[sizeof(buffer)-1] = '\0'; // Force null termination if at the very end
+    if(current_buf_offset > (int)sizeof(buffer)){ // If offset somehow exceeded buffer size.
+      Serial.println(F("logDataToString critical buffer overflow detected!"));
+    } else {
+       Serial.println(F("logDataToString buffer full, string potentially truncated."));
+    }
+  }
+
+  return buffer;
+}

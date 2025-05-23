@@ -6,7 +6,7 @@
 #include "ICM_20948.h"
 
 // Sensor status variables
-extern bool isStationary;
+// extern bool isStationary; // This was a previous attempt, definition is in .cpp
 extern float sampleFreq;  // Sample frequency in Hz
 extern uint32_t lastUpdateTime; // Time of last sensor update
 
@@ -27,5 +27,6 @@ extern float icm_mag[3];    // Magnetometer data (uT)
 extern float icm_temp;      // Temperature in degrees C
 extern bool icm_data_available;  // Flag to indicate if data is ready
 extern uint16_t icm_data_header; // FIFO header for checking packet types
+extern bool isStationary;       // Defined in .cpp, used by main firmware
 
 #endif // ICM_20948_FUNCTIONS_H

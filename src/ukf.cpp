@@ -20,14 +20,14 @@ extern bool kx134_initialized_ok;
 extern float kx134_accel[3];
 extern float icm_accel[3];
 extern bool enableSystemDebug;
-extern bool ukfInitialized;
-extern float ukf_pos;
-extern float ukf_vel;
-extern float ukf_accel;
+// extern bool ukfInitialized; // Moved to ukf.h
+// extern float ukf_pos;      // Moved to ukf.h
+// extern float ukf_vel;      // Moved to ukf.h
+// extern float ukf_accel;    // Moved to ukf.h
 // --- END ADDED Dependencies ---
 
 // Global UKF instance - now declared as extern since it's already defined in TripleT_Flight_Firmware.cpp
-extern UKF ukf;
+// extern UKF ukf; // Moved to ukf.h
 
 // Last timestamp for time delta calculation
 unsigned long UKF::lastTimestamp_ = 0;

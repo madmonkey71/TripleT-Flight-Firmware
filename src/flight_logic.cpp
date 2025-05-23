@@ -5,11 +5,7 @@
 #include "ms5611_functions.h"  // For ms5611_get_altitude()
 
 // --- External Globals Needed ---
-// Flight state and parameters
-extern float maxAltitudeReached;
-extern int descendingCount; // Used by detectApogee
-extern unsigned long boostEndTime;
-extern bool landingDetectedFlag;
+// Flight state and parameters are now declared extern in flight_logic.h
 
 // Sensor readiness/data (Check how these are defined in the original file)
 extern bool kx134_initialized_ok; // From main file?

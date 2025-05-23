@@ -14,37 +14,8 @@
 // Include LogData definition before it's used in function declarations
 #include "data_structures.h"
 
-// SD Card Configuration
-#if defined(BOARD_TEENSY41)
-  // For Teensy 4.1, use the built-in SD card socket with SDIO mode
-  #ifndef SD_CONFIG
-  #define SD_CONFIG SdioConfig(FIFO_SDIO)
-  #endif
-  // Card detect pin for built-in socket
-  #ifndef SD_DETECT_PIN
-  #define SD_DETECT_PIN 39  // Card detect pin for built-in SD socket
-  #endif
-#else
-  // For other boards (Teensy 4.0, etc.), use standard SPI
-  #ifndef SD_CONFIG
-  #define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
-  #endif
-  #ifndef SD_CS_PIN
-  #define SD_CS_PIN 10  // CS pin for SD card
-  #endif
-  #ifndef SD_DETECT_PIN
-  #define SD_DETECT_PIN 9  // Card detect pin (if available)
-  #endif
-  #ifndef SD_MOSI_PIN
-  #define SD_MOSI_PIN 11  // MOSI pin for SD card
-  #endif
-  #ifndef SD_MISO_PIN
-  #define SD_MISO_PIN 12  // MISO pin for SD card
-  #endif
-  #ifndef SD_SCK_PIN
-  #define SD_SCK_PIN 13  // SCK pin for SD card
-  #endif     
-#endif
+// SD Card Configuration is now centralized in config.h
+// Ensure config.h is included if these definitions are needed, typically via TripleT_Flight_Firmware.cpp including it.
 
 // Serial Flash Configuration
 #ifndef FLASH_CS_PIN
@@ -61,9 +32,9 @@
 #endif
 #define BUZZER_PIN BUZZER  // Alias for backward compatibility
 
-// External sensor objects
-extern SparkFun_KX134 kx134Accel;  // Create instance of the KX134 class
-extern MS5611 ms5611Sensor;  // Create instance of the MS5611 class
+// External sensor objects - These should be included from their respective module headers
+// extern SparkFun_KX134 kx134Accel;
+// extern MS5611 ms5611Sensor;
 
 // Add forward declaration for LittleFS_Program 
 class LittleFS_Program;
@@ -85,21 +56,21 @@ extern bool baroCalibrated;
 extern const char* BOARD_NAME;
 extern bool enableSystemDebug; // Flag for system debug messages
 
-// External sensor data
-extern SFE_UBLOX_GNSS myGNSS;
-extern float pressure;
-extern float temperature;
-extern float kx134_accel[3];
-extern float icm_accel[3];
-extern float icm_gyro[3];
-extern float icm_mag[3];
-extern float icm_temp;  // Add ICM temperature variable
-extern bool icm_data_available;
-extern float icm_q0, icm_q1, icm_q2, icm_q3;
-extern uint16_t icm_data_header;
+// External sensor data - These should be included from their respective module headers
+// extern SFE_UBLOX_GNSS myGNSS;
+// extern float pressure;
+// extern float temperature;
+// extern float kx134_accel[3];
+// extern float icm_accel[3];
+// extern float icm_gyro[3];
+// extern float icm_mag[3];
+// extern float icm_temp;
+// extern bool icm_data_available;
+// extern float icm_q0, icm_q1, icm_q2, icm_q3; // These are not in icm_20948_functions.h as extern
+// extern uint16_t icm_data_header;
 
 // External board configuration
-extern const char* BOARD_NAME;
+// extern const char* BOARD_NAME; // This is defined in main .cpp and also extern here, it's fine.
 
 // Function declarations
 bool initSDCard();
@@ -127,5 +98,8 @@ void printDebugQuad(const char* label, float value1, float value2, float value3,
 void printDebugState(const char* label, const char* state);
 void printDebugBoolean(const char* label, bool value);
 void printDebugDivider();
+
+// Function for saving flight state to EEPROM (defined elsewhere, e.g. main .cpp)
+void saveStateToEEPROM();
 
 #endif // UTILITY_FUNCTIONS_H 

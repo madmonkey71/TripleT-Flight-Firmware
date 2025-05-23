@@ -59,7 +59,14 @@ String FileDateString;  // For log file naming
 String LogDataString;   // For data logging
 unsigned long currentTime;  // For timestamp
 bool baroCalibrated = false;  // For barometric calibration status
+
+#if defined(BOARD_TEENSY41)
 const char* BOARD_NAME = "Teensy 4.1";
+#elif defined(BOARD_TEENSY40)
+const char* BOARD_NAME = "Teensy 4.0";
+#else
+const char* BOARD_NAME = "Unknown Board";
+#endif
 
 // External declarations for sensor data
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object

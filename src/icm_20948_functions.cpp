@@ -1,6 +1,7 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include "config.h" // For Madgwick filter parameters
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -34,13 +35,13 @@ int movingCounter = 0;
 const int STATE_CHANGE_THRESHOLD = 3;   // Reduced from 5 to 3 for faster state change detection
 
 // Madgwick filter parameters
-float beta = 0.05f;                     // Reduced from 0.1f to reduce influence of noisy measurements
-const float BETA_STATIONARY = 0.02f;    // Lower when stationary for less drift
-const float BETA_MOTION = 0.1f;         // Higher when in motion for more responsiveness
+float beta = MADGWICK_BETA_INIT;       // Initialized from config.h
+// const float BETA_STATIONARY = 0.02f; // Now use MADGWICK_BETA_STATIONARY from config.h directly
+// const float BETA_MOTION = 0.1f;      // Now use MADGWICK_BETA_MOTION from config.h directly
 
 // Add gyro bias estimation
 float gyroBias[3] = {0.0f, 0.0f, 0.0f}; // Estimated gyro bias
-const float GYRO_BIAS_LEARN_RATE = 0.0005f; // Reduced from 0.001f for more stable bias estimates
+// const float GYRO_BIAS_LEARN_RATE = 0.0005f; // Now use MADGWICK_GYRO_BIAS_LEARN_RATE from config.h directly
 
 // Previous quaternion values for drift compensation
 float q0_prev = 1.0f, q1_prev = 0.0f, q2_prev = 0.0f, q3_prev = 0.0f;
@@ -201,8 +202,143 @@ void ICM_20948_read() {
 
     // Store temperature in global variable (C)
     icm_temp = myICM.temp();
+
+    // --- Motion Detection Logic ---
+    uint32_t currentTime = micros();
+    float deltat = (lastUpdateTime > 0) ? ((currentTime - lastUpdateTime) / 1000000.0f) : (1.0f / sampleFreq);
+    lastUpdateTime = currentTime;
+    if (deltat <= 0) deltat = 1.0f / sampleFreq; // Prevent division by zero or negative dt
+
+    // Calculate magnitudes and variance for motion detection
+    // Gyro magnitude (rad/s)
+    gyroMagnitude = sqrt(icm_gyro[0] * icm_gyro[0] + icm_gyro[1] * icm_gyro[1] + icm_gyro[2] * icm_gyro[2]);
+
+    // Accelerometer variance (difference from previous magnitude, in g)
+    // Note: get_accel_magnitude() from utility_functions.h could be used if it's preferred
+    // but that function uses kx134 or icm, here we are specifically in ICM context.
+    // For simplicity, let's use the raw icm_accel data which is already in g.
+    float accelMagnitudeCurrent = sqrt(icm_accel[0] * icm_accel[0] + icm_accel[1] * icm_accel[1] + icm_accel[2] * icm_accel[2]);
+    if (accelMagnitudePrev != 0.0f) { // Avoid large variance on first run
+        accelVariance = fabs(accelMagnitudeCurrent - accelMagnitudePrev);
+    }
+    accelMagnitudePrev = accelMagnitudeCurrent;
+
+    if (gyroMagnitude < GYRO_THRESHOLD && accelVariance < ACCEL_VARIANCE_THRESHOLD) {
+        stationaryCounter++;
+        movingCounter = 0;
+        if (stationaryCounter >= STATE_CHANGE_THRESHOLD) {
+            isStationary = true;
+            stationaryCounter = STATE_CHANGE_THRESHOLD; // Prevent overflow
+        }
+    } else {
+        movingCounter++;
+        stationaryCounter = 0;
+        if (movingCounter >= STATE_CHANGE_THRESHOLD) {
+            isStationary = false;
+            movingCounter = STATE_CHANGE_THRESHOLD; // Prevent overflow
+        }
+    }
+
+    // --- Dynamic Beta Adjustment ---
+    if (isStationary) {
+        beta = MADGWICK_BETA_STATIONARY;
+    } else {
+        beta = MADGWICK_BETA_MOTION;
+    }
+    // --- End Motion Detection & Dynamic Beta ---
+
+    // --- Madgwick AHRS IMU Update (Simplified) ---
+    // Local copies for calculation, to make the algorithm match the provided snippet more closely
+    float q0 = icm_q0, q1 = icm_q1, q2 = icm_q2, q3 = icm_q3;
+    float ax = icm_accel[0], ay = icm_accel[1], az = icm_accel[2];
     
-    // Print detailed raw sensor data every second for debugging
+    // Correct gyroscope readings with current bias estimate
+    float gx_corrected = icm_gyro[0] - gyroBias[0];
+    float gy_corrected = icm_gyro[1] - gyroBias[1];
+    float gz_corrected = icm_gyro[2] - gyroBias[2];
+
+    float recipNorm;
+    // float s0, s1, s2, s3; // These were for context, not directly used in the simplified snippet
+    float qDot1, qDot2, qDot3, qDot4;
+    float _2q0, _2q1, _2q2; // _2q3 was not used in the simplified snippet's gradient
+
+    // Rate of change of quaternion from gyroscope (using corrected gyro values)
+    qDot1 = 0.5f * (-q1 * gx_corrected - q2 * gy_corrected - q3 * gz_corrected);
+    qDot2 = 0.5f * ( q0 * gx_corrected + q2 * gz_corrected - q3 * gy_corrected);
+    qDot3 = 0.5f * ( q0 * gy_corrected - q1 * gz_corrected + q3 * gx_corrected);
+    qDot4 = 0.5f * ( q0 * gz_corrected + q1 * gy_corrected - q2 * gx_corrected);
+
+    // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
+    if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+        // Normalise accelerometer measurement
+        recipNorm = 1.0f / sqrt(ax * ax + ay * ay + az * az);
+        ax *= recipNorm;
+        ay *= recipNorm;
+        az *= recipNorm;
+
+        // Auxiliary variables to avoid repeated arithmetic
+        _2q0 = 2.0f * q0;
+        _2q1 = 2.0f * q1;
+        _2q2 = 2.0f * q2;
+        // _2q3 = 2.0f * q3; // _2q3 was not used in the provided simplified version's gradient calc
+
+        // Estimated direction of gravity in body frame from quaternion
+        // (Note: Original Madgwick uses 2*q1*q3 - 2*q0*q2 for v_x, etc. This is slightly different but matches snippet)
+        float hx_g = 2.0f * (q1 * q3 - q0 * q2); // Corresponds to 2*(q1q3 - q0q2) -> (vx in Madgwick paper)
+        float hy_g = 2.0f * (q0 * q1 + q2 * q3); // Corresponds to 2*(q0q1 + q2q3) -> (vy in Madgwick paper)
+        float hz_g = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3; // Corresponds to q0^2 - q1^2 - q2^2 + q3^2 -> (vz in Madgwick paper)
+
+        // Error is cross product between estimated direction and measured direction of gravity
+        float ex = (ay * hz_g - az * hy_g);
+        float ey = (az * hx_g - ax * hz_g);
+        float ez = (ax * hy_g - ay * hx_g);
+
+        // Update gyro bias using error terms (if learning is enabled)
+        if (MADGWICK_GYRO_BIAS_LEARN_RATE > 0.0f) {
+            gyroBias[0] += MADGWICK_GYRO_BIAS_LEARN_RATE * ex * deltat;
+            gyroBias[1] += MADGWICK_GYRO_BIAS_LEARN_RATE * ey * deltat;
+            gyroBias[2] += MADGWICK_GYRO_BIAS_LEARN_RATE * ez * deltat;
+        }
+        
+        // Apply feedback to quaternion derivative
+        // (Original Madgwick paper: qDot1 -= beta * s0_gradient_component, etc. where s are components of J^T * F)
+        // The snippet implies a direct subtraction of these error terms.
+        // For an IMU (accel+gyro) update, the error term (ex, ey, ez) is used to correct the gyro rates.
+        // The gradient descent step involves multiplying these error terms by components of q.
+        // Re-interpreting the snippet's intention for qDot correction:
+        // s0, s1, s2, s3 are effectively the "gradient" components scaled by beta
+        // The snippet seems to be directly applying ex,ey,ez to qDot components.
+        // A standard IMU update would look like:
+        // s0 = _2q2 * ex - _2q1 * ey; // Simplified, assumes error is perpendicular to estimated gravity
+        // s1 = _2q3 * ex + _2q0 * ey - 2.0f * q1 * ez; // This is more complex
+        // For the provided snippet, it is:
+        qDot1 -= beta * ex; // This is not standard Madgwick gradient descent on qDot directly.
+        qDot2 -= beta * ey; // It implies ex, ey, ez are scaled components of angular error to correct gyro integration.
+        qDot3 -= beta * ez; // If ex,ey,ez are components of d(omega_err), then this makes sense.
+                            // Let's assume the snippet means to adjust the quaternion derivatives this way.
+    }
+
+    // Integrate rate of change of quaternion
+    q0 += qDot1 * deltat;
+    q1 += qDot2 * deltat;
+    q2 += qDot3 * deltat;
+    q3 += qDot4 * deltat;
+
+    // Normalise quaternion
+    recipNorm = 1.0f / sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    q0 *= recipNorm;
+    q1 *= recipNorm;
+    q2 *= recipNorm;
+    q3 *= recipNorm;
+
+    // Update global quaternion variables
+    icm_q0 = q0;
+    icm_q1 = q1;
+    icm_q2 = q2;
+    icm_q3 = q3;
+    // --- End Madgwick AHRS IMU Update ---
+    
+    // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
       lastDetailedDebugTime = millis();
       
@@ -230,6 +366,20 @@ void ICM_20948_read() {
       Serial.print(isStationary ? stationaryCounter : movingCounter);
       Serial.print(", Beta: ");
       Serial.println(beta, 4);
+
+      // --- Temporary Madgwick Euler Angle Debug Print ---
+      float roll_deg, pitch_deg, yaw_deg;
+      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_deg, pitch_deg, yaw_deg);
+
+      // Convert radians to degrees for printing
+      roll_deg *= (180.0f / PI);
+      pitch_deg *= (180.0f / PI);
+      yaw_deg *= (180.0f / PI);
+
+      Serial.print("Madgwick Euler (deg) - R: "); Serial.print(roll_deg, 1);
+      Serial.print(" P: "); Serial.print(pitch_deg, 1);
+      Serial.print(" Y: "); Serial.println(yaw_deg, 1);
+      // --- End Temporary Madgwick Euler Angle Debug Print ---
     }
       icm_data_available = true;
   } else {
@@ -342,3 +492,10 @@ void ICM_20948_print() {
   Serial.println("°C");
 
 } 
+
+// Function to get calibrated gyroscope data (raw - bias)
+void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
+  out_gyro[0] = icm_gyro[0] - gyroBias[0];
+  out_gyro[1] = icm_gyro[1] - gyroBias[1];
+  out_gyro[2] = icm_gyro[2] - gyroBias[2];
+}

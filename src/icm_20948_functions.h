@@ -15,6 +15,7 @@ void ICM_20948_init();
 void ICM_20948_read();
 void ICM_20948_print();
 void ICM_20948_calibrate();
+void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // New function
 
 
 // Global variable declarations
@@ -22,11 +23,15 @@ extern ICM_20948_I2C myICM;
 
 // External variables for ICM-20948 data
 extern float icm_accel[3];  // Accelerometer data (g)
-extern float icm_gyro[3];   // Gyroscope data (deg/s) 
+extern float icm_gyro[3];   // Gyroscope data (raw, in rad/s from Madgwick update)
 extern float icm_mag[3];    // Magnetometer data (uT)
 extern float icm_temp;      // Temperature in degrees C
 extern bool icm_data_available;  // Flag to indicate if data is ready
 extern uint16_t icm_data_header; // FIFO header for checking packet types
 extern bool isStationary;       // Defined in .cpp, used by main firmware
+
+// Madgwick filter outputs
+extern float icm_q0, icm_q1, icm_q2, icm_q3;  // Quaternion components (w,x,y,z)
+extern float gyroBias[3];                   // Estimated gyroscope bias (rad/s)
 
 #endif // ICM_20948_FUNCTIONS_H

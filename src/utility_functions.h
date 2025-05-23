@@ -102,4 +102,7 @@ void printDebugDivider();
 // Function for saving flight state to EEPROM (defined elsewhere, e.g. main .cpp)
 void saveStateToEEPROM();
 
+// Attitude utility function
+void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw);
+
 #endif // UTILITY_FUNCTIONS_H 

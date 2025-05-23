@@ -401,3 +401,22 @@ const char* logDataToString(const LogData& data) {
 
   return buffer;
 }
+
+void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw) {
+    // Roll (x-axis rotation)
+    float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);
+    float cosr_cosp = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
+    roll = atan2(sinr_cosp, cosr_cosp);
+
+    // Pitch (y-axis rotation)
+    float sinp = 2.0f * (q0 * q2 - q3 * q1);
+    if (fabs(sinp) >= 1.0f)
+        pitch = copysign(PI / 2.0f, sinp); // use 90 degrees if out of range, Arduino PI
+    else
+        pitch = asin(sinp);
+
+    // Yaw (z-axis rotation)
+    float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
+    float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
+    yaw = atan2(siny_cosp, cosy_cosp);
+}

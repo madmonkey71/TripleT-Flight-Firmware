@@ -34,7 +34,32 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"ICM_MagX", TYPE_FLOAT_P4, offsetof(LogData, icm_mag[0])},
     {"ICM_MagY", TYPE_FLOAT_P4, offsetof(LogData, icm_mag[1])},
     {"ICM_MagZ", TYPE_FLOAT_P4, offsetof(LogData, icm_mag[2])},
-    {"ICM_Temp", TYPE_FLOAT_P2, offsetof(LogData, icm_temp)}
+    {"ICM_Temp", TYPE_FLOAT_P2, offsetof(LogData, icm_temp)},
+
+    // AHRS Data
+    {"Q0", TYPE_FLOAT_P6_RAD, offsetof(LogData, q0)},
+    {"Q1", TYPE_FLOAT_P6_RAD, offsetof(LogData, q1)},
+    {"Q2", TYPE_FLOAT_P6_RAD, offsetof(LogData, q2)},
+    {"Q3", TYPE_FLOAT_P6_RAD, offsetof(LogData, q3)},
+    {"EulerRoll_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, euler_roll)},
+    {"EulerPitch_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, euler_pitch)},
+    {"EulerYaw_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, euler_yaw)},
+    {"GyroBiasX_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_x)},
+    {"GyroBiasY_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_y)},
+    {"GyroBiasZ_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_z)},
+
+    // Guidance Control Data (subset)
+    {"ActuatorX", TYPE_FLOAT_P3, offsetof(LogData, actuator_x)},
+    {"ActuatorY", TYPE_FLOAT_P3, offsetof(LogData, actuator_y)},
+    {"ActuatorZ", TYPE_FLOAT_P3, offsetof(LogData, actuator_z)},
+
+    // Remaining Guidance Control Data
+    {"TargetRoll_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_roll)},
+    {"TargetPitch_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_pitch)},
+    {"TargetYaw_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_yaw)},
+    {"PIDIntRoll", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_roll)},
+    {"PIDIntPitch", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_pitch)},
+    {"PIDIntYaw", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_yaw)}
 };
 
 // Definition of the log column count

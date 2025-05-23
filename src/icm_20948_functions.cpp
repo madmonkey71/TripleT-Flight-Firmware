@@ -185,6 +185,9 @@ void ICM_20948_read() {
     if (myICM.dataReady()) {
     myICM.getAGMT();  // Get the latest data
     
+    // Apply magnetometer calibration before using the mag data
+    applyMagnetometerCalibration(); 
+
     // Convert accelerometer data from mg to g and store in global array
     icm_accel[0] = myICM.accX() / 1000.0f;
     icm_accel[1] = myICM.accY() / 1000.0f;

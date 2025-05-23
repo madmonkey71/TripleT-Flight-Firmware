@@ -87,6 +87,30 @@
 #define MADGWICK_BETA_MOTION 0.1f        // Beta value when system is in motion (higher for responsiveness)
 #define MADGWICK_GYRO_BIAS_LEARN_RATE 0.0005f // Rate at which gyro bias is learned
 
+// --- PID Controller Gains ---
+
+// Roll Axis PID
+#define PID_ROLL_KP 1.0f
+#define PID_ROLL_KI 0.1f
+#define PID_ROLL_KD 0.05f
+
+// Pitch Axis PID
+#define PID_PITCH_KP 1.0f
+#define PID_PITCH_KI 0.1f
+#define PID_PITCH_KD 0.05f
+
+// Yaw Axis PID (e.g., for reaction wheel or differential thrust)
+#define PID_YAW_KP 0.8f
+#define PID_YAW_KI 0.08f
+#define PID_YAW_KD 0.03f
+
+// PID Output Limits (example)
+#define PID_OUTPUT_MIN -1.0f // Min actuator command
+#define PID_OUTPUT_MAX  1.0f // Max actuator command
+#define PID_INTEGRAL_LIMIT_ROLL 0.5f // Anti-windup for roll
+#define PID_INTEGRAL_LIMIT_PITCH 0.5f // Anti-windup for pitch
+#define PID_INTEGRAL_LIMIT_YAW 0.3f  // Anti-windup for yaw
+
 // --- SD Card Driver Configuration (Platform Specific) ---
 
 // For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings

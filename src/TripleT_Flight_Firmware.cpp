@@ -53,6 +53,7 @@
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
+#include "guidance_control.h" // For guidance and control functions
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -134,6 +135,8 @@ char logFileName[32] = ""; // To store the current log file name
 // Sensor polling intervals (in milliseconds)
 #define GPS_POLL_INTERVAL 200       // Poll GPS at 5Hz
 #define IMU_POLL_INTERVAL 100       // Poll IMU at 10Hz
+// Guidance Control Update Interval
+const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
 #define BARO_POLL_INTERVAL 100      // Poll barometer at 10Hz
 #define ACCEL_POLL_INTERVAL 100     // Poll accelerometer at 10Hz
 #define DISPLAY_INTERVAL 1000       // Update display once per second
@@ -322,6 +325,30 @@ void WriteLogData(bool forceLog) {
   memcpy(logEntry.icm_mag, icm_mag, sizeof(icm_mag));          // Copy ICM mag array
   logEntry.icm_temp = icm_temp;
 
+  // Populate AHRS Data
+  logEntry.q0 = icm_q0;
+  logEntry.q1 = icm_q1;
+  logEntry.q2 = icm_q2;
+  logEntry.q3 = icm_q3;
+  convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, 
+                           logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
+  logEntry.gyro_bias_x = gyroBias[0];
+  logEntry.gyro_bias_y = gyroBias[1];
+  logEntry.gyro_bias_z = gyroBias[2];
+
+  // Populate Guidance Control Data
+  // Target Euler angles and PID integrals are static in guidance_control.cpp.
+  // Without dedicated getter functions, we log placeholders or last known values if available.
+  // For now, logging placeholders (0.0f).
+  // A more complete solution would involve adding getters to guidance_control.cpp.
+  logEntry.target_euler_roll = 0.0f; // Placeholder
+  logEntry.target_euler_pitch = 0.0f; // Placeholder
+  logEntry.target_euler_yaw = 0.0f;   // Placeholder
+  logEntry.pid_integral_roll = 0.0f;  // Placeholder
+  logEntry.pid_integral_pitch = 0.0f; // Placeholder
+  logEntry.pid_integral_yaw = 0.0f;   // Placeholder
+  
+  guidance_get_actuator_outputs(logEntry.actuator_x, logEntry.actuator_y, logEntry.actuator_z);
 
   // Output to serial if enabled
   if (enableSerialCSV) {
@@ -929,6 +956,10 @@ void setup() {
   
   // Barometric calibration is now done via command
   Serial.println(F("Use 'calibrate' command to perform barometric calibration with GPS"));
+
+  // Initialize Guidance Control System
+  guidance_init();
+  Serial.println(F("Guidance control system initialized."));
 }
 
 void loop() {
@@ -942,6 +973,7 @@ void loop() {
   static unsigned long lastStorageCheckTime = 0;
   static unsigned long lastFlushTime = 0;  // Track when we last flushed data
   static bool sensorsUpdated = false;
+  static unsigned long lastGuidanceUpdateTime = 0;
   
   // Check for serial commands
   if (Serial.available()) {
@@ -1105,6 +1137,54 @@ void loop() {
   if (displayMode && millis() - lastDetailedTime >= 5000) {
     lastDetailedTime = millis();
     ICM_20948_print();
+  }
+
+  // --- Guidance Control System Update ---
+  if (millis() - lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
+      float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
+      lastGuidanceUpdateTime = millis();
+
+      // 1. Get current orientation (Euler angles)
+      float roll_rad, pitch_rad, yaw_rad;
+      // Assuming icm_q0, icm_q1, icm_q2, icm_q3 are globally accessible after AHRS update
+      // These are extern declared in icm_20948_functions.h and defined in icm_20948_functions.cpp
+      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_rad, pitch_rad, yaw_rad);
+
+      // 2. Get current angular velocities (calibrated)
+      float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
+      float calibrated_gyro_data[3];
+      ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Function from icm_20948_functions.cpp
+      roll_rate_radps = calibrated_gyro_data[0];  // Assuming X-axis from sensor is roll axis
+      pitch_rate_radps = calibrated_gyro_data[1]; // Assuming Y-axis from sensor is pitch axis
+      yaw_rate_radps = calibrated_gyro_data[2];   // Assuming Z-axis from sensor is yaw axis
+                                              // TODO: Verify axis mapping based on actual sensor orientation on rocket
+
+      // 3. Update guidance controller
+      // Target orientation is currently set by guidance_set_target_orientation_euler().
+      // For now, it will use the default (0,0,0) or whatever was last set via command.
+      guidance_update(roll_rad, pitch_rad, yaw_rad,
+                      roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
+                      deltat_guidance);
+
+      // 4. Get actuator outputs
+      float actuator_x, actuator_y, actuator_z;
+      guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
+
+      // 5. TODO: Send actuator_x, actuator_y, actuator_z to actual servo/motor outputs
+      // For now, add a debug print if SystemDebug is enabled
+      if (enableSystemDebug) { // Using existing SystemDebug flag for this
+          static unsigned long lastGuidanceDebugPrintTime = 0;
+          if (millis() - lastGuidanceDebugPrintTime > 500) { // Print every 500ms
+              lastGuidanceDebugPrintTime = millis();
+              Serial.print("Guidance Out - X(Pitch): "); Serial.print(actuator_x, 2);
+              Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
+              Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
+              
+              Serial.print("Guidance In  - R: "); Serial.print(roll_rad * (180.0f/PI), 1);
+              Serial.print(" P: "); Serial.print(pitch_rad * (180.0f/PI), 1);
+              Serial.print(" Y: "); Serial.println(yaw_rad * (180.0f/PI), 1);
+          }
+      }
   }
 }
 

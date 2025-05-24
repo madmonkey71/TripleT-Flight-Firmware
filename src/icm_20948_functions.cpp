@@ -60,6 +60,110 @@ const unsigned long ZUPT_INTERVAL = 30000; // Perform ZUPT every 30 seconds when
 float magBias[3] = {0, 0, 0};           // Hard iron correction
 float magScale[3] = {1, 1, 1};          // Soft iron correction
 
+// Function to update quaternion using 9-axis Madgwick filter
+void MadgwickAHRSupdateMARG(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz, float deltat, float beta_val) {
+    float recipNorm;
+    float s0, s1, s2, s3;
+    float qDot1, qDot2, qDot3, qDot4;
+    float hx, hy, hz; // Renamed from _hx, _hy to avoid leading underscore issues if any, and added hz
+    float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3;
+    float q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+
+    // Use global quaternions
+    float q0 = icm_q0;
+    float q1 = icm_q1;
+    float q2 = icm_q2;
+    float q3 = icm_q3;
+
+    // Rate of change of quaternion from gyroscope
+    qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
+    qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
+    qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
+    qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
+
+    // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
+    if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+        // Normalise accelerometer measurement
+        recipNorm = 1.0f / sqrt(ax * ax + ay * ay + az * az);
+        ax *= recipNorm;
+        ay *= recipNorm;
+        az *= recipNorm;
+
+        // Normalise magnetometer measurement
+        recipNorm = 1.0f / sqrt(mx * mx + my * my + mz * mz);
+        mx *= recipNorm;
+        my *= recipNorm;
+        mz *= recipNorm;
+
+        // Auxiliary variables to avoid repeated arithmetic
+        _2q0mx = 2.0f * q0 * mx;
+        _2q0my = 2.0f * q0 * my;
+        _2q0mz = 2.0f * q0 * mz;
+        _2q1mx = 2.0f * q1 * mx;
+        _2q0 = 2.0f * q0;
+        _2q1 = 2.0f * q1;
+        _2q2 = 2.0f * q2;
+        _2q3 = 2.0f * q3;
+        _2q0q2 = 2.0f * q0 * q2;
+        _2q2q3 = 2.0f * q2 * q3;
+        q0q0 = q0 * q0;
+        q0q1 = q0 * q1;
+        q0q2 = q0 * q2;
+        q0q3 = q0 * q3;
+        q1q1 = q1 * q1;
+        q1q2 = q1 * q2;
+        q1q3 = q1 * q3;
+        q2q2 = q2 * q2;
+        q2q3 = q2 * q3;
+        q3q3 = q3 * q3;
+
+        // Reference direction of Earth's magnetic field
+        hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
+        hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
+        _2bx = sqrt(hx * hx + hy * hy);
+        _2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
+        _4bx = 2.0f * _2bx;
+        _4bz = 2.0f * _2bz;
+
+        // Gradient descent algorithm corrective step
+        s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) + _2q1 * (2.0f * q0q1 + _2q2q3 - ay) - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+        s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax) + _2q0 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q1 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az) + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+        s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax) + _2q3 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q2 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az) + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+        s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax) + _2q2 * (2.0f * q0q1 + _2q2q3 - ay) + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+        recipNorm = 1.0f / sqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
+        s0 *= recipNorm;
+        s1 *= recipNorm;
+        s2 *= recipNorm;
+        s3 *= recipNorm;
+
+        // Apply feedback step
+        qDot1 -= beta_val * s0;
+        qDot2 -= beta_val * s1;
+        qDot3 -= beta_val * s2;
+        qDot4 -= beta_val * s3;
+    }
+
+    // Integrate rate of change of quaternion
+    q0 += qDot1 * deltat;
+    q1 += qDot2 * deltat;
+    q2 += qDot3 * deltat;
+    q3 += qDot4 * deltat;
+
+    // Normalise quaternion
+    recipNorm = 1.0f / sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    q0 *= recipNorm;
+    q1 *= recipNorm;
+    q2 *= recipNorm;
+    q3 *= recipNorm;
+
+    // Update global quaternions
+    icm_q0 = q0;
+    icm_q1 = q1;
+    icm_q2 = q2;
+    icm_q3 = q3;
+}
+
+
 // Initialize ICM-20948 IMU
 void ICM_20948_init() {
   // Initialize ICM-20948 with I2C interface
@@ -250,96 +354,50 @@ void ICM_20948_read() {
     }
     // --- End Motion Detection & Dynamic Beta ---
 
-    // --- Madgwick AHRS IMU Update (Simplified) ---
-    // Local copies for calculation, to make the algorithm match the provided snippet more closely
-    float q0 = icm_q0, q1 = icm_q1, q2 = icm_q2, q3 = icm_q3;
+    // --- Madgwick AHRS MARG Update ---
     float ax = icm_accel[0], ay = icm_accel[1], az = icm_accel[2];
-    
-    // Correct gyroscope readings with current bias estimate
     float gx_corrected = icm_gyro[0] - gyroBias[0];
     float gy_corrected = icm_gyro[1] - gyroBias[1];
     float gz_corrected = icm_gyro[2] - gyroBias[2];
+    float mx_cal = icm_mag[0]; // Already calibrated
+    float my_cal = icm_mag[1]; // Already calibrated
+    float mz_cal = icm_mag[2]; // Already calibrated
 
-    float recipNorm;
-    // float s0, s1, s2, s3; // These were for context, not directly used in the simplified snippet
-    float qDot1, qDot2, qDot3, qDot4;
-    float _2q0, _2q1, _2q2; // _2q3 was not used in the simplified snippet's gradient
+    // Call the 9-axis Madgwick update function
+    MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
+                           ax, ay, az,
+                           mx_cal, my_cal, mz_cal,
+                           deltat, beta);
+    // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
 
-    // Rate of change of quaternion from gyroscope (using corrected gyro values)
-    qDot1 = 0.5f * (-q1 * gx_corrected - q2 * gy_corrected - q3 * gz_corrected);
-    qDot2 = 0.5f * ( q0 * gx_corrected + q2 * gz_corrected - q3 * gy_corrected);
-    qDot3 = 0.5f * ( q0 * gy_corrected - q1 * gz_corrected + q3 * gx_corrected);
-    qDot4 = 0.5f * ( q0 * gz_corrected + q1 * gy_corrected - q2 * gx_corrected);
-
-    // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
+    // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)
+    // For now, let's keep the existing gyro bias update logic based on accelerometer feedback
+    // as the MARG function above doesn't explicitly include gyro bias updates in this form.
+    // This part might need to be removed or adapted if the MARG implementation handles it.
+    // However, the provided MARG function does not update gyroBias.
+    // The IMU version had this:
     if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-        // Normalise accelerometer measurement
-        recipNorm = 1.0f / sqrt(ax * ax + ay * ay + az * az);
-        ax *= recipNorm;
-        ay *= recipNorm;
-        az *= recipNorm;
+        float recipNorm_acc;
+        recipNorm_acc = 1.0f / sqrt(ax * ax + ay * ay + az * az);
+        float ax_norm = ax * recipNorm_acc;
+        float ay_norm = ay * recipNorm_acc;
+        float az_norm = az * recipNorm_acc;
 
-        // Auxiliary variables to avoid repeated arithmetic
-        _2q0 = 2.0f * q0;
-        _2q1 = 2.0f * q1;
-        _2q2 = 2.0f * q2;
-        // _2q3 = 2.0f * q3; // _2q3 was not used in the provided simplified version's gradient calc
+        float hx_g = 2.0f * (icm_q1 * icm_q3 - icm_q0 * icm_q2);
+        float hy_g = 2.0f * (icm_q0 * icm_q1 + icm_q2 * icm_q3);
+        float hz_g = icm_q0 * icm_q0 - icm_q1 * icm_q1 - icm_q2 * icm_q2 + icm_q3 * icm_q3;
 
-        // Estimated direction of gravity in body frame from quaternion
-        // (Note: Original Madgwick uses 2*q1*q3 - 2*q0*q2 for v_x, etc. This is slightly different but matches snippet)
-        float hx_g = 2.0f * (q1 * q3 - q0 * q2); // Corresponds to 2*(q1q3 - q0q2) -> (vx in Madgwick paper)
-        float hy_g = 2.0f * (q0 * q1 + q2 * q3); // Corresponds to 2*(q0q1 + q2q3) -> (vy in Madgwick paper)
-        float hz_g = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3; // Corresponds to q0^2 - q1^2 - q2^2 + q3^2 -> (vz in Madgwick paper)
+        float ex = (ay_norm * hz_g - az_norm * hy_g);
+        float ey = (az_norm * hx_g - ax_norm * hz_g);
+        float ez = (ax_norm * hy_g - ay_norm * hx_g);
 
-        // Error is cross product between estimated direction and measured direction of gravity
-        float ex = (ay * hz_g - az * hy_g);
-        float ey = (az * hx_g - ax * hz_g);
-        float ez = (ax * hy_g - ay * hx_g);
-
-        // Update gyro bias using error terms (if learning is enabled)
         if (MADGWICK_GYRO_BIAS_LEARN_RATE > 0.0f) {
             gyroBias[0] += MADGWICK_GYRO_BIAS_LEARN_RATE * ex * deltat;
             gyroBias[1] += MADGWICK_GYRO_BIAS_LEARN_RATE * ey * deltat;
             gyroBias[2] += MADGWICK_GYRO_BIAS_LEARN_RATE * ez * deltat;
         }
-        
-        // Apply feedback to quaternion derivative
-        // (Original Madgwick paper: qDot1 -= beta * s0_gradient_component, etc. where s are components of J^T * F)
-        // The snippet implies a direct subtraction of these error terms.
-        // For an IMU (accel+gyro) update, the error term (ex, ey, ez) is used to correct the gyro rates.
-        // The gradient descent step involves multiplying these error terms by components of q.
-        // Re-interpreting the snippet's intention for qDot correction:
-        // s0, s1, s2, s3 are effectively the "gradient" components scaled by beta
-        // The snippet seems to be directly applying ex,ey,ez to qDot components.
-        // A standard IMU update would look like:
-        // s0 = _2q2 * ex - _2q1 * ey; // Simplified, assumes error is perpendicular to estimated gravity
-        // s1 = _2q3 * ex + _2q0 * ey - 2.0f * q1 * ez; // This is more complex
-        // For the provided snippet, it is:
-        qDot1 -= beta * ex; // This is not standard Madgwick gradient descent on qDot directly.
-        qDot2 -= beta * ey; // It implies ex, ey, ez are scaled components of angular error to correct gyro integration.
-        qDot3 -= beta * ez; // If ex,ey,ez are components of d(omega_err), then this makes sense.
-                            // Let's assume the snippet means to adjust the quaternion derivatives this way.
     }
-
-    // Integrate rate of change of quaternion
-    q0 += qDot1 * deltat;
-    q1 += qDot2 * deltat;
-    q2 += qDot3 * deltat;
-    q3 += qDot4 * deltat;
-
-    // Normalise quaternion
-    recipNorm = 1.0f / sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
-    q0 *= recipNorm;
-    q1 *= recipNorm;
-    q2 *= recipNorm;
-    q3 *= recipNorm;
-
-    // Update global quaternion variables
-    icm_q0 = q0;
-    icm_q1 = q1;
-    icm_q2 = q2;
-    icm_q3 = q3;
-    // --- End Madgwick AHRS IMU Update ---
+    // --- End Madgwick AHRS MARG Update ---
     
     // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
@@ -501,4 +559,28 @@ void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
   out_gyro[0] = icm_gyro[0] - gyroBias[0];
   out_gyro[1] = icm_gyro[1] - gyroBias[1];
   out_gyro[2] = icm_gyro[2] - gyroBias[2];
+}
+
+// Helper function to convert quaternion to Euler angles (Roll, Pitch, Yaw)
+// Roll (x-axis rotation)
+// Pitch (y-axis rotation)
+// Yaw (z-axis rotation)
+// Order of rotation: ZYX
+void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw) {
+    // Roll (x-axis rotation)
+    float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);
+    float cosr_cosp = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
+    roll = atan2(sinr_cosp, cosr_cosp);
+
+    // Pitch (y-axis rotation)
+    float sinp = 2.0f * (q0 * q2 - q3 * q1);
+    if (fabs(sinp) >= 1)
+        pitch = copysign(PI / 2, sinp); // use 90 degrees if out of range
+    else
+        pitch = asin(sinp);
+
+    // Yaw (z-axis rotation)
+    float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
+    float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
+    yaw = atan2(siny_cosp, cosy_cosp);
 }

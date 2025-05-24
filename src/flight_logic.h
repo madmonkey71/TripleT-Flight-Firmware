@@ -6,4 +6,6 @@
 bool detectApogee();
 bool detectLanding();
 void detectBoostEnd();
-bool IsStable(); // Check if rocket is stable (related to landing) 
+bool IsStable(); // Check if rocket is stable (related to landing)
+
+void update_guidance_targets();

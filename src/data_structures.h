@@ -37,8 +37,12 @@ typedef struct {
   float gyro_bias_x, gyro_bias_y, gyro_bias_z; // Estimated gyroscope biases (rad/s)
 
   // Guidance Control Data (subset for now)
-  // float target_euler_roll, target_euler_pitch, target_euler_yaw; // Target orientation (radians) - Deferred
-  // float pid_integral_roll, pid_integral_pitch, pid_integral_yaw; // PID integral terms - Deferred
+  float target_euler_roll;  // Target Euler roll (radians)
+  float target_euler_pitch; // Target Euler pitch (radians)
+  float target_euler_yaw;   // Target Euler yaw (radians)
+  float pid_integral_roll;  // PID integral for roll
+  float pid_integral_pitch; // PID integral for pitch
+  float pid_integral_yaw;   // PID integral for yaw
   float actuator_x, actuator_y, actuator_z; // Actuator output commands (-1.0 to 1.0)
 } LogData;
 

@@ -178,3 +178,15 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
                                                PID_INTEGRAL_LIMIT_YAW, PID_OUTPUT_MIN, PID_OUTPUT_MAX,
                                                deltat);
 }
+
+void guidance_get_target_euler_angles(float& out_target_roll_rad, float& out_target_pitch_rad, float& out_target_yaw_rad) {
+    out_target_roll_rad = target_roll_rad_g;
+    out_target_pitch_rad = target_pitch_rad_g;
+    out_target_yaw_rad = target_yaw_rad_g;
+}
+
+void guidance_get_pid_integrals(float& out_integral_roll, float& out_integral_pitch, float& out_integral_yaw) {
+    out_integral_roll = pid_roll_state_g.integral;
+    out_integral_pitch = pid_pitch_state_g.integral;
+    out_integral_yaw = pid_yaw_state_g.integral;
+}

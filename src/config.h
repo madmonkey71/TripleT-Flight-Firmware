@@ -111,6 +111,14 @@
 #define PID_INTEGRAL_LIMIT_PITCH 0.5f // Anti-windup for pitch
 #define PID_INTEGRAL_LIMIT_YAW 0.3f  // Anti-windup for yaw
 
+// --- Actuator Configuration ---
+#define ACTUATOR_PITCH_PIN 20 // Example pin, replace with actual
+#define ACTUATOR_ROLL_PIN  21 // Example pin, replace with actual
+#define ACTUATOR_YAW_PIN   22 // Example pin, replace with actual
+#define SERVO_MIN_PULSE_WIDTH 1000 // Microseconds (adjust as needed)
+#define SERVO_MAX_PULSE_WIDTH 2000 // Microseconds (adjust as needed)
+#define SERVO_DEFAULT_ANGLE 90     // Default angle for servos (degrees)
+
 // --- SD Card Driver Configuration (Platform Specific) ---
 
 // For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings

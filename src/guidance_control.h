@@ -53,4 +53,20 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
  */
 void guidance_get_actuator_outputs(float& output_x, float& output_y, float& output_z);
 
+/**
+ * @brief Retrieves the current target Euler angles.
+ * @param-out out_target_roll_rad Target roll angle in radians.
+ * @param-out out_target_pitch_rad Target pitch angle in radians.
+ * @param-out out_target_yaw_rad Target yaw angle in radians.
+ */
+void guidance_get_target_euler_angles(float& out_target_roll_rad, float& out_target_pitch_rad, float& out_target_yaw_rad);
+
+/**
+ * @brief Retrieves the current PID integral values for each axis.
+ * @param-out out_integral_roll PID integral for roll axis.
+ * @param-out out_integral_pitch PID integral for pitch axis.
+ * @param-out out_integral_yaw PID integral for yaw axis.
+ */
+void guidance_get_pid_integrals(float& out_integral_roll, float& out_integral_pitch, float& out_integral_yaw);
+
 #endif // GUIDANCE_CONTROL_H

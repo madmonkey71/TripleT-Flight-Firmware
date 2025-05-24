@@ -402,6 +402,15 @@ const char* logDataToString(const LogData& data) {
   return buffer;
 }
 
+// Helper function to map a float value from one range to another
+float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
+  // Check for division by zero if in_min == in_max
+  if (in_min == in_max) {
+    return out_min; // Or handle as an error, like returning NaN or a specific error value
+  }
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw) {
     // Roll (x-axis rotation)
     float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);

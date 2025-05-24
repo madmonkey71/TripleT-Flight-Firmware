@@ -34,4 +34,7 @@ extern bool isStationary;       // Defined in .cpp, used by main firmware
 extern float icm_q0, icm_q1, icm_q2, icm_q3;  // Quaternion components (w,x,y,z)
 extern float gyroBias[3];                   // Estimated gyroscope bias (rad/s)
 
+// Helper function to convert quaternion to Euler angles
+void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw);
+
 #endif // ICM_20948_FUNCTIONS_H

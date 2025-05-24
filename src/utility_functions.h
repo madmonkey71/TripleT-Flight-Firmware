@@ -88,6 +88,9 @@ void listRootDirectory(); // Function to list files in the root directory
 float get_accel_magnitude(); // Calculate acceleration magnitude from available sensors
 String logDataToString(const LogData& data); // Convert LogData struct to CSV string
 
+// Helper function to map a float value from one range to another
+float map_float(float x, float in_min, float in_max, float out_min, float out_max);
+
 // Debug formatting functions
 void printDebugHeader(const char* title);
 void printDebugValue(const char* label, float value, int precision = 2);

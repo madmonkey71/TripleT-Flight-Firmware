@@ -54,6 +54,7 @@
 #include "kx134_functions.h"  // Include KX134 functions
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
 #include "guidance_control.h" // For guidance and control functions
+#include "flight_logic.h"     // For update_guidance_targets()
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -77,6 +78,12 @@ extern float temperature;
 
 // Define sensor objects
 SparkFun_KX134 kx134Accel;  // Add KX134 accelerometer object definition
+
+// Servo objects for actuators
+#include <PWMServo.h> // Ensure it's included (already there)
+PWMServo servo_pitch;
+PWMServo servo_roll;
+PWMServo servo_yaw;
 
 // Global variables for ICM_20948 IMU data are defined in icm_20948_functions.cpp
 /*
@@ -341,12 +348,12 @@ void WriteLogData(bool forceLog) {
   // Without dedicated getter functions, we log placeholders or last known values if available.
   // For now, logging placeholders (0.0f).
   // A more complete solution would involve adding getters to guidance_control.cpp.
-  logEntry.target_euler_roll = 0.0f; // Placeholder
-  logEntry.target_euler_pitch = 0.0f; // Placeholder
-  logEntry.target_euler_yaw = 0.0f;   // Placeholder
-  logEntry.pid_integral_roll = 0.0f;  // Placeholder
-  logEntry.pid_integral_pitch = 0.0f; // Placeholder
-  logEntry.pid_integral_yaw = 0.0f;   // Placeholder
+  guidance_get_target_euler_angles(logEntry.target_euler_roll,
+                                   logEntry.target_euler_pitch,
+                                   logEntry.target_euler_yaw);
+  guidance_get_pid_integrals(logEntry.pid_integral_roll,
+                             logEntry.pid_integral_pitch,
+                             logEntry.pid_integral_yaw);
   
   guidance_get_actuator_outputs(logEntry.actuator_x, logEntry.actuator_y, logEntry.actuator_z);
 
@@ -960,6 +967,18 @@ void setup() {
   // Initialize Guidance Control System
   guidance_init();
   Serial.println(F("Guidance control system initialized."));
+
+  // Initialize Actuators
+  Serial.println(F("Initializing Actuators..."));
+  servo_pitch.attach(ACTUATOR_PITCH_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
+  servo_roll.attach(ACTUATOR_ROLL_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
+  servo_yaw.attach(ACTUATOR_YAW_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
+
+  // Set servos to a neutral/default position
+  servo_pitch.write(SERVO_DEFAULT_ANGLE);
+  servo_roll.write(SERVO_DEFAULT_ANGLE);
+  servo_yaw.write(SERVO_DEFAULT_ANGLE);
+  Serial.println(F("Actuators initialized and set to default positions."));
 }
 
 void loop() {
@@ -1139,6 +1158,9 @@ void loop() {
     ICM_20948_print();
   }
 
+  // Update dynamic guidance targets based on flight logic
+  update_guidance_targets();
+
   // --- Guidance Control System Update ---
   if (millis() - lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
       float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
@@ -1170,7 +1192,22 @@ void loop() {
       float actuator_x, actuator_y, actuator_z;
       guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
 
-      // 5. TODO: Send actuator_x, actuator_y, actuator_z to actual servo/motor outputs
+      // 5. Drive Servos
+      // Map PID outputs (-1.0 to 1.0 from PID_OUTPUT_MIN/MAX) to servo angles (0 to 180 degrees)
+      float pitch_angle = map_float(actuator_x, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+      float roll_angle  = map_float(actuator_y, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+      float yaw_angle   = map_float(actuator_z, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+
+      // Clamp angles to ensure they are within servo limits (0-180 typical)
+      pitch_angle = constrain(pitch_angle, 0, 180);
+      roll_angle  = constrain(roll_angle,  0, 180);
+      yaw_angle   = constrain(yaw_angle,   0, 180);
+      
+      // Write to servos
+      servo_pitch.write(static_cast<int>(pitch_angle));
+      servo_roll.write(static_cast<int>(roll_angle));
+      servo_yaw.write(static_cast<int>(yaw_angle));
+
       // For now, add a debug print if SystemDebug is enabled
       if (enableSystemDebug) { // Using existing SystemDebug flag for this
           static unsigned long lastGuidanceDebugPrintTime = 0;

@@ -29,9 +29,6 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 		 - [ ] Adjust when logging starts (State: Armed)
  - [ ] Verify Output to Telemetry viewer
  - [ ] 
-  
-
-
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

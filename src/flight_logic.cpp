@@ -4,6 +4,10 @@
 #include "utility_functions.h" // For get_accel_magnitude()
 #include "ms5611_functions.h"  // For ms5611_get_altitude()
 
+// Define global flight state variables
+unsigned long boostEndTime = 0;
+bool landingDetectedFlag = false;
+
 // --- External Globals Needed ---
 // Flight state and parameters are now declared extern in flight_logic.h
 
@@ -27,6 +31,8 @@ void saveStateToEEPROM();
 bool detectApogee() {
   float currentAltitude = ms5611_get_altitude();
   bool apogeeDetected = false;
+  static float maxAltitudeReached = 0.0f;
+  static int descendingCount = 0;
 
   // Method 1: Barometric detection (primary)
   if (ms5611Sensor.isConnected()) {
@@ -74,7 +80,7 @@ bool detectApogee() {
   // Method 3: Time-based detection (last resort)
   if (!apogeeDetected && boostEndTime > 0) {
     // If we know when the boost phase ended, we can estimate apogee
-    if (millis() - boostEndTime > BACKUP_APOGEE_TIME) {
+    if (millis() - boostEndTime > EXPECTED_APOGEE_TIME) {
       Serial.println(F("APOGEE DETECTED (time-based)"));
       apogeeDetected = true;
     }

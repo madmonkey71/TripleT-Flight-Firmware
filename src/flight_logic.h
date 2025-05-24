@@ -9,3 +9,7 @@ void detectBoostEnd();
 bool IsStable(); // Check if rocket is stable (related to landing)
 
 void update_guidance_targets();
+
+// Global flight state variables
+extern unsigned long boostEndTime;
+extern bool landingDetectedFlag;

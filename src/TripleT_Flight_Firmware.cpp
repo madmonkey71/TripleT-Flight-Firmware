@@ -188,9 +188,9 @@ bool createNewLogFile() {
   // Make sure the SD card is available
   if (!sdCardAvailable) {
     Serial.println(F("SD card not available, cannot create log file"));
-    return false;
-  }
-  
+      return false;
+    }
+    
   // Close any previously open log file
   if (LogDataFile) {
     LogDataFile.flush();
@@ -377,7 +377,7 @@ void WriteLogData(bool forceLog) {
       // Check again if file is now open after attempting creation
       if (!LogDataFile || !LogDataFile.isOpen()) {
         return; // Still couldn't open, exit
-      }
+    }
     } else {
        return; // SD not available, exit
     } 
@@ -560,7 +560,7 @@ void printStorageStatistics() {
 
 // Helper function to toggle debug flags and print their status
 // specificState: -1 = toggle, 0 = off, 1 = on
-void toggleDebugFlag(bool& flag, const __FlashStringHelper* name, Stream& output, int specificState = -1) {
+void toggleDebugFlag(volatile bool& flag, const __FlashStringHelper* name, Stream& output, int specificState = -1) {
   if (specificState == 0) { // Force OFF
     flag = false;
   } else if (specificState == 1) { // Force ON
@@ -581,42 +581,42 @@ void toggleDebugFlag(bool& flag, const __FlashStringHelper* name, Stream& output
 
 // Function to perform actual calibration logic (extracted for reuse)
 void performCalibration() {
-    if (!baroCalibrated) {
+                    if (!baroCalibrated) {
         pixels.setPixelColor(0, pixels.Color(50, 0, 50)); // Purple for calibration in progress
-        pixels.show();
+                        pixels.show();
         Serial.println(F("Starting barometric calibration with GPS..."));
         Serial.println(F("Waiting for good GPS fix (pDOP < 3.0)..."));
         
         if (ms5611_calibrate_with_gps(30000)) {  // Wait up to 30 seconds for calibration
-            Serial.println(F("Barometric calibration successful!"));
-            baroCalibrated = true;
+                            Serial.println(F("Barometric calibration successful!"));
+                            baroCalibrated = true;
             pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for success
-            pixels.show();
-            delay(1000);
-        } else {
-            Serial.println(F("Barometric calibration timed out or failed."));
+                            pixels.show();
+                            delay(1000);
+                        } else {
+                            Serial.println(F("Barometric calibration timed out or failed."));
             pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for failure
-            pixels.show();
-            delay(1000);
-        }
-    } else {
-        Serial.println(F("Barometric calibration has already been performed."));
+                            pixels.show();
+                            delay(1000);
+                        }
+                    } else {
+                        Serial.println(F("Barometric calibration has already been performed."));
     }
 }
 
 // Function to print system status (extracted for reuse by 'b' and legacy "status")
 void printSystemStatus() {
-    Serial.println("System Status:");
-    Serial.print("SD Card: ");
-    Serial.println(sdCardAvailable ? "Available" : "Not Available");
-    Serial.print("External Flash: ");
-    Serial.println(flashAvailable ? "Available" : "Not Available");
-    Serial.print("GPS: ");
-    Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
-    Serial.print("Barometer: ");
-    Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
-    Serial.print("Accelerometer: ");
-    Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
+        Serial.println("System Status:");
+        Serial.print("SD Card: ");
+        Serial.println(sdCardAvailable ? "Available" : "Not Available");
+        Serial.print("External Flash: ");
+        Serial.println(flashAvailable ? "Available" : "Not Available");
+        Serial.print("GPS: ");
+        Serial.println(myGNSS.getPVT() ? "Available" : "Not Available");
+        Serial.print("Barometer: ");
+        Serial.println(ms5611Sensor.isConnected() ? "Available" : "Not Available");
+        Serial.print("Accelerometer: ");
+        Serial.println(kx134Accel.dataReady() ? "Available" : "Not Available");
 }
 
 
@@ -648,21 +648,21 @@ void processCommand(String command) {
                 case 'c': // Dump
                     if (flashAvailable) {
                         Serial.println(F("Dump command not supported for external flash."));
-                    } else {
+      } else {
                         Serial.println(F("External flash not available."));
                     }
                     break;
                 case 'd': // Erase flash
                     if (flashAvailable) {
                         Serial.println(F("Erase command not supported for external flash."));
-                    } else {
+      } else {
                         Serial.println(F("External flash not available."));
                     }
                     break;
                 case 'e': // List logs
                     if (flashAvailable) {
                         Serial.println(F("List command not supported for external flash."));
-                    } else {
+      } else {
                         Serial.println(F("External flash not available."));
                     }
                     break;
@@ -735,7 +735,7 @@ void processCommand(String command) {
             } else { // "debug_all_off on" is not logical
                  Serial.println(F("debug_all_off only supports 'off' or toggle to off."));
             }
-        } else {
+      } else {
             Serial.print(F("Unknown debug flag: "));
             Serial.println(flagIdentifier);
         }
@@ -751,9 +751,9 @@ void processCommand(String command) {
         toggleDebugFlag(enableStatusSummary, F("Status summary"), Serial, 0);
         toggleDebugFlag(displayMode, F("Detailed display mode"), Serial, 0);
         toggleDebugFlag(enableSensorDebug, F("Sensor detail debug"), Serial, 0);
-        enableDetailedOutput = false; 
+      enableDetailedOutput = false;
         Serial.println(F("Legacy Detailed output (global): OFF"));
-    } else if (!command.isEmpty()) { // If command was not empty and not processed by above
+    } else if (command.length() > 0) { // Changed !command.isEmpty() to command.length() > 0
        Serial.print(F("Unknown command: '"));
        Serial.print(command);
        Serial.println(F("'"));
@@ -1114,7 +1114,7 @@ void loop() {
   sdCardAvailable = false;
   return; // <--- THIS IS THE FIX
 #endif
-// Log data immediately after any sensor update
+  // Log data immediately after any sensor update
   if (sensorsUpdated) {
     WriteLogData(true);
     sensorsUpdated = false;

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "config.h" // For Madgwick filter parameters
+#include "utility_functions.h" // Added to access convertQuaternionToEuler
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -65,9 +66,8 @@ void MadgwickAHRSupdateMARG(float gx, float gy, float gz, float ax, float ay, fl
     float recipNorm;
     float s0, s1, s2, s3;
     float qDot1, qDot2, qDot3, qDot4;
-    float hx, hy, hz; // Renamed from _hx, _hy to avoid leading underscore issues if any, and added hz
-    float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3;
-    float q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+    float hx, hy; // Removed hz as it was unused
+    float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
 
     // Use global quaternions
     float q0 = icm_q0;
@@ -566,21 +566,21 @@ void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
 // Pitch (y-axis rotation)
 // Yaw (z-axis rotation)
 // Order of rotation: ZYX
-void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw) {
-    // Roll (x-axis rotation)
-    float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);
-    float cosr_cosp = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
-    roll = atan2(sinr_cosp, cosr_cosp);
-
-    // Pitch (y-axis rotation)
-    float sinp = 2.0f * (q0 * q2 - q3 * q1);
-    if (fabs(sinp) >= 1)
-        pitch = copysign(PI / 2, sinp); // use 90 degrees if out of range
-    else
-        pitch = asin(sinp);
-
-    // Yaw (z-axis rotation)
-    float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
-    float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
-    yaw = atan2(siny_cosp, cosy_cosp);
-}
+// void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw) {
+//     // Roll (x-axis rotation)
+//     float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);
+//     float cosr_cosp = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
+//     roll = atan2(sinr_cosp, cosr_cosp);
+// 
+//     // Pitch (y-axis rotation)
+//     float sinp = 2.0f * (q0 * q2 - q3 * q1);
+//     if (fabs(sinp) >= 1)
+//         pitch = copysign(PI / 2, sinp); // use 90 degrees if out of range
+//     else
+//         pitch = asin(sinp);
+// 
+//     // Yaw (z-axis rotation)
+//     float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
+//     float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
+//     yaw = atan2(siny_cosp, cosy_cosp);
+// }

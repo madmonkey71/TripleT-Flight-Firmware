@@ -27,3 +27,6 @@ static constexpr uint32_t UKF_PROCESS_INTERVAL       = 50;    // Process UKF dat
 // Flight Logic Related (Consider moving to a flight_config.h later if needed)
 // BACKUP_APOGEE_TIME has been moved to config.h
 static constexpr uint32_t EXPECTED_APOGEE_TIME       = 10000; // Expected time from liftoff to apogee (ms) 
+
+// --- Physical Constants ---
+static constexpr float STANDARD_SEA_LEVEL_PRESSURE  = 1013.25f; // Standard sea level pressure in hPa (millibars) 

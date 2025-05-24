@@ -1,4 +1,5 @@
 #include "utility_functions.h"
+#include "config.h" // Ensure config.h is included for SD_CONFIG and other hardware defs
 #include "data_structures.h" // Include LogData definition
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
 #include <cmath> // Include for sqrt()
@@ -314,7 +315,7 @@ String logDataToString(const LogData& data) {
 
     for (size_t i = 0; i < LOG_COLUMN_COUNT; ++i) {
         const LogColumnDescriptor_t* desc = &LOG_COLUMNS[i];
-        const void* field_ptr = reinterpret_cast<const void*>(&data) + desc->offset;
+        const void* field_ptr = reinterpret_cast<const char*>(&data) + desc->offset; // Cast to char* for pointer arithmetic
         int written_chars = 0;
 
         // Ensure buffer has space before writing. Account for potential comma and null terminator.
@@ -354,8 +355,16 @@ String logDataToString(const LogData& data) {
                 dtostrf(*static_cast<const float*>(field_ptr), 1, 2, tempFloatBuffer);
                 written_chars = snprintf(buffer + offset, sizeof(buffer) - offset, "%s", tempFloatBuffer);
                 break;
+            case TYPE_FLOAT_P3: // For actuator outputs and similar
+                dtostrf(*static_cast<const float*>(field_ptr), 1, 3, tempFloatBuffer);
+                written_chars = snprintf(buffer + offset, sizeof(buffer) - offset, "%s", tempFloatBuffer);
+                break;
             case TYPE_FLOAT_P4: // For sensor float arrays (accel, gyro, mag)
                 dtostrf(*static_cast<const float*>(field_ptr), 1, 4, tempFloatBuffer);
+                written_chars = snprintf(buffer + offset, sizeof(buffer) - offset, "%s", tempFloatBuffer);
+                break;
+            case TYPE_FLOAT_P6_RAD: // For quaternions, euler angles in radians, gyro biases
+                dtostrf(*static_cast<const float*>(field_ptr), 1, 6, tempFloatBuffer);
                 written_chars = snprintf(buffer + offset, sizeof(buffer) - offset, "%s", tempFloatBuffer);
                 break;
             default:

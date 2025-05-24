@@ -26,12 +26,6 @@
 #define NEOPIXEL_PIN 2  // Pin for NeoPixel
 #define NEOPIXEL_COUNT 2  // Number of NeoPixels
 
-// Buzzer Configuration
-#ifndef BUZZER
-#define BUZZER 23  // Pin for buzzer
-#endif
-#define BUZZER_PIN BUZZER  // Alias for backward compatibility
-
 // External sensor objects - These should be included from their respective module headers
 // extern SparkFun_KX134 kx134Accel;
 // extern MS5611 ms5611Sensor;

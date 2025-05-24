@@ -44,7 +44,7 @@
 // --- Pin Definitions ---
 #define FLASH_CS_PIN 6                           // CS pin for Serial Flash (if used)
 #define NEOPIXEL_PIN 2                           // Pin for NeoPixel
-#define BUZZER_PIN 23                            // Pin for buzzer
+#define BUZZER_PIN 9                            // Pin for buzzer
 
 // --- NeoPixel Configuration ---
 #define NEOPIXEL_COUNT 2                         // Number of NeoPixels
@@ -112,47 +112,49 @@
 #define PID_INTEGRAL_LIMIT_YAW 0.3f  // Anti-windup for yaw
 
 // --- Actuator Configuration ---
-#define ACTUATOR_PITCH_PIN 20 // Example pin, replace with actual
-#define ACTUATOR_ROLL_PIN  21 // Example pin, replace with actual
-#define ACTUATOR_YAW_PIN   22 // Example pin, replace with actual
+#define ACTUATOR_PITCH_PIN 21 // Teensy pin 21
+#define ACTUATOR_ROLL_PIN  23 // Teensy pin 23. Not in hardware design yet
+#define ACTUATOR_YAW_PIN   20 // Teensy pin 20
 #define SERVO_MIN_PULSE_WIDTH 1000 // Microseconds (adjust as needed)
 #define SERVO_MAX_PULSE_WIDTH 2000 // Microseconds (adjust as needed)
 #define SERVO_DEFAULT_ANGLE 90     // Default angle for servos (degrees)
 
 // --- SD Card Driver Configuration (Platform Specific) ---
 
-// For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
-#ifndef SD_CONFIG
-#define SD_CONFIG SdioConfig(FIFO_SDIO)
-#endif
-#ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
-#define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
-#endif
-#ifndef SD_DETECT_PIN // Card detect pin for built-in socket
-#define SD_DETECT_PIN 39
-#endif
+#if defined(BOARD_TEENSY41)
+  // For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
+  #ifndef SD_CONFIG
+    #define SD_CONFIG SdioConfig(FIFO_SDIO)
+  #endif
+  #ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
+    #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
+  #endif
+  #ifndef SD_DETECT_PIN // Card detect pin for built-in socket
+    #define SD_DETECT_PIN 39
+  #endif
+#else
+  // For other boards (Teensy 4.0, etc.), use standard SPI with optimized settings
+  #ifndef SD_CS_PIN
+    #define SD_CS_PIN 10  // CS pin for SD card
+  #endif
+  #ifndef SD_CONFIG
+    #define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
+  #endif
+  #ifndef SD_BUF_SIZE // Buffer size for SdFat library operations
+    #define SD_BUF_SIZE 8192  // 8KB buffer for SD card operations on non-Teensy 4.1 boards
+  #endif
+  #ifndef SD_DETECT_PIN // Card detect pin (if available)
+    #define SD_DETECT_PIN 9 // Using a common default, can be changed by user
+  #endif
 
-/* For other boards (Teensy 4.0, etc.), use standard SPI with optimized settings
-#ifndef SD_CS_PIN
-#define SD_CS_PIN 10  // CS pin for SD card
+  // SPI Pins (only relevant if using SPI mode for non-Teensy 4.1)
+  #ifndef SD_MOSI_PIN
+    #define SD_MOSI_PIN 11 // Default SPI MOSI
+  #endif
+  #ifndef SD_MISO_PIN
+    #define SD_MISO_PIN 12 // Default SPI MISO
+  #endif
+  #ifndef SD_SCK_PIN
+    #define SD_SCK_PIN 13  // Default SPI SCK
+  #endif
 #endif
-#ifndef SD_CONFIG
-#define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
-#endif
-#ifndef SD_BUF_SIZE // Buffer size for SdFat library operations
-#define SD_BUF_SIZE 8192  // 8KB buffer for SD card operations on non-Teensy 4.1 boards
-#endif
-#ifndef SD_DETECT_PIN // Card detect pin (if available)
-#define SD_DETECT_PIN 9
-#endif
-*/
-// SPI Pins (only relevant if using SPI mode)
-// #ifndef SD_MOSI_PIN
-// #define SD_MOSI_PIN 11
-// #endif
-// #ifndef SD_MISO_PIN
-// #define SD_MISO_PIN 12
-// #endif
-// #ifndef SD_SCK_PIN
-// #define SD_SCK_PIN 13
-// #endif

@@ -1,7 +1,7 @@
 // TripleT Flight Firmware
-// Current Version: v0.20
+// Current Version: v0.30
 // Current State: Alpha
-// Last Updated: 21/05/2025
+// Last Updated: 24/05/2025
 // **Notes**
 // This code started out life as a remake of the Blip Test Code from Joe Barnard @ BPS.Space
 // Nothing remains of the original code but that's where the concept originated.
@@ -31,7 +31,7 @@
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.20
+#define TRIPLET_FLIGHT_VERSION 0.30
 
 // Define the board type if not defined by platformio.ini
 #ifndef BOARD_TEENSY40
@@ -55,6 +55,7 @@
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
 #include "guidance_control.h" // For guidance and control functions
 #include "flight_logic.h"     // For update_guidance_targets()
+#include "config.h"          // For pin definitions and other config
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -85,34 +86,8 @@ PWMServo servo_pitch;
 PWMServo servo_roll;
 PWMServo servo_yaw;
 
-// Global variables for ICM_20948 IMU data are defined in icm_20948_functions.cpp
-/*
-// Define the structure that matches our binary data format
-struct LogDataStruct {
-  uint32_t timestamp;      // 4 bytes
-  uint8_t fixType;        // 1 byte
-  uint8_t sats;           // 1 byte
-  int32_t latitude;       // 4 bytes
-  int32_t longitude;      // 4 bytes
-  int32_t altitude;       // 4 bytes
-  int32_t altitudeMSL;    // 4 bytes
-  int32_t speed;          // 4 bytes
-  int32_t heading;        // 4 bytes
-  uint16_t pDOP;          // 2 bytes
-  uint8_t rtk;            // 1 byte
-  float pressure;         // 4 bytes
-  float temperature;      // 4 bytes
-  float kx134_x;         // 4 bytes
-  float kx134_y;         // 4 bytes
-  float kx134_z;         // 4 bytes
-  float icm_accel[3];    // 12 bytes (x, y, z)
-  float icm_gyro[3];     // 12 bytes (x, y, z)
-  float icm_mag[3];      // 12 bytes (x, y, z)
-  float icm_temp;        // 4 bytes - Temperature from ICM sensor
-};
-*/
 // Storage configuration
-#define SD_CARD_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
+// #define SD_CARD_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space - REMOVED, defined in config.h
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 
 // Storage variables
@@ -237,7 +212,7 @@ bool createNewLogFile() {
       Serial.println(F("Error writing header buffer"));
       break;
     }
-    if (currentOffset >= sizeof(headerBuffer) -1) { // -1 for null terminator
+    if (currentOffset >= (int)(sizeof(headerBuffer) -1)) { // -1 for null terminator, cast to int
         Serial.println(F("Header buffer overflow!"));
         break;
     }
@@ -1108,11 +1083,13 @@ void loop() {
   
   
   #if DISABLE_SDCARD_LOGGING
-  // Logging disabled by configuration, ensure flags are false and exit immediately.
-  sdCardPresent = false;
-  sdCardMounted = false;
-  sdCardAvailable = false;
-  return; // <--- THIS IS THE FIX
+  // Logging disabled by configuration, ensure flags are false.
+  // The actual sdCardAvailable = false etc. is handled in setup.
+  // Removing the early return that prevented serial CSV output.
+  // sdCardPresent = false; // These are already set in setup if this macro is defined
+  // sdCardMounted = false;
+  // sdCardAvailable = false;
+  // return; // <--- REMOVED THIS LINE
 #endif
   // Log data immediately after any sensor update
   if (sensorsUpdated) {

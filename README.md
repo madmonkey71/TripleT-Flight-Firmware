@@ -43,9 +43,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Flight state detection (liftoff, boost, coast, apogee, descent)
 - ✅ Apogee detection (using multiple redundant methods)
 - ✅ Initial Parachute deployment control (drogue and main deployment logic)
+- ✅ Basic Actuator Control (PID-based, 3-axis for servos)
+- ✅ 9-axis MARG Sensor Fusion (Madgwick AHRS for orientation)
+- ✅ Dynamic Target Orientation System (Time-based example framework)
+- ✅ Logging of PID Controller States and Dynamic Targets
 - 🚧 Enhanced telemetry (Planned)
-- 🚧 Initial Parachute deployment control (drogue and main deployment logic)
-- 🚧 Thrust vector control (Planned)
 - 🚧 Live Transmission of data via radio (Planned)
 
 ### AI Assistance
@@ -70,7 +72,7 @@ TripleT Flight Firmware is an open-source flight controller software built for T
 - **Storage**:
   - SD Card (connected via SPI on Teensy 4.0, via SDIO on Teensy 4.1)
 - **Other Components**:
-  - Optional: Servo motors for TVC (pins 0, 1)
+  - Optional: Servo motors for control surfaces or Thrust Vector Control (TVC). Pins are configurable in `src/config.h` (e.g., `ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`).
   - Optional: Pyro channels (pins 5, 6, 7, 8)
   **Desirable additions**
   - 8Mb of additional flash
@@ -79,7 +81,10 @@ TripleT Flight Firmware is an open-source flight controller software built for T
 
 ## Features
 
-- **Multi-sensor Integration**: Combined data from GPS, barometer, accelerometer, and 9-DOF IMU
+- **Multi-sensor Integration**: Combined data from GPS, barometer, accelerometer, and 9-DOF IMU.
+- **MARG Sensor Fusion**: Employs a 9-axis Madgwick AHRS filter to fuse accelerometer, gyroscope, and magnetometer data from the ICM-20948. This provides robust orientation estimation (roll, pitch, yaw) with yaw drift correction essential for navigation and control.
+- **PID-based Actuator Control**: Features a configurable 3-axis PID controller designed to manage hardware actuators (e.g., PWM servos for Thrust Vector Control or control surfaces). PID outputs are mapped to servo signals. Gains, output limits, and integral anti-windup limits are configurable via `src/config.h`.
+- **Dynamic Target Updates**: Includes a system for dynamic updates to the PID controllers' target orientation (roll, pitch, yaw). The current implementation provides a basic time-based example for yaw target changes, serving as a framework for more complex mission-specific guidance logic.
 - **SD Card Logging**: Comprehensive data logging to SD card with CSV format
 - **GPS/Barometer Calibration**: Automatic or manual calibration of barometric altitude based on GPS data
   - Robust calibration with validation checks for pressure and GPS data
@@ -100,7 +105,9 @@ TripleT Flight Firmware is an open-source flight controller software built for T
   - GPS position, altitude, speed, and fix quality
   - Barometric pressure, temperature, and calibrated altitude
   - High-G acceleration measurements
-  - Orientation data from IMU (quaternions and Euler angles)
+  - Orientation data from IMU (quaternions and Euler angles).
+  - Full orientation quaternions (q0, q1, q2, q3) and derived Euler angles (roll, pitch, yaw) from the MARG filter.
+  - PID controller internal states including commanded target Euler angles, integral term values, and final actuator output commands.
 - **Interactive Serial Interface**: Command-driven system for data retrieval and configuration
 - **Diagnostic Tools**: I2C scanner, sensor status reporting, and storage space monitoring
 - **Configurable Debug Outputs**: Selectively enable/disable debug information for specific sensors
@@ -235,7 +242,24 @@ Key firmware features can be configured by modifying `#define` statements in `sr
   - `EXTERNAL_FLASH_MIN_FREE_SPACE`: Minimum required free space (in bytes) on the external flash memory (if used).
 - **EEPROM Configuration**:
   - `EEPROM_STATE_ADDR`: Starting memory address in EEPROM where the flight state data is stored.
-  - `EEPROM_SIGNATURE_VALUE`: A magic number used to validate the integrity of the data stored in EEPROM.
+  - `EEPROM_SIGNATURE_VALUE`: A magic number used to validate the integrity of preoccupied data stored in EEPROM.
+
+- **Madgwick Filter Configuration**:
+  - `MADGWICK_BETA_INIT`: Initial beta value for the Madgwick filter. This gain determines the filter's overall responsiveness. Higher values rely more on accelerometer/magnetometer data, while lower values trust the gyroscope more.
+  - `MADGWICK_BETA_STATIONARY`: Reduced beta value used when the system detects it is stationary. This promotes stability of the orientation estimate when there is no actual movement.
+  - `MADGWICK_BETA_MOTION`: Increased beta value used when the system detects motion. This allows the filter to respond more quickly to changes in orientation.
+  - `MADGWICK_GYRO_BIAS_LEARN_RATE`: Learning rate for the algorithm that estimates and compensates for gyroscope bias drift over time.
+
+- **PID Controller & Actuator Configuration**:
+  - `PID_ROLL_KP, PID_ROLL_KI, PID_ROLL_KD`: Proportional, Integral, and Derivative gains for the roll axis PID controller. These values tune the controller's response to roll errors.
+  - `PID_PITCH_KP, PID_PITCH_KI, PID_PITCH_KD`: Proportional, Integral, and Derivative gains for the pitch axis PID controller.
+  - `PID_YAW_KP, PID_YAW_KI, PID_YAW_KD`: Proportional, Integral, and Derivative gains for the yaw axis PID controller.
+  - `PID_OUTPUT_MIN, PID_OUTPUT_MAX`: Minimum and maximum normalized output values for the PID controllers (e.g., -1.0 to 1.0). This limits the command sent to actuators.
+  - `PID_INTEGRAL_LIMIT_ROLL, PID_INTEGRAL_LIMIT_PITCH, PID_INTEGRAL_LIMIT_YAW`: Anti-windup limits for the integral term of each PID axis. Prevents the integral term from growing too large, which can cause instability.
+  - `ACTUATOR_PITCH_PIN, ACTUATOR_ROLL_PIN, ACTUATOR_YAW_PIN`: Microcontroller pin assignments for the pitch, roll, and yaw actuator servos.
+  - `SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH`: Minimum and maximum pulse width (in microseconds) for servo control. These values define the servo's range of motion (typically 1000µs to 2000µs for 0-180 degrees).
+  - `SERVO_DEFAULT_ANGLE`: Default angle (in degrees) to which servos are set upon initialization and when no specific command is active.
+
 - **SD Card Driver Configuration (Board Specific)**:
   - These settings (`SD_CONFIG`, `SD_BUF_SIZE`, `SD_DETECT_PIN`, `SD_CS_PIN`) configure the SdFat library for the specific board (Teensy 4.1 SDIO or Teensy 4.0 SPI) and optimize performance. They are typically handled automatically based on the detected board type.
 
@@ -244,17 +268,26 @@ Key firmware features can be configured by modifying `#define` statements in `sr
 For detailed documentation, please refer to:
 - [System Documentation](docs/TripleT_Flight_Firmware_Documentation.md)
 
-## Future Enhancements
+## Potential Improvements and Future Work
 
-- Enhanced telemetry and wireless data transmission
-- Flight stabilization via thrust vector control implementation
-- Improved power management and battery monitoring
-- User-configurable settings saved to flash
-- Live data transmission via radio
-- Custom smartphone companion app for ground control
-- Advanced filtering algorithms for sensor fusion
-- Auto-diagnostics and self-testing capabilities
-- Dual-deployment redundancy systems
+- **Persistent Magnetometer Calibration:** Implement a mechanism to save and load magnetometer calibration values (bias and scale) to/from EEPROM or the SD card. This would avoid the need for recalibration or manual code changes after each power cycle.
+- **Advanced Flight State Machine for Guidance:** Integrate the dynamic target update system more deeply with a comprehensive flight state machine. Target orientations for the PID controllers should ideally be determined by the active flight phase (e.g., ascent, coast, specific pointing maneuvers, landing orientation).
+- **UKF and MARG Synergy:** Review and clarify the roles of the existing 1D Unscented Kalman Filter (UKF for altitude/velocity) and the new 9-axis Madgwick (MARG for attitude). Explore options for tighter integration, such as using MARG attitude to improve the UKF's state estimation or extending the UKF to a full 3D state estimator.
+- **Consolidate Helper Functions:** Resolve any duplicate helper functions (e.g., `convertQuaternionToEuler`) by ensuring a single, canonical version is used throughout the codebase, properly declared in a shared header.
+- **Configurable Actuator Axis Mapping:** Provide clear documentation and potentially runtime or compile-time configuration options for mapping logical PID axes (X, Y, Z from `guidance_control`) to physical servo outputs and their corresponding control effects (e.g., which servo controls pitch, roll, or yaw, and in which direction).
+- **Advanced PID Control Techniques:** Investigate and potentially implement advanced PID features such as derivative-on-measurement (to reduce setpoint kick), feedforward control (to improve response to known disturbances), or even auto-tuning capabilities.
+- **Guidance System Failsafes:** Develop more specific error handling and failsafe mechanisms for the guidance and control system. This could include strategies for sensor disagreements, actuator saturation, or unexpected flight dynamics.
+- **Refine `isStationary` Detection:** The current `isStationary` detection in `icm_20948_functions.cpp` relies on gyro magnitude and accelerometer variance. Its thresholds (`GYRO_THRESHOLD`, `ACCEL_VARIANCE_THRESHOLD`, `STATE_CHANGE_THRESHOLD`) might need tuning for different physical systems and environments.
+- **Magnetometer Disturbance Rejection:** Explore techniques for detecting and mitigating the effects of local magnetic disturbances on the MARG filter.
+- Enhanced telemetry and wireless data transmission.
+- Flight stabilization via more advanced thrust vector control implementation.
+- Improved power management and battery monitoring.
+- User-configurable settings saved to flash.
+- Live data transmission via radio.
+- Custom smartphone companion app for ground control.
+- Advanced filtering algorithms for sensor fusion (beyond current MARG/UKF).
+- Auto-diagnostics and self-testing capabilities.
+- Dual-deployment redundancy systems.
 
 ## Acknowledgements
 

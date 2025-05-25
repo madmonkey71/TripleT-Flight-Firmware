@@ -1,5 +1,5 @@
 // TripleT Flight Firmware
-// Current Version: v0.40
+// Current Version: v0.41
 // Current State: Alpha
 // Last Updated: 25/05/2025
 // **Notes**
@@ -31,7 +31,7 @@
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.40
+#define TRIPLET_FLIGHT_VERSION 0.41
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
@@ -543,7 +543,7 @@ void printSDCardStatus() {
   checkStorageSpace(); // Ensure availableSpace is up-to-date
 
   Serial.print(F("Physically Present: "));
-  Serial.println(sdCardPresent ? F("Yes") : F("No (or SD_DETECT_PIN not defined/functional)"));
+  Serial.println(sdCardPresent ? F("Yes") : F("No (SDIO initialization failed)"));
 
   Serial.print(F("Mounted: "));
   Serial.println(sdCardMounted ? F("Yes") : F("No"));

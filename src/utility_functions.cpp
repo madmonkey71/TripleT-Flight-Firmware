@@ -69,50 +69,21 @@ bool initSDCard() {
   sdCardMounted = false;
   sdCardAvailable = false;
 
-  // Step 1: Check physical presence using SD_DETECT_PIN (if defined)
-  #ifdef SD_DETECT_PIN
-    Serial.print(F("Checking SD card presence via SD_DETECT_PIN (Pin: "));
-    Serial.print(SD_DETECT_PIN);
-    Serial.println(F(")..."));
-    pinMode(SD_DETECT_PIN, INPUT_PULLUP);
-    if (digitalRead(SD_DETECT_PIN) == HIGH) {
-      Serial.println(F("ERROR: SD card not detected (SD_DETECT_PIN is HIGH)."));
-      Serial.println(F(" -> Please ensure the SD card is inserted properly."));
-      sdCardPresent = false; // Explicitly set
-      return false; // Critical error, cannot proceed
-    } else {
-      Serial.println(F("SUCCESS: SD card detected (SD_DETECT_PIN is LOW)."));
-      sdCardPresent = true;
-    }
-  #else
-    Serial.println(F("INFO: SD_DETECT_PIN is not defined. Assuming card is present for initialization attempt."));
-    // In absence of a detect pin, we can't confirm physical presence beforehand.
-    // We'll proceed to SD.begin() and see if it succeeds.
-    // sdCardPresent will be set to true if SD.begin() is successful,
-    // as that implies a card is present and communicating.
-  #endif
-
-  // Step 2: Initialize the SD card library
-  Serial.println(F("Initializing SD library (SD.begin)..."));
+  // Step 1: Initialize the SD card library using SDIO
+  // Note: Teensy 4.1 built-in SD card slot uses SDIO, no card detect pin needed
+  Serial.println(F("Initializing SD library (SD.begin) with SDIO..."));
   if (!SD.begin(SD_CONFIG)) {
     Serial.println(F("ERROR: SD.begin() failed."));
-    Serial.println(F(" -> Check card formatting (FAT16/FAT32), connections, and SD_CONFIG."));
-    #ifndef SD_DETECT_PIN
-        // If no detect pin, and SD.begin fails, it's likely no card or bad connection.
-        sdCardPresent = false; 
-    #endif
+    Serial.println(F(" -> Check card formatting (FAT16/FAT32), card insertion, or try a different SD card."));
+    sdCardPresent = false; // If SD.begin fails, likely no card or bad connection
     sdCardMounted = false; // Explicitly set
     return false; // Critical error, cannot proceed
   }
-  Serial.println(F("SUCCESS: SD.begin() completed."));
+  Serial.println(F("SUCCESS: SD.begin() completed with SDIO."));
   sdCardMounted = true; // Card is mounted
-  #ifndef SD_DETECT_PIN
-    // If SD.begin() succeeded and we don't have a detect pin,
-    // we can now assume a card is present.
-    sdCardPresent = true;
-  #endif
+  sdCardPresent = true; // If SD.begin() succeeded, card is present
 
-  // Step 3: Check FAT type
+  // Step 2: Check FAT type
   Serial.println(F("Checking filesystem type (SD.fatType())..."));
   uint8_t fatType = SD.fatType();
   if (fatType == 0) {
@@ -127,7 +98,7 @@ bool initSDCard() {
     // For simplicity, just printing the number or "EXFAT" if detected.
   }
 
-  // Step 4: Check card capacity and free space
+  // Step 3: Check card capacity and free space
   Serial.println(F("Checking card capacity and free space..."));
   
   // Card capacity

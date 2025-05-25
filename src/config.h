@@ -124,6 +124,4 @@
 #ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
   #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
 #endif
-#ifndef SD_DETECT_PIN // Card detect pin for built-in socket
-  #define SD_DETECT_PIN 39
-#endif
+// Note: Teensy 4.1 built-in SDIO SD card slot does not use a card detect pin

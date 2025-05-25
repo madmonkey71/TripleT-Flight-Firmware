@@ -1,0 +1,35 @@
+# Build directory
+.pio
+.pioenvs
+.piolibdeps
+
+# IDE files
+.vscode
+.idea
+
+# Compiled files
+*.o
+*.elf
+*.hex
+*.bin
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Debug files
+debug.txt
+*.log
+
+# Backup files
+*.bak
+*~
+
+# Editor temp files
+*.swp
+
+#
+ChatLog.md
+
+flight_visualizer/.venv
+.venv

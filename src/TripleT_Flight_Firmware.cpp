@@ -520,6 +520,8 @@ void printHelpMessage() {
   Serial.println(F("  h  : Calibrate barometer (also 'calibrate')"));
   Serial.println(F("  i  : Display current IMU data"));
   Serial.println(F("  j  : Toggle status summary display"));
+  Serial.println(F("  k  : Save current gyro biases to EEPROM (also 'save_gyro_bias')"));
+  Serial.println(F("  l  : Clear saved gyro biases from EEPROM (also 'clear_gyro_bias')"));
   
   Serial.println(F("\nMulti-Character Commands:"));
   Serial.println(F("  start_log                  : Attempt to initialize SD card and start/restart logging"));
@@ -531,6 +533,8 @@ void printHelpMessage() {
   Serial.println(F("  calibrate                  : Attempt barometer calibration"));
   Serial.println(F("  status                     : Show system component status"));
   Serial.println(F("  summary                    : Toggle status summary display"));
+  Serial.println(F("  save_gyro_bias             : Save current gyro biases to EEPROM"));
+  Serial.println(F("  clear_gyro_bias            : Clear saved gyro biases from EEPROM"));
   Serial.println(F("\nLegacy Commands (use new versions if possible):"));
   Serial.println(F("  sd                         : Toggle sensor_detail_debug"));
   Serial.println(F("  rd                         : Toggle icm_raw_debug"));
@@ -747,6 +751,8 @@ void processCommand(String command) {
                 case 'h': performCalibration(); break;
                 case 'i': ICM_20948_print(); break;
                 case 'j': toggleDebugFlag(enableStatusSummary, F("Status summary"), Serial); break;
+                case 'k': save_gyro_bias_to_eeprom(); break;
+                case 'l': clear_gyro_bias_in_eeprom(); break;
                 default: Serial.println(F("Unknown alphabetic command.")); break;
             }
             return;
@@ -766,6 +772,10 @@ void processCommand(String command) {
         printSDCardStatus();
     } else if (command == "start_log") {
         attemptToStartLogging();
+    } else if (command == "save_gyro_bias") {
+        save_gyro_bias_to_eeprom();
+    } else if (command == "clear_gyro_bias") {
+        clear_gyro_bias_in_eeprom();
     } else if (command == "sd") { // Legacy "sd"
         toggleDebugFlag(enableSensorDebug, F("Sensor detail debug"), Serial);
     } else if (command == "rd") { // Legacy "rd"
@@ -1044,6 +1054,14 @@ void setup() {
   servo_roll.write(SERVO_DEFAULT_ANGLE);
   servo_yaw.write(SERVO_DEFAULT_ANGLE);
   Serial.println(F("Actuators initialized and set to default positions."));
+
+  // Initialize Flight State Machine
+  initialize_flight_state_machine();
+  // Transition to PAD_IDLE after setup
+  currentFlightState = PAD_IDLE; // Directly set state after init
+  Serial.print("Transitioning to State: ");
+  Serial.println(get_flight_state_name(currentFlightState));
+  // lastStateChangeTime = millis(); // If lastStateChangeTime is accessible and needs update
 }
 
 void loop() {
@@ -1224,6 +1242,9 @@ void loop() {
     lastDetailedTime = millis();
     ICM_20948_print();
   }
+
+  // Process flight state machine
+  process_flight_state();
 
   // Update dynamic guidance targets based on flight logic
   update_guidance_targets();

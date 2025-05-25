@@ -37,4 +37,9 @@ extern float gyroBias[3];                   // Estimated gyroscope bias (rad/s)
 // Helper function to convert quaternion to Euler angles
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw);
 
+// EEPROM functions for gyro bias
+void save_gyro_bias_to_eeprom();
+bool load_gyro_bias_from_eeprom();
+void clear_gyro_bias_in_eeprom();
+
 #endif // ICM_20948_FUNCTIONS_H

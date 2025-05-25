@@ -52,6 +52,13 @@
 #define APOGEE_CONFIRMATION_COUNT 3              // Multiple readings required to confirm apogee
 #define LANDING_CONFIRMATION_COUNT 10            // Multiple readings required to confirm landing
 
+// --- Pyro Channel Definitions (from backup state machine) ---
+#define PYRO_CHANNEL_1 2      // GPIO pin for drogue deployment (example, verify hardware)
+#define PYRO_CHANNEL_2 3      // GPIO pin for main deployment (example, verify hardware)
+
+// --- State Machine Timeouts (from backup state machine) ---
+#define BACKUP_APOGEE_TIME 15000 // Backup time-based apogee detection (ms after boost)
+
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES 3
 #define BAROMETER_ERROR_THRESHOLD 10.0           // 10 hPa change between readings is suspicious
@@ -76,6 +83,13 @@
 // --- EEPROM Configuration ---
 #define EEPROM_STATE_ADDR 0                     // EEPROM address for flight state structure
 #define EEPROM_SIGNATURE_VALUE 0xABCD           // Signature to validate EEPROM data
+
+// Gyro Bias EEPROM Configuration
+#define EEPROM_GYRO_BIAS_SIGNATURE_ADDR 100 // Address for gyro bias signature
+#define EEPROM_GYRO_BIAS_SIGNATURE      0x4742 // 'GB' Signature for Gyro Bias data
+#define EEPROM_GYRO_BIAS_X_ADDR         (EEPROM_GYRO_BIAS_SIGNATURE_ADDR + sizeof(uint16_t))
+#define EEPROM_GYRO_BIAS_Y_ADDR         (EEPROM_GYRO_BIAS_X_ADDR + sizeof(float))
+#define EEPROM_GYRO_BIAS_Z_ADDR         (EEPROM_GYRO_BIAS_Y_ADDR + sizeof(float))
 
 // --- Madgwick Filter Configuration ---
 #define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)

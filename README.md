@@ -41,19 +41,17 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Basic diagnostic tools
 - ✅ GPS/Barometer calibration
 - ✅ Configurable debug outputs
-- 🚧 Flight state detection (liftoff, boost, coast, apogee, descent)
+- [ ] Flight state detection (liftoff, boost, coast, apogee, descent)
   - [ ] This got lost in a github mishap on my system. Roadmap to re-implement it  
-- ✅ Apogee detection (using multiple redundant methods)
-- ✅ Initial Parachute deployment control (drogue and main deployment logic)
+- [ ] Apogee detection (using multiple redundant methods)
+- [ ] Initial Parachute deployment control (drogue and main deployment logic)
 - ✅ Basic Actuator Control (PID-based, 3-axis for servos)
 - ✅ 9-axis MARG Sensor Fusion (Madgwick AHRS for orientation)
 - ✅ Dynamic Target Orientation System (Time-based example framework)
 - ✅ Logging of PID Controller States and Dynamic Targets
 - 🚧 IMU Calibration (How do we fix drift in the madgwick implementation)
   - 🚧 The current setup has significant drift in it's current form
-- 🚧 Enhanced telemetry (Planned)
-  - ✅ Add all data to the logging so that it's exposed to being processed as telemetry.
-- 🚧 Live Transmission of data via radio (Planned)
+- ✅ Add all data to the logging so that it's exposed to being processed as telemetry.
 
 ### AI Assistance
 This project utilizes AI assistance for:
@@ -275,24 +273,23 @@ For detailed documentation, please refer to:
 
 ## Potential Improvements and Future Work
 
-- [ ] **Persistent Magnetometer Calibration:** Implement a mechanism to save and load magnetometer calibration values (bias and scale) to/from EEPROM or the SD card. This would avoid the need for recalibration or manual code changes after each power cycle.
-- [ ] **Advanced Flight State Machine for Guidance:** Integrate the dynamic target update system more deeply with a comprehensive flight state machine. Target orientations for the PID controllers should ideally be determined by the active flight phase (e.g., ascent, coast, specific pointing maneuvers, landing orientation).
-- [ ] **UKF and MARG Synergy:** Review and clarify the roles of the existing 1D Unscented Kalman Filter (UKF for altitude/velocity) and the new 9-axis Madgwick (MARG for attitude). Explore options for tighter integration, such as using MARG attitude to improve the UKF's state estimation or extending the UKF to a full 3D state estimator.
 - [ ] **Consolidate Helper Functions:** Resolve any duplicate helper functions (e.g., `convertQuaternionToEuler`) by ensuring a single, canonical version is used throughout the codebase, properly declared in a shared header.
-- [ ] **Configurable Actuator Axis Mapping:** Provide clear documentation and potentially runtime or compile-time configuration options for mapping logical PID axes (X, Y, Z from `guidance_control`) to physical servo outputs and their corresponding control effects (e.g., which servo controls pitch, roll, or yaw, and in which direction).
-- [ ] **Advanced PID Control Techniques:** Investigate and potentially implement advanced PID features such as derivative-on-measurement (to reduce setpoint kick), feedforward control (to improve response to known disturbances), or even auto-tuning capabilities.
-- [ ] **Guidance System Failsafes:** Develop more specific error handling and failsafe mechanisms for the guidance and control system. This could include strategies for sensor disagreements, actuator saturation, or unexpected flight dynamics.
 - [ ] **Refine `isStationary` Detection:** The current `isStationary` detection in `icm_20948_functions.cpp` relies on gyro magnitude and accelerometer variance. Its thresholds (`GYRO_THRESHOLD`, `ACCEL_VARIANCE_THRESHOLD`, `STATE_CHANGE_THRESHOLD`) might need tuning for different physical systems and environments.
-- [ ]  **Magnetometer Disturbance Rejection:** Explore techniques for detecting and mitigating the effects of local magnetic disturbances on the MARG filter.
-- [ ] Enhanced telemetry and wireless data transmission.
-- [ ] Flight stabilization via more advanced thrust vector control implementation.
-- [ ] Improved power management and battery monitoring.
-- [ ] User-configurable settings saved to flash.
-- [ ] Live data transmission via radio.
-- [ ] Custom smartphone companion app for ground control.
-- [ ] Advanced filtering algorithms for sensor fusion (beyond current MARG/UKF).
-- [ ] Auto-diagnostics and self-testing capabilities.
-- [ ] Dual-deployment redundancy systems.
+- [ ] **User-Configurable Settings Persistence:** Implement a system for saving and loading key user-configurable settings (e.g., calibration data, deployment altitudes) to EEPROM or an SD card file.
+- [ ] **Persistent Magnetometer Calibration:** Implement a mechanism to save and load magnetometer calibration values (bias and scale) to/from EEPROM or the SD card. This would avoid the need for recalibration or manual code changes after each power cycle.
+- [ ] **Configurable Actuator Axis Mapping:** Provide clear documentation and potentially runtime or compile-time configuration options for mapping logical PID axes (X, Y, Z from `guidance_control`) to physical servo outputs and their corresponding control effects (e.g., which servo controls pitch, roll, or yaw, and in which direction).
+- [ ] **Improved Power Management and Battery Monitoring:** Implement features for monitoring battery voltage and potentially optimizing power consumption.
+- [ ] **Auto-Diagnostics and Self-Testing:** Develop basic auto-diagnostics and self-testing capabilities to check sensor health and system integrity on startup.
+- [ ] **Guidance System Failsafes:** Develop more specific error handling and failsafe mechanisms for the guidance and control system. This could include strategies for sensor disagreements, actuator saturation, or unexpected flight dynamics.
+- [ ] **Magnetometer Disturbance Rejection:** Explore techniques for detecting and mitigating the effects of local magnetic disturbances on the MARG filter.
+- [ ] **Enhanced Telemetry and Wireless Data Transmission:** Further develop telemetry capabilities beyond comprehensive logging, including planning for live wireless data transmission.
+- [ ] **Advanced PID Control Techniques:** Investigate and potentially implement advanced PID features such as derivative-on-measurement (to reduce setpoint kick), feedforward control (to improve response to known disturbances), or even auto-tuning capabilities.
+- [ ] **Advanced Flight State Machine for Guidance:** Integrate the dynamic target update system more deeply with a comprehensive flight state machine after the basic one is re-integrated. Target orientations for the PID controllers should ideally be determined by the active flight phase.
+- [ ] **UKF and MARG Synergy:** Review and clarify the roles of the existing 1D Unscented Kalman Filter (UKF for altitude/velocity) and the 9-axis Madgwick (MARG for attitude). Explore options for tighter integration.
+- [ ] **Flight Stabilization (Advanced TVC):** Enhance flight stabilization via a more advanced Thrust Vector Control implementation.
+- [ ] **Dual-Deployment Redundancy Systems:** Design and implement redundancy for parachute deployment mechanisms.
+- [ ] **Custom Smartphone Companion App:** Develop a custom smartphone companion app for ground control and live telemetry display.
+- [ ] **Advanced Sensor Fusion Algorithms:** Research and implement more advanced filtering algorithms for sensor fusion beyond the current MARG/UKF setup.
 
 ## Acknowledgements
 

@@ -1,7 +1,8 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include "config.h" // For Madgwick filter parameters
+#include <EEPROM.h> // Added for EEPROM persistence
+#include "config.h" // For Madgwick filter parameters and EEPROM addresses
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
 
 // Add extern declarations for the debug flags
@@ -258,6 +259,14 @@ void ICM_20948_init() {
   
   Serial.println("ICM-20948 initialized successfully");
   
+  // Load gyro biases from EEPROM
+  if (load_gyro_bias_from_eeprom()) {
+    Serial.println("Successfully loaded gyro biases during init.");
+  } else {
+    Serial.println("Failed to load gyro biases during init, using defaults (0,0,0).");
+    // gyroBias is already initialized to {0,0,0} globally
+  }
+
   // Initialize variables
   isStationary = true;
   accelMagnitudePrev = 0;
@@ -584,3 +593,46 @@ void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
 //     float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
 //     yaw = atan2(siny_cosp, cosy_cosp);
 // }
+
+// --- EEPROM Gyro Bias Functions ---
+
+// Save current gyro biases to EEPROM
+void save_gyro_bias_to_eeprom() {
+  EEPROM.put(EEPROM_GYRO_BIAS_SIGNATURE_ADDR, EEPROM_GYRO_BIAS_SIGNATURE);
+  EEPROM.put(EEPROM_GYRO_BIAS_X_ADDR, gyroBias[0]);
+  EEPROM.put(EEPROM_GYRO_BIAS_Y_ADDR, gyroBias[1]);
+  EEPROM.put(EEPROM_GYRO_BIAS_Z_ADDR, gyroBias[2]);
+  Serial.println("Gyro biases saved to EEPROM.");
+}
+
+// Load gyro biases from EEPROM
+bool load_gyro_bias_from_eeprom() {
+  uint16_t signature;
+  EEPROM.get(EEPROM_GYRO_BIAS_SIGNATURE_ADDR, signature);
+
+  if (signature == EEPROM_GYRO_BIAS_SIGNATURE) {
+    EEPROM.get(EEPROM_GYRO_BIAS_X_ADDR, gyroBias[0]);
+    EEPROM.get(EEPROM_GYRO_BIAS_Y_ADDR, gyroBias[1]);
+    EEPROM.get(EEPROM_GYRO_BIAS_Z_ADDR, gyroBias[2]);
+    Serial.println("Loaded gyro biases from EEPROM.");
+    return true;
+  } else {
+    Serial.println("No valid gyro biases found in EEPROM. Using defaults.");
+    // gyroBias is already {0.0f, 0.0f, 0.0f} due to global initialization
+    // For clarity, one could re-initialize:
+    // gyroBias[0] = 0.0f;
+    // gyroBias[1] = 0.0f;
+    // gyroBias[2] = 0.0f;
+    return false;
+  }
+}
+
+// Clear saved gyro biases from EEPROM (by invalidating the signature)
+void clear_gyro_bias_in_eeprom() {
+  EEPROM.put(EEPROM_GYRO_BIAS_SIGNATURE_ADDR, (uint16_t)0xFFFF); // Write invalid signature
+  // Optionally clear the data itself
+  // EEPROM.put(EEPROM_GYRO_BIAS_X_ADDR, 0.0f);
+  // EEPROM.put(EEPROM_GYRO_BIAS_Y_ADDR, 0.0f);
+  // EEPROM.put(EEPROM_GYRO_BIAS_Z_ADDR, 0.0f);
+  Serial.println("Cleared gyro biases in EEPROM.");
+}

@@ -1,175 +1,212 @@
 #include "flight_logic.h"
-#include "config.h"        // For flight parameters and configuration
-#include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
-#include "utility_functions.h" // For get_accel_magnitude()
-#include "ms5611_functions.h"  // For ms5611_get_altitude()
+#include "config.h"
+#include "utility_functions.h"
+#include "ms5611_functions.h"
+#include "icm_20948_functions.h" // For icm_accel, kx134_accel might be here or in kx134_functions.h
+#include "kx134_functions.h"   // For kx134_accel
+// #include "Adafruit_NeoPixel.h" // pixels object is externed in utility_functions.h, so direct include not needed here
 
-// Define global flight state variables
+// --- Global and Static Variable Definitions ---
+FlightState currentFlightState = STARTUP;
+float launchAltitude = 0.0f;
+float maxAltitudeReached = 0.0f;
+
+static unsigned long flightStartTime = 0; // Not used yet, but defined as per plan
+static unsigned long lastStateChangeTime = 0;
+static int descendingCount_apogee = 0; // Renamed to avoid conflict with local variables in original detectApogee
+static float currentFlightAltitude = 0.0f; // Local cache of altitude
+
+// Existing global variables (review if they are still needed or managed by state machine)
 unsigned long boostEndTime = 0;
 bool landingDetectedFlag = false;
 
-// --- External Globals Needed ---
-// Flight state and parameters are now declared extern in flight_logic.h
 
-// Sensor readiness/data (Check how these are defined in the original file)
-extern bool kx134_initialized_ok; // From main file?
-#define kx134_accel_ready (kx134_initialized_ok) // Replicate macro definition if needed
-extern bool icm20948_ready; // From main file or ICM header?
-// ms5611_ready is defined in ms5611_functions.h as ms5611Sensor.isConnected()
+// --- External Globals That Might Be Needed ---
+// Sensor readiness/data (Ensure these are correctly externed or available through functions)
+// extern bool kx134_initialized_ok; // This should be available from kx134_functions.cpp/h if needed
+// extern bool icm20948_ready; // This should be available from icm_20948_functions.cpp/h if needed
 
-// Sensor raw data (Check headers or declare extern)
-extern float kx134_accel[3];
-extern float icm_accel[3];
+// Sensor raw data (Preferably accessed via functions if possible)
+// extern float kx134_accel[3]; // Accessed via get_current_accel_magnitude -> get_accel_magnitude
+// extern float icm_accel[3];   // Accessed via get_current_accel_magnitude -> get_accel_magnitude
 
 // Forward declaration for saveStateToEEPROM if called from detectLanding
-void saveStateToEEPROM();
+// This should be declared in a header if it's a global utility, or passed as a function pointer.
+// For now, assuming it's available or will be handled.
+// void saveStateToEEPROM(); // Commenting out, as it's not defined in this context yet.
 
+// --- New State Machine Core Functions ---
 
-// --- Function Definitions ---
+void initialize_flight_state_machine() {
+  currentFlightState = STARTUP; // Or PAD_IDLE after initial checks in main setup()
+  lastStateChangeTime = millis();
+  launchAltitude = 0.0f;
+  maxAltitudeReached = 0.0f;
+  descendingCount_apogee = 0;
+  currentFlightAltitude = 0.0f; // Initialize local cache
+  Serial.println("Flight State Machine Initialized. State: STARTUP");
+}
 
-// Redundant apogee detection
+const char* get_flight_state_name(FlightState state) {
+  switch (state) {
+    case STARTUP: return "STARTUP";
+    case CALIBRATION: return "CALIBRATION";
+    case PAD_IDLE: return "PAD_IDLE";
+    case ARMED: return "ARMED";
+    case BOOST: return "BOOST";
+    case COAST: return "COAST";
+    case APOGEE: return "APOGEE";
+    case DROGUE_DEPLOY: return "DROGUE_DEPLOY";
+    case DROGUE_DESCENT: return "DROGUE_DESCENT";
+    case MAIN_DEPLOY: return "MAIN_DEPLOY";
+    case MAIN_DESCENT: return "MAIN_DESCENT";
+    case LANDED: return "LANDED";
+    case RECOVERY: return "RECOVERY";
+    case ERROR_STATE: return "ERROR_STATE";
+    default: return "UNKNOWN_STATE";
+  }
+}
+
+float get_current_baro_altitude() {
+  // This function adapts the existing ms5611_get_altitude()
+  // and updates currentFlightAltitude
+  // Assuming ms5611_get_altitude() returns calibrated altitude if baroCalibrated is true
+  currentFlightAltitude = ms5611_get_altitude();
+  return currentFlightAltitude;
+}
+
+float get_current_accel_magnitude() {
+  // This function adapts the existing get_accel_magnitude() from utility_functions.h
+  // get_accel_magnitude() itself handles which accelerometer to use (KX134 or ICM)
+  return get_accel_magnitude();
+}
+
+void process_flight_state() {
+  // TODO: Implement full state machine logic here in the next step.
+  // For now, just print the current state periodically for debugging.
+  static unsigned long lastPrintTime = 0;
+  if (millis() - lastPrintTime > 2000) {
+    Serial.print("Current Flight State: ");
+    Serial.println(get_flight_state_name(currentFlightState));
+    lastPrintTime = millis();
+  }
+}
+
+// --- Adapted Helper Functions ---
+
+// Redundant apogee detection - ADAPTED
 bool detectApogee() {
-  float currentAltitude = ms5611_get_altitude();
+  float currentAltitude = get_current_baro_altitude(); // ADAPTED
   bool apogeeDetected = false;
-  static float maxAltitudeReached = 0.0f;
-  static int descendingCount = 0;
+  // maxAltitudeReached is now global static
+  // descendingCount_apogee is now global static
 
   // Method 1: Barometric detection (primary)
-  if (ms5611Sensor.isConnected()) {
-    // Track maximum altitude
+  if (ms5611Sensor.isConnected()) { // Keep direct sensor check for availability
     if (currentAltitude > maxAltitudeReached) {
       maxAltitudeReached = currentAltitude;
-      descendingCount = 0;
-    }
-    else if (currentAltitude < maxAltitudeReached - 1.0) {
-      // Altitude is decreasing significantly
-      descendingCount++;
-
-      // Require multiple consecutive readings to confirm
-      if (descendingCount >= APOGEE_CONFIRMATION_COUNT) {
+      descendingCount_apogee = 0;
+    } else if (currentAltitude < maxAltitudeReached - 1.0) { // Threshold for descent detection
+      descendingCount_apogee++;
+      if (descendingCount_apogee >= APOGEE_CONFIRMATION_COUNT) {
         Serial.println(F("APOGEE DETECTED (barometric)"));
         apogeeDetected = true;
       }
     }
   }
 
-  // Method 2: Accelerometer-based detection (backup)
-  // Check if vertical acceleration is close to zero (indicating peak)
-  if (!apogeeDetected && (kx134_accel_ready || icm20948_ready)) {
-    float accel_z = kx134_accel_ready ? kx134_accel[2] : icm_accel[2];
+  // Method 2: Accelerometer-based detection (backup) - STUB for now, logic needs review with new accel getter
+  // Original logic relied on direct kx134_accel[2] or icm_accel[2]
+  // This needs to be adapted if we only have magnitude or need specific Z-axis component
+  // For now, this part is simplified / placeholder
+  // if (!apogeeDetected) {
+  //   float accel_mag = get_current_accel_magnitude(); // This gives magnitude, not Z component
+  //   // Logic based on Z-axis accel would need get_accel_vector() or similar
+  // }
 
-    // Counter for near-zero acceleration readings
-    static int accelNearZeroCount = 0;
-    const float accel_apogee_threshold = 0.1; // g threshold around zero
-
-    // Check if absolute value of z-acceleration is below threshold
-    if (fabs(accel_z) < accel_apogee_threshold) {
-      accelNearZeroCount++;
-      // Require multiple consecutive readings near zero G
-      if (accelNearZeroCount >= 5) { // Use a count similar to the old check for now
-        Serial.println(F("APOGEE DETECTED (accelerometer - near zero G)"));
-        apogeeDetected = true;
-        accelNearZeroCount = 0; // Reset after detection
-      }
-    } else {
-      // Reset count if acceleration moves away from zero
-      accelNearZeroCount = 0;
-    }
-  }
 
   // Method 3: Time-based detection (last resort)
   if (!apogeeDetected && boostEndTime > 0) {
-    // If we know when the boost phase ended, we can estimate apogee
-    if (millis() - boostEndTime > EXPECTED_APOGEE_TIME) {
-      Serial.println(F("APOGEE DETECTED (time-based)"));
+    if (millis() - boostEndTime > BACKUP_APOGEE_TIME) { // ADAPTED to use BACKUP_APOGEE_TIME from config.h
+      Serial.println(F("APOGEE DETECTED (time-based backup)"));
       apogeeDetected = true;
     }
   }
-
   return apogeeDetected;
 }
 
-// Redundant landing detection
+// Redundant landing detection - ADAPTED
 bool detectLanding() {
   static int stableCount = 0;
-  bool landingDetected = false;
+  bool landingDetectedLocal = false; // Use local flag to avoid premature global flag change
 
   // Method 1: Accelerometer stability (primary)
-  if (kx134_accel_ready || icm20948_ready) {
-    float accel_magnitude = get_accel_magnitude();
-
-    // Check if acceleration is close to 1g (just gravity)
-    if (accel_magnitude > 0.95 && accel_magnitude < 1.05) {
+  float accel_magnitude = get_current_accel_magnitude(); // ADAPTED
+  if (accel_magnitude > 0.0) { // Ensure valid reading
+    if (accel_magnitude > 0.95 && accel_magnitude < 1.05) { // Close to 1g
       stableCount++;
     } else {
       stableCount = 0;
     }
-
-    // Require extended stability to confirm landing
     if (stableCount >= LANDING_CONFIRMATION_COUNT) {
-      landingDetected = true;
+      landingDetectedLocal = true;
     }
   }
 
   // Method 2: Barometric stability (backup)
-  if (!landingDetected && ms5611Sensor.isConnected()) {
-    static float lastAltitude = 0.0;
+  if (!landingDetectedLocal && ms5611Sensor.isConnected()) {
+    static float lastAltitude = -1000.0f; // Initialize to an unlikely value
     static int altitudeStableCount = 0;
+    float currentAltitude = get_current_baro_altitude(); // ADAPTED
 
-    float currentAltitude = ms5611_get_altitude();
-
-    // Check if altitude is stable
-    if (fabs(currentAltitude - lastAltitude) < 1.0) {
-      altitudeStableCount++;
-    } else {
-      altitudeStableCount = 0;
+    if (lastAltitude > -999.0f) { // Check if lastAltitude is initialized
+        if (fabs(currentAltitude - lastAltitude) < 1.0) { // Altitude stable within 1m
+            altitudeStableCount++;
+        } else {
+            altitudeStableCount = 0;
+        }
     }
-
     lastAltitude = currentAltitude;
 
-    // Require extended stability to confirm landing
     if (altitudeStableCount >= LANDING_CONFIRMATION_COUNT) {
-      landingDetected = true;
+      landingDetectedLocal = true;
     }
   }
 
-  // If landing detected, log it and save state
-  if (landingDetected && !landingDetectedFlag) {
+  if (landingDetectedLocal && !landingDetectedFlag) { // If newly detected
     Serial.println(F("LANDING DETECTED"));
-    landingDetectedFlag = true;
-    // Save state immediately on landing detection
-    saveStateToEEPROM(); // Assumes saveStateToEEPROM is accessible (declared above)
+    landingDetectedFlag = true; // Set the global flag
+    // saveStateToEEPROM(); // Call to save state, ensure it's available
   }
-
-  return landingDetected;
+  return landingDetectedLocal; // Return local status for current call
 }
 
-// Track boost end for time-based apogee detection
+// Track boost end for time-based apogee detection - ADAPTED
 void detectBoostEnd() {
-  float accel_magnitude = get_accel_magnitude();
-
-  // When acceleration drops below threshold, record the time
-  if (accel_magnitude < COAST_ACCEL_THRESHOLD && boostEndTime == 0) {
-    boostEndTime = millis();
-    Serial.println(F("BOOST END DETECTED"));
-    Serial.print(F("Time since startup: "));
-    Serial.print(boostEndTime / 1000.0);
-    Serial.println(F(" seconds"));
+  if (boostEndTime == 0) { // Only detect once
+    float accel_magnitude = get_current_accel_magnitude(); // ADAPTED
+    if (accel_magnitude < COAST_ACCEL_THRESHOLD && currentFlightState == BOOST) { // Ensure we are in BOOST state
+      boostEndTime = millis();
+      Serial.println(F("BOOST END DETECTED"));
+      Serial.print(F("Time since startup: "));
+      Serial.print(boostEndTime / 1000.0);
+      Serial.println(F(" seconds"));
+    }
   }
 }
 
-// Check if rocket is stable (no significant motion)
+// Check if rocket is stable (no significant motion) - ADAPTED
 bool IsStable() {
-  float accel_magnitude = get_accel_magnitude();
-  // Consider stable if acceleration is close to 1g (gravity only)
-  return (accel_magnitude > 0.95 && accel_magnitude < 1.05);
-} 
+  float accel_magnitude = get_current_accel_magnitude(); // ADAPTED
+  return (accel_magnitude > 0.95 && accel_magnitude < 1.05); // Close to 1g
+}
 
+// --- Existing update_guidance_targets() function ---
 // Ensure includes for the new function are present.
 // These might be redundant if already at the top, but ensures they are available.
 #include "guidance_control.h" // For guidance_set_target_orientation_euler()
-#include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
-#include <Arduino.h>          // For millis() and PI
+// #include "icm_20948_functions.h" // Already included at the top
+// #include <Arduino.h>          // Already included via flight_logic.h
 
 // Global quaternions are extern in icm_20948_functions.h, so no need for separate extern here.
 // For debug prints in update_guidance_targets

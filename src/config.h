@@ -67,7 +67,7 @@
 #define SD_CARD_MIN_FREE_SPACE 5 * 1024 * 1024   // 50MB minimum free space
 #define SD_CACHE_SIZE 8                          // Cache factor for SD operations
 #define LOG_PREALLOC_SIZE 5000000                // Pre-allocate 5MB for log file
-#define DISABLE_SDCARD_LOGGING true              // Disable SD card logging by default (only for use in testing)
+#define DISABLE_SDCARD_LOGGING false             // Disable SD card logging by default (only for use in testing)
 
 // Logging Buffers (RAM)
 #define MAX_LOG_ENTRIES 1                       // Max log entries to buffer in RAM

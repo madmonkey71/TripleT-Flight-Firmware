@@ -60,58 +60,107 @@ void scan_i2c() {
     Serial.println(F("I2C scan complete\n"));
 }
 
-// Initialize the SD card with simpler error handling
+// Initialize the SD card with detailed error handling and status reporting
 bool initSDCard() {
+  Serial.println(F("--- SD Card Initialization ---"));
 
-  // If we reach here, logging is enabled.
-  Serial.println(F("Initializing SD card..."));
-  
-  // Reset SD card flags initially (will be set below if successful)
+  // Reset SD card flags initially
   sdCardPresent = false;
   sdCardMounted = false;
   sdCardAvailable = false;
-  
-  // Check if card detect pin is defined and check physical presence
+
+  // Step 1: Check physical presence using SD_DETECT_PIN (if defined)
   #ifdef SD_DETECT_PIN
+    Serial.print(F("Checking SD card presence via SD_DETECT_PIN (Pin: "));
+    Serial.print(SD_DETECT_PIN);
+    Serial.println(F(")..."));
     pinMode(SD_DETECT_PIN, INPUT_PULLUP);
     if (digitalRead(SD_DETECT_PIN) == HIGH) {
-      Serial.println(F("SD card not physically present (card detect pin is HIGH)"));
-      return false;
+      Serial.println(F("ERROR: SD card not detected (SD_DETECT_PIN is HIGH)."));
+      Serial.println(F(" -> Please ensure the SD card is inserted properly."));
+      sdCardPresent = false; // Explicitly set
+      return false; // Critical error, cannot proceed
     } else {
+      Serial.println(F("SUCCESS: SD card detected (SD_DETECT_PIN is LOW)."));
       sdCardPresent = true;
     }
+  #else
+    Serial.println(F("INFO: SD_DETECT_PIN is not defined. Assuming card is present for initialization attempt."));
+    // In absence of a detect pin, we can't confirm physical presence beforehand.
+    // We'll proceed to SD.begin() and see if it succeeds.
+    // sdCardPresent will be set to true if SD.begin() is successful,
+    // as that implies a card is present and communicating.
   #endif
-  
-  // Try to initialize the SD card with configured settings
+
+  // Step 2: Initialize the SD card library
+  Serial.println(F("Initializing SD library (SD.begin)..."));
   if (!SD.begin(SD_CONFIG)) {
-    Serial.println(F("SD card initialization failed"));
-    return false;
+    Serial.println(F("ERROR: SD.begin() failed."));
+    Serial.println(F(" -> Check card formatting (FAT16/FAT32), connections, and SD_CONFIG."));
+    #ifndef SD_DETECT_PIN
+        // If no detect pin, and SD.begin fails, it's likely no card or bad connection.
+        sdCardPresent = false; 
+    #endif
+    sdCardMounted = false; // Explicitly set
+    return false; // Critical error, cannot proceed
+  }
+  Serial.println(F("SUCCESS: SD.begin() completed."));
+  sdCardMounted = true; // Card is mounted
+  #ifndef SD_DETECT_PIN
+    // If SD.begin() succeeded and we don't have a detect pin,
+    // we can now assume a card is present.
+    sdCardPresent = true;
+  #endif
+
+  // Step 3: Check FAT type
+  Serial.println(F("Checking filesystem type (SD.fatType())..."));
+  uint8_t fatType = SD.fatType();
+  if (fatType == 0) {
+    Serial.println(F("ERROR: SD.fatType() returned 0. Filesystem is not FAT16 or FAT32 or card not usable."));
+    Serial.println(F(" -> Reformat the card with a supported FAT filesystem."));
+    sdCardAvailable = false; // Card is mounted but not usable
+    return false; 
+  } else {
+    Serial.print(F("SUCCESS: Filesystem type is FAT"));
+    Serial.println(fatType == FAT_TYPE_EXFAT ? F("EX (EXFAT)") : String(fatType));
+    // Note: SdFat typically uses defines like FAT_TYPE_FAT16, FAT_TYPE_FAT32, FAT_TYPE_EXFAT
+    // For simplicity, just printing the number or "EXFAT" if detected.
   }
 
-  // Card initialized successfully
-  Serial.println(F("SD card initialized successfully"));
-  sdCardMounted = true;
+  // Step 4: Check card capacity and free space
+  Serial.println(F("Checking card capacity and free space..."));
   
-  // Get volume information directly from SD object
-  if (SD.fatType() == 0) {
-    Serial.println(F("Failed to get FAT type - card may not be usable"));
+  // Card capacity
+  uint32_t sectorCount = SD.card()->sectorCount();
+  if (sectorCount == 0) {
+    Serial.println(F("ERROR: Failed to get card sector count (SD.card()->sectorCount() returned 0)."));
+    Serial.println(F(" -> Card may be corrupted or unreadable."));
+    sdCardAvailable = false; // Card is mounted but details are not readable
     return false;
   }
-  
-  // Print card capacity and available space
-  uint64_t cardCapacity = (uint64_t)SD.card()->sectorCount() * 512;
-  Serial.print(F("SD card capacity: "));
+  uint64_t cardCapacity = (uint64_t)sectorCount * 512; // SdFat uses 512 byte sectors
+  Serial.print(F("  Card Capacity: "));
   Serial.print(cardCapacity / (1024ULL * 1024ULL));
   Serial.println(F(" MB"));
-  
-  // Calculate available space
-  availableSpace = (uint64_t)SD.vol()->freeClusterCount() * 
-                   (uint64_t)SD.vol()->bytesPerCluster();
-  Serial.print(F("Available space: "));
+
+  // Free space
+  uint32_t freeClusterCount = SD.vol()->freeClusterCount();
+  uint32_t bytesPerCluster = SD.vol()->bytesPerCluster();
+  if (bytesPerCluster == 0) { // Check if bytesPerCluster is valid
+      Serial.println(F("ERROR: Failed to get valid cluster size (bytesPerCluster is 0)."));
+      Serial.println(F(" -> Filesystem metadata might be corrupted."));
+      sdCardAvailable = false;
+      return false;
+  }
+  availableSpace = (uint64_t)freeClusterCount * bytesPerCluster;
+  Serial.print(F("  Available Space: "));
   Serial.print(availableSpace / (1024ULL * 1024ULL));
   Serial.println(F(" MB"));
-  
+
+  // All checks passed
+  Serial.println(F("SUCCESS: SD card is initialized, mounted, and available."));
   sdCardAvailable = true;
+  Serial.println(F("--- SD Card Initialization Complete ---"));
   return true;
 }
 

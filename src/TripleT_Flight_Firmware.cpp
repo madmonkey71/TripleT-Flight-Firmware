@@ -194,7 +194,8 @@ bool createNewLogFile() {
   
   // Open the file
   if (!LogDataFile.open(fileName, O_RDWR | O_CREAT | O_EXCL)) {
-    Serial.println(F("Failed to create log file"));
+    Serial.println(F("Error: Failed to create new log file. SD card might be full, unformatted, or corrupted. Please check the SD card."));
+    loggingEnabled = false; // Ensure logging is marked as disabled
     return false;
   }
   
@@ -339,30 +340,72 @@ void WriteLogData(bool forceLog) {
   }
 
 
-  // If SD card not available, just return
-  if (!sdCardAvailable) {
+  // --- SD Card Logging Logic ---
+  static unsigned long lastLogWriteErrorTime = 0;
+  static unsigned long lastRateLimitedLogStatusMsgTime = 0;
+  const unsigned long LOG_WRITE_RETRY_DELAY_MS = 10000; // 10 seconds
+  const unsigned long RATE_LIMITED_LOG_STATUS_INTERVAL_MS = 30000; // 30 seconds
+
+  // If SD card is not available or logging is generally disabled, return early.
+  if (!sdCardAvailable || !loggingEnabled) {
+    if (millis() - lastRateLimitedLogStatusMsgTime > RATE_LIMITED_LOG_STATUS_INTERVAL_MS) {
+      Serial.println(F("INFO: Logging to SD card is currently disabled (SD not available or loggingEnabled=false)."));
+      lastRateLimitedLogStatusMsgTime = millis();
+    }
     return;
   }
 
-  // Write to SD card if file is open
+  // Check if the log file is open. If not, try to create/reopen it.
   if (!LogDataFile || !LogDataFile.isOpen()) {
-    // Try to create new log file if none exists
-    if (sdCardAvailable) {
-      createNewLogFile(); // Attempt to open/create file
-      // Check again if file is now open after attempting creation
-      if (!LogDataFile || !LogDataFile.isOpen()) {
-        return; // Still couldn't open, exit
-    }
+    if (millis() - lastLogWriteErrorTime > LOG_WRITE_RETRY_DELAY_MS) { // Rate limit attempts to reopen
+      Serial.println(F("INFO: Log file is not open. Attempting to create a new log file..."));
+      if (createNewLogFile()) {
+        Serial.println(F("INFO: New log file created successfully."));
+      } else {
+        Serial.println(F("ERROR: Failed to create a new log file. Logging will be suspended for a while."));
+        loggingEnabled = false; // Suspend logging if we can't create a file
+        lastLogWriteErrorTime = millis(); // Update timestamp to enforce delay
+        return; // Exit if file creation failed
+      }
     } else {
-       return; // SD not available, exit
-    } 
+      // Not enough time has passed since the last error, return to avoid flooding.
+      if (millis() - lastRateLimitedLogStatusMsgTime > RATE_LIMITED_LOG_STATUS_INTERVAL_MS) {
+         Serial.println(F("INFO: Logging to SD card is temporarily suspended due to previous file operation failure."));
+         lastRateLimitedLogStatusMsgTime = millis();
+      }
+      return;
+    }
   }
   
-  // Write data to file as text
-  if (!LogDataFile.println(logDataToString(logEntry))) {
-    Serial.println(F("Failed to write to log file"));
-    // Consider closing/reopening file or other error handling here
-    return;
+  // At this point, LogDataFile should be open. Attempt to write the log entry.
+  String logString = logDataToString(logEntry);
+  if (!LogDataFile.println(logString)) {
+    Serial.println(F("ERROR: Failed to write data to log file. Current log file might be closed or corrupted."));
+    lastLogWriteErrorTime = millis(); // Record time of write error
+
+    // Attempt to recover: Close current file and try to open a new one.
+    if (LogDataFile.isOpen()) {
+      LogDataFile.close();
+      Serial.println(F("INFO: Closed current log file due to write error."));
+    }
+    
+    // Attempt to create a new log file immediately (createNewLogFile has its own internal logic for success/failure)
+    if (createNewLogFile()) {
+      Serial.println(F("INFO: Successfully created a new log file. Retrying write for the current log entry."));
+      // Retry writing the same log entry to the new file
+      if (!LogDataFile.println(logString)) {
+        Serial.println(F("ERROR: Failed to write data to the *new* log file. Logging will be suspended."));
+        loggingEnabled = false; // Critical failure, disable logging
+      } else {
+        Serial.println(F("INFO: Successfully wrote data to the new log file after recovery."));
+        // Consider flushing immediately after successful recovery write
+        LogDataFile.flush();
+      }
+    } else {
+      Serial.println(F("ERROR: Failed to create a new log file after write error. Logging will be suspended."));
+      loggingEnabled = false; // Disable logging as recovery failed
+    }
+    return; // Return whether recovery was successful or not, to avoid normal flush logic on a failed write.
   }
   
   // Flush every 10 writes to reduce card wear while ensuring data is written
@@ -474,6 +517,8 @@ void printHelpMessage() {
 
   Serial.println(F("\nSingle-Key Commands:"));
   Serial.println(F("  0-6: Toggle specific debug flags (see status above)"));
+  Serial.println(F("  7  : Attempt to initialize SD card and start/restart logging (also 'start_log')"));
+  Serial.println(F("  8  : Check SD card status (presence, mount, space, log file) (also 'sd_status')"));
   Serial.println(F("  9  : Initiate Shutdown"));
   Serial.println(F("  a  : Show this help message (also 'help')"));
   Serial.println(F("  b  : Show system component status (also 'status')"));
@@ -487,6 +532,8 @@ void printHelpMessage() {
   Serial.println(F("  j  : Toggle status summary display"));
   
   Serial.println(F("\nMulti-Character Commands:"));
+  Serial.println(F("  start_log                  : Attempt to initialize SD card and start/restart logging"));
+  Serial.println(F("  sd_status                  : Check SD card status"));
   Serial.println(F("  debug_<flag_name> [on|off] : Set or toggle a debug flag. Examples: 'debug_system on', 'debug_imu off', 'debug_gps'"));
   Serial.println(F("    Known flags: system, imu, gps, baro, storage, icm_raw, serial_csv, sensor_detail, status_summary, detailed_display"));
   Serial.println(F("  debug_all_off              : Disable all common debug flags"));
@@ -498,6 +545,68 @@ void printHelpMessage() {
   Serial.println(F("  sd                         : Toggle sensor_detail_debug"));
   Serial.println(F("  rd                         : Toggle icm_raw_debug"));
   Serial.println(F("================================="));
+}
+
+// Function to print detailed SD Card status
+void printSDCardStatus() {
+  Serial.println(F("\n--- SD Card Status ---"));
+  checkStorageSpace(); // Ensure availableSpace is up-to-date
+
+  Serial.print(F("Physically Present: "));
+  Serial.println(sdCardPresent ? F("Yes") : F("No (or SD_DETECT_PIN not defined/functional)"));
+
+  Serial.print(F("Mounted: "));
+  Serial.println(sdCardMounted ? F("Yes") : F("No"));
+
+  Serial.print(F("Logging Enabled: "));
+  Serial.println(loggingEnabled ? F("Yes") : F("No"));
+
+  if (sdCardMounted) {
+    Serial.print(F("Available Space: "));
+    if (availableSpace >= 1024 * 1024) { // More than 1MB
+      Serial.print(availableSpace / (1024ULL * 1024ULL));
+      Serial.println(F(" MB"));
+    } else {
+      Serial.print(availableSpace / 1024ULL);
+      Serial.println(F(" KB"));
+    }
+    Serial.print(F("Current Log File: "));
+    if (strlen(logFileName) > 0 && loggingEnabled) {
+      Serial.println(logFileName);
+    } else {
+      Serial.println(F("None or logging not active"));
+    }
+  } else {
+    Serial.println(F("Available Space: N/A (Card not mounted)"));
+    Serial.println(F("Current Log File: N/A (Card not mounted)"));
+  }
+  Serial.println(F("----------------------"));
+}
+
+// Function to attempt to initialize SD card and start/restart logging
+void attemptToStartLogging() {
+  Serial.println(F("\n--- Attempting to Start Logging ---"));
+
+  // Explicitly re-initialize the SD card. This will also reset status flags.
+  Serial.println(F("Step 1: Initializing SD card..."));
+  sdCardAvailable = initSDCard(); // initSDCard() updates sdCardPresent, sdCardMounted
+
+  if (sdCardAvailable) {
+    Serial.println(F("SUCCESS: SD card initialized."));
+    Serial.println(F("Step 2: Attempting to create a new log file..."));
+    if (createNewLogFile()) { // createNewLogFile() sets loggingEnabled to true on success
+      Serial.print(F("SUCCESS: Logging started. Current log file: "));
+      Serial.println(logFileName);
+    } else {
+      Serial.println(F("ERROR: Failed to create a new log file. Logging remains disabled."));
+      // loggingEnabled is already set to false by createNewLogFile() on failure
+    }
+  } else {
+    Serial.println(F("ERROR: Failed to initialize SD card. Logging cannot be started."));
+    loggingEnabled = false; // Ensure logging is disabled
+    // sdCardPresent and sdCardMounted are handled by initSDCard()
+  }
+  Serial.println(F("--- Logging Attempt Complete ---"));
 }
 
 // Updated storage stats with more concise output
@@ -610,7 +719,9 @@ void processCommand(String command) {
                 case '4': toggleDebugFlag(enableBaroDebug, F("Barometer debug"), Serial); break;
                 case '5': toggleDebugFlag(enableStorageDebug, F("Storage debug"), Serial); break;
                 case '6': toggleDebugFlag(enableICMRawDebug, F("ICM raw debug"), Serial); break;
-                case '9': prepareForShutdown(); break; // Corrected comment
+                case '7': attemptToStartLogging(); break;
+                case '8': printSDCardStatus(); break;
+                case '9': prepareForShutdown(); break;
                 default: Serial.println(F("Unknown numeric command.")); break;
             }
             return;
@@ -660,7 +771,11 @@ void processCommand(String command) {
     } else if (command == "summary") { // Legacy "summary"
         toggleDebugFlag(enableStatusSummary, F("Status summary"), Serial);
     } else if (command == "status") { // Legacy "status"
-        printSystemStatus(); 
+        printSystemStatus();
+    } else if (command == "sd_status") {
+        printSDCardStatus();
+    } else if (command == "start_log") {
+        attemptToStartLogging();
     } else if (command == "sd") { // Legacy "sd"
         toggleDebugFlag(enableSensorDebug, F("Sensor detail debug"), Serial);
     } else if (command == "rd") { // Legacy "rd"

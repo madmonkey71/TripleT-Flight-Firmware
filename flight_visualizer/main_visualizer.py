@@ -6,6 +6,11 @@ import time
 import csv
 import collections # For collections.deque
 import pprint # For pretty printing data, useful in debugging
+import os # Added for setting environment variables
+from PIL import Image, ImageTk # Added for off-screen rendering
+
+# Force PyVista to use PyQt5, must be done before PyVista imports
+os.environ['PYVISTA_QT_API'] = 'pyqt5'
 
 # GUI and plotting libraries
 import tkinter as tk
@@ -13,11 +18,11 @@ from tkinter import ttk, messagebox # Themed Tkinter widgets and standard dialog
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk # Matplotlib Tkinter embedding
+from matplotlib.ticker import FuncFormatter # Added for custom timestamp formatting
 
 # Numerical and 3D libraries
 import numpy as np
 import pyvista as pv
-from pyvistaqt import BackgroundPlotter # PyVista integration with Qt backend (needed for Tkinter)
 from scipy.spatial.transform import Rotation as R_scipy # For quaternion to rotation matrix conversion
 
 
@@ -46,7 +51,7 @@ PRINT_RAW_SERIAL = False  # Debug flag: Set to True to print all raw lines recei
 DATA_TYPE_MAPPING = {
     # General / System
     "SeqNum": "int",        # Sequence number of the log entry
-    "Timestamp": "int",     # Timestamp, typically milliseconds from start
+    "Timestamp": "float",     # Changed from "int" to "float" for robust parsing
 
     # GPS Data
     "FixType": "int",       # GPS fix type (e.g., 0: No fix, 3: 3D fix)
@@ -58,7 +63,7 @@ DATA_TYPE_MAPPING = {
     "Speed": "float",       # GPS ground speed (m/s)
     "Heading": "float",     # GPS heading (degrees)
     "pDOP": "float",        # GPS Position Dilution of Precision
-    "RTK": "int",           # RTK fix status (if applicable)
+    "RTK": "float",           # RTK fix status (if applicable)
 
     # Barometer / Environment
     "RawAltitude": "float", # Altitude calculated from raw pressure
@@ -89,6 +94,18 @@ DATA_TYPE_MAPPING = {
     "TargetRoll_rad": "float", "TargetPitch_rad": "float", "TargetYaw_rad": "float", # Target Euler angles for guidance
     "PIDIntRoll": "float", "PIDIntPitch": "float", "PIDIntYaw": "float"    # PID controller integral terms
 }
+
+# Helper function for formatting milliseconds to HH:MM:SS
+def format_milli_to_hhmmss(milliseconds, pos):
+    # print(f"DEBUG: format_milli_to_hhmmss received: {milliseconds} (type: {type(milliseconds)})") # Uncomment for deep debug
+    if milliseconds is None or not isinstance(milliseconds, (int, float)) or milliseconds < 0:
+        # print("DEBUG: format_milli_to_hhmmss returning empty due to invalid input") # Uncomment for deep debug
+        return "" # Return empty string for invalid inputs
+    total_seconds = int(milliseconds / 1000)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 # --- Serial Communication Functions ---
 
@@ -159,13 +176,16 @@ def read_serial_data(port, baudrate):
     This function runs in a separate thread and continuously reads data from the specified serial port.
     It parses incoming CSV data, converts values to their appropriate types,
     and adds the data (as a dictionary) to the global `data_queue`.
-    Handles header detection and data integrity checks (column count).
+    It now assumes COLUMN_HEADERS and EXPECTED_COLUMN_COUNT are pre-initialized based on DATA_TYPE_MAPPING.
 
     Args:
         port (str): The serial port to connect to (e.g., 'COM3' or '/dev/ttyUSB0').
         baudrate (int): The baud rate for the serial communication (e.g., 115200).
     """
     global serial_connection, data_queue, stop_thread_flag, COLUMN_HEADERS, EXPECTED_COLUMN_COUNT, DATA_TYPE_MAPPING
+
+    # COLUMN_HEADERS and EXPECTED_COLUMN_COUNT are now assumed to be initialized
+    # by start_serial_reader before this thread starts.
 
     try:
         # Attempt to open the serial connection
@@ -177,90 +197,62 @@ def read_serial_data(port, baudrate):
         return # Exit thread if port cannot be opened
 
     while serial_connection.is_open and not stop_thread_flag.is_set():
+        line = "" # Initialize line to ensure it's defined for error messages
         try:
-            # Read a line from the serial port, decode it, and strip whitespace
             line = serial_connection.readline().decode('utf-8', errors='replace').strip()
-
             if PRINT_RAW_SERIAL:
                 print(f"RAW: {line}")
-
-            if not line: # Skip empty lines (often due to timeout)
+            if not line:
                 continue
-
-            # --- Header Detection Logic ---
-            if not COLUMN_HEADERS:
-                parsed_line_as_header = _parse_csv_line(line)
-                # Basic heuristic: Check if "SeqNum" or "Timestamp" is in the first potential header field.
-                # This helps distinguish header from data if connection starts mid-stream.
-                if parsed_line_as_header and ("SeqNum" in parsed_line_as_header[0] or "Timestamp" in parsed_line_as_header[0]):
-                    COLUMN_HEADERS[:] = parsed_line_as_header # Assign to global
-                    EXPECTED_COLUMN_COUNT = len(COLUMN_HEADERS)
-                    print(f"INFO: CSV Headers received: {COLUMN_HEADERS}")
-                    print(f"INFO: Expected column count: {EXPECTED_COLUMN_COUNT}")
-                    # Verify all received headers are in DATA_TYPE_MAPPING or add them with a default type (e.g., float)
-                    for header in COLUMN_HEADERS:
-                        if header not in DATA_TYPE_MAPPING:
-                            print(f"Warning: Header '{header}' not found in DATA_TYPE_MAPPING. Defaulting to 'float'.")
-                            DATA_TYPE_MAPPING[header] = "float" # Dynamically add if necessary
-                    continue # Header processed, continue to next line for data
-                else:
-                    # Received a line that doesn't look like a header before headers were established.
-                    # This could be a partial line or noise.
-                    if parsed_line_as_header: # Only print if it was somewhat parsable
-                        print(f"Warning: Received data before headers or unrecognized header format: '{line}'")
-                    continue
-
-            # --- Data Parsing Logic ---
-            if COLUMN_HEADERS: # Process data only if headers are known
+            if COLUMN_HEADERS:
                 parsed_values = _parse_csv_line(line)
                 if len(parsed_values) == EXPECTED_COLUMN_COUNT:
                     data_dict = {}
                     for i in range(EXPECTED_COLUMN_COUNT):
                         col_name = COLUMN_HEADERS[i]
                         raw_val_str = parsed_values[i]
-                        # Determine target type: Use mapped type, or default to 'float' if somehow still unknown
                         target_type = DATA_TYPE_MAPPING.get(col_name, "float")
                         converted_val = _attempt_type_conversion(raw_val_str, target_type, col_name)
                         data_dict[col_name] = converted_val
-                    data_queue.append(data_dict) # Add the processed data dictionary to the queue
+                    data_queue.append(data_dict)
                 else:
-                    # Line doesn't match expected number of columns
-                    if parsed_values: # Only print warning if there was some data, not for empty lines
+                    if parsed_values:
                         print(f"Warning: Mismatched column count. Expected {EXPECTED_COLUMN_COUNT}, got {len(parsed_values)}. Line: '{line}'")
-
         except serial.SerialException as e:
-            # Handle errors during an active connection (e.g., device unplugged)
             print(f"Serial error during read: {e}")
-            break # Exit the loop on serial error
+            break # Exit the loop on major serial error
         except Exception as e:
-            # Catch any other unexpected errors during line processing
-            print(f"Error processing serial data: {e}. Line: '{line}'")
-            # Depending on severity, might 'continue' or 'break'
-            # break # For now, break on other errors to be safe
+            print(f"CRITICAL: Error processing serial data line: {e}. Line: '{line}'. Skipping line, continuing read.")
+            continue # Continue to try and process further lines
 
-    # --- Cleanup when loop exits ---
     if serial_connection and serial_connection.is_open:
         serial_connection.close()
-        print(f"INFO: Serial port {port} closed.")
-    print("INFO: Serial reader thread ending.")
+        print(f"INFO: Serial port {port} closed (read_serial_data exit).") # Added detail
+    print("INFO: Serial reader thread ending (read_serial_data exit).") # Added detail
 
 def start_serial_reader(port, baudrate=115200):
     """
     Starts the serial data reading thread.
     If a thread is already running, it attempts to stop it before starting a new one.
+    Initializes COLUMN_HEADERS and EXPECTED_COLUMN_COUNT from DATA_TYPE_MAPPING.
     Args:
         port (str): The serial port name.
         baudrate (int): The baud rate.
     """
-    global reader_thread, stop_thread_flag, COLUMN_HEADERS, EXPECTED_COLUMN_COUNT
+    global reader_thread, stop_thread_flag, COLUMN_HEADERS, EXPECTED_COLUMN_COUNT, DATA_TYPE_MAPPING
     
     if reader_thread and reader_thread.is_alive():
         print("INFO: Stopping existing serial reader thread first...")
         stop_serial_reader() # Ensure previous one is fully stopped and joined
 
     stop_thread_flag.clear() # Reset the stop flag for the new thread
-    COLUMN_HEADERS[:] = [] # Clear previous headers
-    EXPECTED_COLUMN_COUNT = 0 # Reset expected column count
+    
+    # Initialize COLUMN_HEADERS and EXPECTED_COLUMN_COUNT from DATA_TYPE_MAPPING
+    COLUMN_HEADERS[:] = list(DATA_TYPE_MAPPING.keys())
+    EXPECTED_COLUMN_COUNT = len(COLUMN_HEADERS)
+    print(f"INFO: Using predefined column headers: {COLUMN_HEADERS}")
+    print(f"INFO: Expected column count based on predefined headers: {EXPECTED_COLUMN_COUNT}")
+    
     # data_queue.clear() # Optionally clear the data queue on new connection
     
     # Create and start the new thread. `daemon=True` allows main program to exit even if thread is running.
@@ -349,7 +341,7 @@ class FlightVisualizerApp:
         self.status_label.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=5)
 
         # Plot History Control
-        self.plot_history_size_var = tk.IntVar(value=100) # Tkinter variable for spinbox
+        self.plot_history_size_var = tk.IntVar(value=200) # Tkinter variable for spinbox, default 200 points (20s at 10Hz)
         plot_history_label = ttk.Label(serial_frame, text="Plot History (points):")
         plot_history_label.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=(10,0)) # Padding: (top, bottom)
         plot_history_spinbox = ttk.Spinbox(serial_frame, from_=50, to=1000, increment=50,
@@ -371,40 +363,45 @@ class FlightVisualizerApp:
         self.view_3d_frame = ttk.LabelFrame(data_display_frame, text="3D Orientation", width=400, height=350)
         self.view_3d_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.view_3d_frame.pack_propagate(False) # Prevent children from shrinking the frame
+        self.view_3d_frame.update_idletasks() # Ensure frame is drawn before PyVista uses it
+        self.debug_rotation_angle = 0.0 # Initialize for 3D view heartbeat
 
-        # Initialize PyVista BackgroundPlotter for 3D visualization
+        # Setup for off-screen PyVista rendering
         self.pv_plotter = None
         self.orientation_object_actor = None
+        self.pv_image_label = None # Label to display the rendered image
+
         try:
-            # BackgroundPlotter integrates PyVista with a Qt backend, which can then be embedded in Tkinter.
-            # Requires a Qt binding like PySide2 or PyQt5 to be installed.
-            self.pv_plotter = BackgroundPlotter(
-                app=master, # Pass the Tkinter root window
-                window_size=(self.view_3d_frame.winfo_reqwidth(), self.view_3d_frame.winfo_reqheight()), # Initial size
-                show_toolbar=False, # PyVista's own toolbar, not the Matplotlib one
-                panel=self.view_3d_frame # Embed the PyVista rendering window into this Tkinter frame
-            )
-            # Add a 3D arrow mesh to represent the orientation. Could be any pv.PolyData object.
-            self.orientation_object_actor = self.pv_plotter.add_mesh(pv.Arrow(direction=(0,0,1), scale=1.5), name='orientation_indicator', color='cyan')
+            pv.set_plot_theme("document") # Set PyVista theme
             
-            # Configure camera and axes appearance for the 3D view
-            self.pv_plotter.camera_position = 'iso' # Isometric view
+            # Use an off-screen plotter
+            self.pv_plotter = pv.Plotter(off_screen=True, window_size=[self.view_3d_frame.winfo_reqwidth(), self.view_3d_frame.winfo_reqheight()])
+            
+            self.orientation_object_actor = self.pv_plotter.add_mesh(pv.Arrow(direction=(0,0,1), scale=1.5), name='orientation_indicator', color='cyan')
+            self.pv_plotter.camera_position = 'iso'
             self.pv_plotter.camera.azimuth = 45
             self.pv_plotter.camera.elevation = 30
-            self.pv_plotter.enable_zoom_scaling() # Allow zooming
-            self.pv_plotter.add_axes_at_origin(labels_off=False) # Show X, Y, Z axes at origin
-            self.pv_plotter.view_isometric() # Apply settings and reset view
+            self.pv_plotter.add_axes_at_origin(labels_off=False)
+            self.pv_plotter.view_isometric()
+
+            # Label to display the rendered image
+            self.pv_image_label = ttk.Label(self.view_3d_frame)
+            self.pv_image_label.pack(fill=tk.BOTH, expand=True)
             
+            # Render an initial empty or placeholder view if desired
+            # self.update_3d_view_with_placeholder() # You might call a method to show an initial state
+            print("INFO: PyVista off-screen plotter initialized successfully.")
+
         except Exception as e:
-            # Fallback if PyVista initialization fails (e.g., missing Qt bindings)
-            print(f"Error initializing PyVista plotter: {e}")
+            print(f"CRITICAL: Error initializing PyVista off-screen plotter: {e}")
             self.pv_plotter = None
             self.orientation_object_actor = None
-            # Display an error message in the 3D view frame
-            error_label = ttk.Label(self.view_3d_frame, text=f"PyVista Error: {e}\nEnsure PySide2 or PyQt5 is installed.", wraplength=380)
-            error_label.pack(padx=10, pady=10, fill='both', expand=True)
-
-
+            error_message = f"PyVista Init Error: {e}\nOff-screen rendering setup failed."
+            if self.pv_image_label: # If label was created before error
+                self.pv_image_label.destroy()
+            error_label_widget = ttk.Label(self.view_3d_frame, text=error_message, wraplength=380)
+            error_label_widget.pack(padx=10, pady=10, fill='both', expand=True)
+        
         # --- 2D Plotting Frame with Tabs (Bottom Right) ---
         # This frame uses a ttk.Notebook to manage multiple tabs, each containing Matplotlib plots.
         plot_frame = ttk.Frame(data_display_frame) 
@@ -479,8 +476,16 @@ class FlightVisualizerApp:
             for i, plot_info_dict in enumerate(plot_infos_list):
                 ax = fig.add_subplot(rows, cols, i + 1) # Add subplot to the figure
                 # Store the Axes object. Use the primary data key (or first key for multi-line) as the dict key.
-                plot_key_primary = plot_info_dict.get('key', plot_info_dict['keys'][0]) 
-                current_axes_map[plot_key_primary] = ax
+                plot_key_primary = None
+                if 'key' in plot_info_dict:
+                    plot_key_primary = plot_info_dict['key']
+                elif 'keys' in plot_info_dict and isinstance(plot_info_dict['keys'], list) and plot_info_dict['keys']:
+                    plot_key_primary = plot_info_dict['keys'][0]
+                
+                if plot_key_primary is not None:
+                    current_axes_map[plot_key_primary] = ax
+                else:
+                    print(f"Warning: Could not determine plot_key_primary for plot_info_dict at index {i} in tab '{tab_name}'. Plot axis not mapped. Details: {plot_info_dict}")
             
             # Store all parts for this tab (frame, figure, canvas, axes map)
             self.tabs_data[tab_name] = {'frame': tab_frame, 'figure': fig, 'canvas': canvas, 'axes_map': current_axes_map}
@@ -551,88 +556,28 @@ class FlightVisualizerApp:
         """
         Periodically called to update all 2D Matplotlib plots with new data from the `data_queue`.
         This method is the heart of the 2D visualization update loop.
+        TEMPORARILY SIMPLIFIED FOR DEBUGGING PREMATURE SHUTDOWN.
         """
-        global data_queue, COLUMN_HEADERS # Access global data queue and headers
- 
-        # Only proceed if connected and headers have been received
-        if not (serial_connection and serial_connection.is_open and COLUMN_HEADERS):
-            self.master.after(100, self.update_plots) # Reschedule if not ready
-            return
- 
-        plot_history_count = self.plot_history_size_var.get() # Get desired history from spinbox
-        current_data_full = list(data_queue) # Snapshot of the entire data queue
- 
-        # Slice data for 2D plots based on history count
-        if len(current_data_full) > plot_history_count:
-            current_data_for_plots = current_data_full[-plot_history_count:]
-        else:
-            current_data_for_plots = current_data_full
-        
-        # If no data for 2D plots (e.g., history count is 0 or queue is empty),
-        # still attempt to update 3D view with any available data and reschedule.
-        if not current_data_for_plots:
-            if current_data_full: # If there's any data at all (for 3D view)
-                 self.update_3d_view(current_data_full)
-            self.master.after(100, self.update_plots) # Reschedule
-            return
- 
-        # Prepare timestamps for X-axis of 2D plots
-        # Use 'Timestamp' or 'SeqNum' if available, otherwise generate simple sequence numbers.
-        ts_key = 'Timestamp' if 'Timestamp' in COLUMN_HEADERS else 'SeqNum'
-        if ts_key not in COLUMN_HEADERS: # Fallback if neither standard key is present
-            timestamps = list(range(len(current_data_for_plots)))
-        else:
-            timestamps = [d.get(ts_key, i) for i, d in enumerate(current_data_for_plots)] # Get value or index
- 
-        # Iterate through each configured tab and update its plots
-        for tab_name, tab_content in self.tabs_data.items():
-            figure = tab_content['figure']
-            canvas = tab_content['canvas']
-            axes_map = tab_content['axes_map'] # Map of plot key to Axes object
-            plot_infos_list = self.tab_config[tab_name]['plots'] # List of plot definitions
- 
-            for plot_info_dict in plot_infos_list:
-                # Determine the primary key for this plot (first key if multi-line)
-                plot_key_primary = plot_info_dict.get('key', plot_info_dict['keys'][0])
-                ax = axes_map[plot_key_primary] # Get the Matplotlib Axes for this plot
-                ax.clear() # Clear previous plot content
- 
-                if 'keys' in plot_info_dict: # Handle multi-line plots (e.g., Actual vs. Target)
-                    for k_idx, key_to_plot in enumerate(plot_info_dict['keys']):
-                        # Extract data series for this key, handling missing data with None
-                        data_series = [d.get(key_to_plot, None) for d in current_data_for_plots]
-                        # Filter out None values to prevent plotting errors and gaps
-                        valid_timestamps = [ts for i, ts in enumerate(timestamps) if data_series[i] is not None]
-                        valid_data_series = [val for val in data_series if val is not None]
-                        line_label = plot_info_dict['labels'][k_idx] # Get label for this line
-                        if valid_timestamps and valid_data_series:
-                            ax.plot(valid_timestamps, valid_data_series, label=line_label)
-                        else:
-                            ax.plot([], [], label=line_label) # Plot empty if no valid data for this line
-                else: # Handle single-line plots
-                    key_to_plot = plot_info_dict['key']
-                    data_series = [d.get(key_to_plot, None) for d in current_data_for_plots]
-                    valid_timestamps = [ts for i, ts in enumerate(timestamps) if data_series[i] is not None]
-                    valid_data_series = [val for val in data_series if val is not None]
-                    if valid_timestamps and valid_data_series:
-                        ax.plot(valid_timestamps, valid_data_series, label=key_to_plot)
-                    else:
-                        ax.plot([], [], label=key_to_plot) # Plot empty if no valid data
-                
-                # Set plot title, legend, and grid
-                ax.set_title(plot_info_dict['title'])
-                ax.legend(loc='upper left', fontsize='small')
-                ax.grid(True)
-            
-            figure.tight_layout() # Adjust subplot parameters for a tight layout
-            canvas.draw() # Redraw the canvas for this tab
-        
-        # After updating 2D plots, update the 3D view with the full data snapshot
-        # (as it typically uses only the latest point from this snapshot).
-        if current_data_full:
-            self.update_3d_view(current_data_full)
- 
-        self.master.after(100, self.update_plots) # Schedule the next update (aim for ~10 FPS)
+        global serial_connection, COLUMN_HEADERS, data_queue # Added data_queue for minimal check
+
+        print(f"DEBUG: update_plots called. Serial connected: {serial_connection and serial_connection.is_open}")
+
+        # Minimal check: if serial connection is active, try to call update_3d_view with latest data if any
+        # This is to see if update_3d_view itself is causing a crash when called.
+        if serial_connection and serial_connection.is_open and COLUMN_HEADERS:
+            current_data_full = list(data_queue)
+            if current_data_full:
+                # print("DEBUG: update_plots trying to call update_3d_view") # Uncomment for further debug
+                try:
+                    self.update_3d_view(current_data_full) # Call 3D update to check for crashes here
+                except Exception as e:
+                    print(f"CRITICAL ERROR in update_3d_view called from simplified update_plots: {e}")
+            # else:
+                # print("DEBUG: update_plots - data_queue is empty or headers not ready")
+        # else:
+            # print("DEBUG: update_plots - serial not connected or headers not ready")
+
+        self.master.after(200, self.update_plots) # Reschedule, increased interval slightly for debug
  
     def clear_all_plots(self):
         """Clears all data from all 2D Matplotlib plots."""
@@ -664,59 +609,54 @@ class FlightVisualizerApp:
         print("INFO: All plots cleared.")
  
     def update_3d_view(self, current_data_full_snapshot):
-        """
-        Updates the 3D orientation view using the latest quaternion data.
-        Args:
-            current_data_full_snapshot (list): A list of data dictionaries (the full data queue snapshot).
-                                               The last element is used for the latest orientation.
-        """
-        # Only proceed if PyVista plotter and actor are initialized and data is available
-        if not self.pv_plotter or not self.orientation_object_actor or not current_data_full_snapshot:
+        if not self.pv_plotter or not self.orientation_object_actor or not self.pv_image_label or not current_data_full_snapshot:
             return
- 
-        latest_data_point = current_data_full_snapshot[-1] # Get the most recent data point
-        
-        # Extract quaternion components (Q0=w, Q1=x, Q2=y, Q3=z) with defaults if missing
-        q0 = latest_data_point.get('Q0', 1.0) # Scalar component (w)
-        q1 = latest_data_point.get('Q1', 0.0) # Vector component (x)
-        q2 = latest_data_point.get('Q2', 0.0) # Vector component (y)
-        q3 = latest_data_point.get('Q3', 0.0) # Vector component (z)
- 
+
+        latest_data_point = current_data_full_snapshot[-1]
+        q0 = latest_data_point.get('Q0', 1.0)
+        q1 = latest_data_point.get('Q1', 0.0)
+        q2 = latest_data_point.get('Q2', 0.0)
+        q3 = latest_data_point.get('Q3', 0.0)
+
         try:
-            # Convert quaternion to a 3x3 rotation matrix.
-            # SciPy's Rotation.from_quat expects (x, y, z, w) order.
-            rotation = R_scipy.from_quat([q1, q2, q3, q0])
-            rotation_matrix_3x3 = rotation.as_matrix()
- 
-            # Create a 4x4 homogeneous transformation matrix for PyVista.
-            # PyVista actors often use 4x4 matrices for position, rotation, and scale.
-            transform_matrix_4x4 = np.eye(4) # Start with identity matrix
-            transform_matrix_4x4[:3, :3] = rotation_matrix_3x3 # Set the top-left 3x3 to the rotation
- 
-            # Apply this transformation matrix to the PyVista actor's user_matrix.
-            # This directly sets the orientation (and position if included) of the actor.
-            self.orientation_object_actor.user_matrix = transform_matrix_4x4
+            # Sensor-based rotation
+            sensor_rotation = R_scipy.from_quat([q1, q2, q3, q0])
+            sensor_rotation_matrix_3x3 = sensor_rotation.as_matrix()
+
+            # Debug heartbeat rotation (around Z-axis)
+            self.debug_rotation_angle += 0.03 # Increment angle (radians)
+            debug_rotation_matrix_3x3 = R_scipy.from_euler('z', self.debug_rotation_angle, degrees=False).as_matrix()
+
+            # Combine rotations: apply sensor rotation, then debug rotation
+            final_rotation_matrix_3x3 = debug_rotation_matrix_3x3 @ sensor_rotation_matrix_3x3
             
-            # The BackgroundPlotter should render automatically.
-            # If explicit rendering is needed (rarely for BackgroundPlotter): self.pv_plotter.render()
+            transform_matrix_4x4 = np.eye(4)
+            transform_matrix_4x4[:3, :3] = final_rotation_matrix_3x3
+            self.orientation_object_actor.user_matrix = transform_matrix_4x4
+
+            img = self.pv_plotter.screenshot(transparent_background=False, return_img=True)
+            if img is not None:
+                pil_image = Image.fromarray(img)
+                tk_image = ImageTk.PhotoImage(image=pil_image)
+                self.pv_image_label.configure(image=tk_image)
+                self.pv_image_label.image = tk_image
+            else:
+                print("Warning: PyVista screenshot returned None.")
         except Exception as e:
-            print(f"Error updating 3D orientation: {e}. Quaternion data: Q0={q0},Q1={q1},Q2={q2},Q3={q3}")
- 
+            print(f"Error updating 3D orientation (off-screen): {e}. Quaternion data: Q0={q0},Q1={q1},Q2={q2},Q3={q3}")
+
     def on_closing(self):
         """Handles the window close event to ensure graceful shutdown."""
         print("INFO: Closing application...")
         self.disconnect_serial() # Disconnect serial port and stop reader thread
         
-        # Close the PyVista plotter if it was initialized
+        # PyVista Plotter (off-screen) doesn't have a .close() method like BackgroundPlotter
+        # It should be garbage collected. We can clear our reference.
         if self.pv_plotter:
-            try:
-                self.pv_plotter.close() # Proper cleanup for PyVista BackgroundPlotter
-                print("INFO: PyVista plotter closed.")
-            except Exception as e:
-                print(f"Error closing PyVista plotter: {e}")
- 
-        # Ensure the main Tkinter window is destroyed
-        if self.master.winfo_exists(): # Check if window still exists
+            self.pv_plotter = None # Clear reference
+            print("INFO: PyVista off-screen plotter reference cleared.")
+
+        if self.master.winfo_exists():
              self.master.destroy()
         print("INFO: Application closed.")
  

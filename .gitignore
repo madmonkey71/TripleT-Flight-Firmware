@@ -30,3 +30,10 @@ debug.txt
 
 #
 ChatLog.md
+
+# Python virtual environment
+.venv
+flight_visualizer/.venv
+
+# Python cache
+__pycache__

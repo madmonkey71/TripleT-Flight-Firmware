@@ -9,10 +9,10 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 **Current Version**: v0.40
 
 ### Recent Updates
- - [ ] Take stock of where I am and what's been lost. I'm not sure that I'll ever know 100%
+ - ✅ Take stock of where I am and what's been lost. I'm not sure that I'll ever know 100%
  - ✅ Get the firmware to build
  - ✅ Test it
- - [ ] Bugs
+ - ✅ Bugs
 	 - ✅ Test GPS
 	 - ✅ Fix GPS numbers (verified with a Type 2 fix)
 		 - ✅ Long
@@ -24,12 +24,13 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 		 - ✅ Accel
 		 - ✅ Gyro
 		 - ✅ Mag
-	 - [ ] SDCard Write issues
-		 - [ ] Verify without SDCard
-		 - [ ] Adjust when logging starts (State: Armed)
- - [ ] Verify Output to Telemetry viewer
- - [ ] 
-  
+	 - ✅ SDCard Write issues
+		 - ✅ Verify without SDCard
+		 - ✅ Adjust when logging starts (State: Armed)
+     - ✅ Removed support for other boards and changed all SDCard routines to the Teensy 4.1
+     - ✅ Testing
+      - ✅ With a card on startup
+      - ✅ Without a card on startup and adding it later.
 
 
 
@@ -40,14 +41,18 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Basic diagnostic tools
 - ✅ GPS/Barometer calibration
 - ✅ Configurable debug outputs
-- ✅ Flight state detection (liftoff, boost, coast, apogee, descent)
+- 🚧 Flight state detection (liftoff, boost, coast, apogee, descent)
+  - [ ] This got lost in a github mishap on my system. Roadmap to re-implement it  
 - ✅ Apogee detection (using multiple redundant methods)
 - ✅ Initial Parachute deployment control (drogue and main deployment logic)
 - ✅ Basic Actuator Control (PID-based, 3-axis for servos)
 - ✅ 9-axis MARG Sensor Fusion (Madgwick AHRS for orientation)
 - ✅ Dynamic Target Orientation System (Time-based example framework)
 - ✅ Logging of PID Controller States and Dynamic Targets
+- 🚧 IMU Calibration (How do we fix drift in the madgwick implementation)
+  - 🚧 The current setup has significant drift in it's current form
 - 🚧 Enhanced telemetry (Planned)
+  - ✅ Add all data to the logging so that it's exposed to being processed as telemetry.
 - 🚧 Live Transmission of data via radio (Planned)
 
 ### AI Assistance

@@ -33,14 +33,10 @@
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.40
 
-// Define the board type if not defined by platformio.ini
-#ifndef BOARD_TEENSY40
+// Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
 #if defined(__IMXRT1062__) && defined(ARDUINO_TEENSY41)
 #define BOARD_TEENSY41
-#elif defined(__IMXRT1062__) && defined(ARDUINO_TEENSY40)
-#define BOARD_TEENSY40
-#endif
 #endif
 #endif
 
@@ -63,13 +59,7 @@ String LogDataString;   // For data logging
 unsigned long currentTime;  // For timestamp
 bool baroCalibrated = false;  // For barometric calibration status
 
-#if defined(BOARD_TEENSY41)
 const char* BOARD_NAME = "Teensy 4.1";
-#elif defined(BOARD_TEENSY40)
-const char* BOARD_NAME = "Teensy 4.0";
-#else
-const char* BOARD_NAME = "Unknown Board";
-#endif
 
 // External declarations for sensor data
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object
@@ -95,7 +85,7 @@ SdFat SD;
 bool sdCardAvailable = false;
 bool sdCardPresent = false;   // Physical presence of SD card
 bool sdCardMounted = false;   // Whether SD card is mounted
-bool loggingEnabled = false;  // Whether logging is enabled
+bool loggingEnabled = true;  // Whether logging is enabled
 uint64_t availableSpace = 0;  // Available space on SD card in bytes
 bool flashAvailable = false;
 FsFile root;
@@ -898,32 +888,17 @@ void setup() {
   pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow during init
   pixels.show();
 
-  // Setup SPI and I2C based on the selected board
-  #if defined(BOARD_TEENSY41)
-    // Teensy 4.1 with SDIO doesn't need explicit SPI setup for SD card
-    
-    // For other SPI devices (if any)
-    SPI.begin();
-    
-    // Standard I2C setup
+  // Setup SPI and I2C for Teensy 4.1
+  // Teensy 4.1 with SDIO doesn't need explicit SPI setup for SD card
+  
+  // For other SPI devices (if any)
+  SPI.begin();
+  
+  // Standard I2C setup
   Wire.begin();
   Wire.setClock(400000);
   
-    Serial.println("Teensy 4.1 SPI and I2C initialized (SDIO mode for SD card)");
-  #else
-    // Teensy 4.0 and other boards with SPI SD card
-    SPI.setCS(SD_CS_PIN);
-    SPI.setMOSI(SD_MOSI_PIN);
-    SPI.setMISO(SD_MISO_PIN);
-    SPI.setSCK(SD_SCK_PIN);
-    SPI.begin();
-    
-    // Standard I2C setup
-    Wire.begin();
-    Wire.setClock(400000);
-    
-    Serial.println("Teensy SPI and I2C initialized");
-  #endif
+  Serial.println("Teensy 4.1 SPI and I2C initialized (SDIO mode for SD card)");
   // Scan the I2C bus for devices
   scan_i2c();
 

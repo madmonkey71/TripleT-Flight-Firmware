@@ -2,14 +2,10 @@
 
 // This file contains central configuration parameters for the TripleT Flight Firmware
 
-// Define the board type if not defined by platformio.ini
-#ifndef BOARD_TEENSY40
+// Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
 #if defined(__IMXRT1062__) && defined(ARDUINO_TEENSY41)
 #define BOARD_TEENSY41
-#elif defined(__IMXRT1062__) && defined(ARDUINO_TEENSY40)
-#define BOARD_TEENSY40
-#endif
 #endif
 #endif
 
@@ -119,42 +115,15 @@
 #define SERVO_MAX_PULSE_WIDTH 2000 // Microseconds (adjust as needed)
 #define SERVO_DEFAULT_ANGLE 90     // Default angle for servos (degrees)
 
-// --- SD Card Driver Configuration (Platform Specific) ---
+// --- SD Card Driver Configuration (Teensy 4.1 Only) ---
 
-#if defined(BOARD_TEENSY41)
-  // For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
-  #ifndef SD_CONFIG
-    #define SD_CONFIG SdioConfig(FIFO_SDIO)
-  #endif
-  #ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
-    #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
-  #endif
-  #ifndef SD_DETECT_PIN // Card detect pin for built-in socket
-    #define SD_DETECT_PIN 39
-  #endif
-#else
-  // For other boards (Teensy 4.0, etc.), use standard SPI with optimized settings
-  #ifndef SD_CS_PIN
-    #define SD_CS_PIN 10  // CS pin for SD card
-  #endif
-  #ifndef SD_CONFIG
-    #define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(50))
-  #endif
-  #ifndef SD_BUF_SIZE // Buffer size for SdFat library operations
-    #define SD_BUF_SIZE 8192  // 8KB buffer for SD card operations on non-Teensy 4.1 boards
-  #endif
-  #ifndef SD_DETECT_PIN // Card detect pin (if available)
-    #define SD_DETECT_PIN 9 // Using a common default, can be changed by user
-  #endif
-
-  // SPI Pins (only relevant if using SPI mode for non-Teensy 4.1)
-  #ifndef SD_MOSI_PIN
-    #define SD_MOSI_PIN 11 // Default SPI MOSI
-  #endif
-  #ifndef SD_MISO_PIN
-    #define SD_MISO_PIN 12 // Default SPI MISO
-  #endif
-  #ifndef SD_SCK_PIN
-    #define SD_SCK_PIN 13  // Default SPI SCK
-  #endif
+// For Teensy 4.1, use the built-in SD card socket with SDIO mode and optimized settings
+#ifndef SD_CONFIG
+  #define SD_CONFIG SdioConfig(FIFO_SDIO)
+#endif
+#ifndef SD_BUF_SIZE                           // Buffer size for SdFat library operations
+  #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
+#endif
+#ifndef SD_DETECT_PIN // Card detect pin for built-in socket
+  #define SD_DETECT_PIN 39
 #endif

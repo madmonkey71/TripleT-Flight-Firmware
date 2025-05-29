@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripleT Flight Data Visualizer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>TripleT Flight Data Visualizer</h1>
+        <div id="connectionControls">
+            <div id="connectionStatus">Status: Disconnected</div>
+            <div>
+                <button id="connectButton">Connect Serial</button>
+                <button id="disconnectButton">Disconnect Serial</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section id="dataDashboard">
+            <div id="numericalDataPanel">
+                <h2>Real-time Data</h2>
+                <div id="gpsData">
+                    <h3>GPS</h3>
+                    Lat: <span id="valLat">N/A</span>, 
+                    Long: <span id="valLong">N/A</span><br>
+                    Speed: <span id="valSpeed">N/A</span> knots, 
+                    Sats: <span id="valSats">N/A</span><br>
+                    Alt (GPS): <span id="valAltGps">N/A</span> m
+                </div>
+                <div id="orientationData">
+                    <h3>Orientation</h3>
+                    Roll: <span id="valRoll">N/A</span>&deg;, 
+                    Pitch: <span id="valPitch">N/A</span>&deg;, 
+                    Yaw: <span id="valYaw">N/A</span>&deg;
+                </div>
+                <div id="sensorData">
+                    <h3>Sensors</h3>
+                    Pressure: <span id="valPressure">N/A</span> hPa<br>
+                    Temp: <span id="valTemp">N/A</span> &deg;C<br>
+                    Alt (Baro): <span id="valAltBaro">N/A</span> m
+                </div>
+            </div>
+
+            <div id="chartsPanel">
+                <h2>Visualizations</h2>
+                <div class="chart-container">
+                    <h3>Altitude (Calibrated)</h3>
+                    <canvas id="altitudeChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Acceleration (KX134)</h3>
+                    <canvas id="accelerationChart"></canvas>
+                </div>
+                <!-- Add more chart containers here as new charts are developed -->
+            </div>
+        </section>
+        <!-- Removed the old #content div as its purpose is now served by main or specific sections -->
+    </main>
+
+    <footer>
+        <p>Web Serial Interface for TripleT Flight Controller</p>
+    </footer>
+
+    <script src="js/serial_handler.js"></script>
+    <script src="js/data_parser.js"></script>
+    <script src="js/visualizations.js"></script>
+    <script src="js/ui_updater.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

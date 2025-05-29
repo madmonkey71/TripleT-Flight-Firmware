@@ -560,27 +560,3 @@ void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
   out_gyro[1] = icm_gyro[1] - gyroBias[1];
   out_gyro[2] = icm_gyro[2] - gyroBias[2];
 }
-
-// Helper function to convert quaternion to Euler angles (Roll, Pitch, Yaw)
-// Roll (x-axis rotation)
-// Pitch (y-axis rotation)
-// Yaw (z-axis rotation)
-// Order of rotation: ZYX
-// void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw) {
-//     // Roll (x-axis rotation)
-//     float sinr_cosp = 2.0f * (q0 * q1 + q2 * q3);
-//     float cosr_cosp = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
-//     roll = atan2(sinr_cosp, cosr_cosp);
-// 
-//     // Pitch (y-axis rotation)
-//     float sinp = 2.0f * (q0 * q2 - q3 * q1);
-//     if (fabs(sinp) >= 1)
-//         pitch = copysign(PI / 2, sinp); // use 90 degrees if out of range
-//     else
-//         pitch = asin(sinp);
-// 
-//     // Yaw (z-axis rotation)
-//     float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
-//     float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
-//     yaw = atan2(siny_cosp, cosy_cosp);
-// }

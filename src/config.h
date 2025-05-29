@@ -78,9 +78,9 @@
 #define EEPROM_SIGNATURE_VALUE 0xABCD           // Signature to validate EEPROM data
 
 // --- Madgwick Filter Configuration ---
-#define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)
-#define MADGWICK_BETA_STATIONARY 0.02f   // Beta value when system is stationary (lower for stability)
-#define MADGWICK_BETA_MOTION 0.1f        // Beta value when system is in motion (higher for responsiveness)
+#define MADGWICK_BETA_INIT 0.05f              // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)
+#define MADGWICK_BETA_STATIONARY 0.02f        // Beta value when system is stationary (lower for stability)
+#define MADGWICK_BETA_MOTION 0.1f             // Beta value when system is in motion (higher for responsiveness)
 #define MADGWICK_GYRO_BIAS_LEARN_RATE 0.0005f // Rate at which gyro bias is learned
 
 // --- PID Controller Gains ---

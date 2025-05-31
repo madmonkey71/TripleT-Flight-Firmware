@@ -88,9 +88,10 @@ main {
 #chartsPanel {
     flex: 2; /* Takes up 2 parts of the space */
     min-width: 400px; /* Minimum width before wrapping */
-    display: flex;
-    flex-direction: column;
+    display: grid; /* Changed from flex to grid */
+    grid-template-columns: repeat(2, 1fr); /* Two equal columns */
     gap: 1rem;
+    align-content: start; /* Align items to the start of the grid container */
 }
 
 section h2, section h3 {
@@ -121,7 +122,7 @@ section h3 {
     /* aspect-ratio: 16 / 9; /* Maintain aspect ratio */
     /* max-width: 100%; /* Ensure it scales down */
     /* Instead of aspect-ratio, let's set a height for better control in flex */
-    height: 300px; /* Fixed height for charts */
+    height: 250px; /* Adjusted height for charts in 2-column layout */
     background-color: #fdfdfd;
     border: 1px solid #e0e0e0;
     border-radius: 4px;

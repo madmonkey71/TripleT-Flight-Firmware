@@ -122,16 +122,16 @@ function updateUI(parsedData) {
 
     // Update ICM20948 Gyroscope Chart (convert rad/s to deg/s)
     if (icmGyroChartInstance && 
-        parsedData.ICM_GyroX_rad !== undefined && 
-        parsedData.ICM_GyroY_rad !== undefined && 
-        parsedData.ICM_GyroZ_rad !== undefined && 
+        parsedData.ICM_GyroX !== undefined && 
+        parsedData.ICM_GyroY !== undefined && 
+        parsedData.ICM_GyroZ !== undefined && 
         timestamp !== undefined) {
         updateChart(icmGyroChartInstance, { 
             timestamp: timestamp, 
             values: [
-                toDegrees(parsedData.ICM_GyroX_rad), 
-                toDegrees(parsedData.ICM_GyroY_rad), 
-                toDegrees(parsedData.ICM_GyroZ_rad)
+                toDegrees(parsedData.ICM_GyroX), 
+                toDegrees(parsedData.ICM_GyroY), 
+                toDegrees(parsedData.ICM_GyroZ)
             ]
         });
     }

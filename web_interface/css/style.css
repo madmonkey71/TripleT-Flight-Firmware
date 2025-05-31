@@ -97,6 +97,8 @@ main {
     flex-direction: column;
     /* gap: 1rem; */ /* Gap is handled by main or within chartsPanel */
 }
+#flightStateSection h2,
+#flightStateDisplayContainer,
 #numericalDataPanelContainer h2,
 #visualizationsContainer h2 { 
     text-align: center;

@@ -11,6 +11,9 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 ### Recent Updates
  - ✅ Take stock of where I am and what's been lost. I'm not sure that I'll ever know 100%
  - ✅ Get the firmware to build
+ - ✅ Fixed compilation errors:
+    - Added forward declaration for `prepareForShutdown` in `src/flight_logic.cpp`.
+    - Ensured `EEPROM_UPDATE_INTERVAL` is accessible in `src/state_management.cpp` by including `constants.h`. (Note: A persistent linter error for this suggests a build environment issue for the user to resolve).
  - ✅ Test it
  - ✅ Bugs
 	 - ✅ Test GPS

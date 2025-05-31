@@ -1,9 +1,7 @@
 #include "state_management.h"
 #include <EEPROM.h>
+#include "constants.h" // For EEPROM_UPDATE_INTERVAL and other timing constants
 #include "config.h" // For EEPROM configuration defines
-#include "TripleT_Flight_Firmware.cpp" // For FlightState enum, currentFlightState, launchAltitude, maxAltitudeReached, currentAltitude. THIS IS NOT IDEAL.
-                                        // Better: Move FlightState to a .h file (e.g. data_structures.h)
-                                        // Better: Pass state variables as parameters or access via extern declarations from a shared header.
 #include "utility_functions.h" // For getStateName
 #include <Arduino.h> // For Serial, millis()
 
@@ -12,14 +10,11 @@ FlightStateData stateData; // This holds the data read from/written to EEPROM
 unsigned long lastStateSaveTime = 0; // Renamed from lastStateSave to avoid conflict if State Machine.md meant a global in main .cpp
 
 // Extern variables from TripleT_Flight_Firmware.cpp that are needed by these functions.
-// This is a common way to access globals across .cpp files.
-// Ensure these are declared in TripleT_Flight_Firmware.cpp and NOT as static.
 extern FlightState currentFlightState;
 extern float launchAltitude;       // Assuming this is the ground altitude recorded at PAD_IDLE
 extern float maxAltitudeReached;   // Assuming this tracks peak altitude
 extern float currentAltitude;      // Current altitude from sensors
 extern bool enableSystemDebug;     // For debug messages
-// extern const char* getStateName(FlightState state); // Declaration for getStateName - REMOVED, now in utility_functions.h
 
 void saveStateToEEPROM() {
   unsigned long currentTimeMillis = millis();

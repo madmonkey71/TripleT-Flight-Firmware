@@ -2,38 +2,30 @@
 #include "flight_logic.h"
 #include <Arduino.h> // For millis(), fabs(), Serial, digitalWrite, pinMode, delay
 #include "config.h"   // For configuration constants
-// WORKAROUND: Includes the main cpp file to access FlightState enum and global variables.
-// This is not ideal and should be refactored with shared headers.
-#include "TripleT_Flight_Firmware.cpp" // Provides FlightState, pixels, currentFlightState, previousFlightState, stateEntryTime, launchAltitude, maxAltitudeReached, etc.
 #include "ms5611_functions.h" // For ms5611_get_altitude()
 #include "utility_functions.h" // For get_accel_magnitude(), getStateName(), isSensorSuiteHealthy()
 #include "state_management.h" // For saveStateToEEPROM()
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
 #include "guidance_control.h" // For guidance_set_target_orientation_euler() (needed by existing update_guidance_targets)
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc. (needed by existing update_guidance_targets)
+#include <Adafruit_NeoPixel.h>
+#include <MS5611.h>
 
 // Externs for variables globally defined in TripleT_Flight_Firmware.cpp
-// These are brought in by including TripleT_Flight_Firmware.cpp, but listed here for clarity of dependencies.
-/*
 extern FlightState currentFlightState;
 extern FlightState previousFlightState;
 extern unsigned long stateEntryTime;
-extern Adafruit_NeoPixel pixels; // From TripleT_Flight_Firmware.cpp
+extern Adafruit_NeoPixel pixels;
 extern float launchAltitude;
 extern float maxAltitudeReached;
 extern bool baroCalibrated;
-// extern SensorStatus barometerStatus; // Placeholder, using direct checks for now
-// extern SensorStatus accelerometerStatus; // Placeholder, using direct checks for now
-extern bool kx134_initialized_ok; 
-extern bool icm20948_ready; 
-extern MS5611 ms5611Sensor; 
-extern bool useKX134;
+extern MS5611 ms5611Sensor;
 extern float kx134_accel[3];
 extern float icm_accel[3];
 extern bool enableSystemDebug;
-// extern void WriteLogData(bool forceLog = false); // Assumed available from utility_functions.h or TripleT_Flight_Firmware.cpp
-// extern void prepareForShutdown(); // Assumed available from utility_functions.h or TripleT_Flight_Firmware.cpp
-*/
+
+// Forward declaration for prepareForShutdown
+void prepareForShutdown();
 
 // Global variables for flight logic state progression, defined in this file (flight_logic.cpp)
 unsigned long boostEndTime = 0;
@@ -318,9 +310,83 @@ void ProcessFlightState() {
 // For brevity, I am not re-listing their full code if they are unchanged from the previous step's prompt.
 // The overwrite tool will place the entire content, so they must be part of the block provided to the tool.
 
-// detectBoostEnd() - as implemented in prior step
-// detectApogee() - as implemented in prior step
-// detectLanding() - as implemented in prior step
+// Placeholder implementations for the missing functions
+void detectBoostEnd() {
+    // Check if acceleration has dropped below coast threshold
+    if (get_accel_magnitude() < COAST_ACCEL_THRESHOLD && boostEndTime == 0) {
+        boostEndTime = millis();
+        if (enableSystemDebug) {
+            Serial.println(F("Boost end detected"));
+        }
+    }
+}
+
+bool detectApogee() {
+    // Simple apogee detection based on altitude decrease
+    static float lastAltitude = 0.0f;
+    static int descendingCount = 0;
+    
+    if (ms5611Sensor.isConnected() && baroCalibrated) {
+        float currentAlt = ms5611_get_altitude() - launchAltitude;
+        
+        if (currentAlt < lastAltitude) {
+            descendingCount++;
+        } else {
+            descendingCount = 0;
+        }
+        
+        lastAltitude = currentAlt;
+        
+        // Update max altitude
+        if (currentAlt > maxAltitudeReached) {
+            maxAltitudeReached = currentAlt;
+        }
+        
+        // Confirm apogee if descending for multiple readings
+        if (descendingCount >= APOGEE_CONFIRMATION_COUNT) {
+            if (enableSystemDebug) {
+                Serial.println(F("Apogee detected via barometer"));
+            }
+            return true;
+        }
+    }
+    
+    // Backup time-based apogee detection
+    if (millis() - stateEntryTime > BACKUP_APOGEE_TIME) {
+        if (enableSystemDebug) {
+            Serial.println(F("Apogee detected via backup timer"));
+        }
+        return true;
+    }
+    
+    return false;
+}
+
+bool detectLanding() {
+    // Simple landing detection based on stable low altitude and low acceleration
+    static int stableCount = 0;
+    
+    if (ms5611Sensor.isConnected() && baroCalibrated) {
+        float currentAgl = ms5611_get_altitude() - launchAltitude;
+        float accelMag = get_accel_magnitude();
+        
+        // Check if we're close to ground level with stable acceleration
+        if (currentAgl < 50.0f && accelMag > LANDING_ACCEL_MIN_G && accelMag < LANDING_ACCEL_MAX_G) {
+            stableCount++;
+        } else {
+            stableCount = 0;
+        }
+        
+        if (stableCount >= LANDING_CONFIRMATION_COUNT) {
+            if (enableSystemDebug) {
+                Serial.println(F("Landing detected"));
+            }
+            return true;
+        }
+    }
+    
+    return false;
+}
 
 // Check if rocket is stable (no significant motion) - Kept from existing file
 bool IsStable() {

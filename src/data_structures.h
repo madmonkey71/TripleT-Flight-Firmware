@@ -4,6 +4,24 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+// Flight State Machine Enum
+enum FlightState : uint8_t {
+  STARTUP,        // Initial state during power-on
+  CALIBRATION,    // Sensor calibration state
+  PAD_IDLE,       // On pad waiting for arm command
+  ARMED,          // Armed and ready for launch
+  BOOST,          // Motor burning, accelerating
+  COAST,          // Unpowered flight upward
+  APOGEE,         // Peak altitude reached
+  DROGUE_DEPLOY,  // Deploying drogue parachute
+  DROGUE_DESCENT, // Descending under drogue
+  MAIN_DEPLOY,    // Deploying main parachute
+  MAIN_DESCENT,   // Descending under main
+  LANDED,         // On ground after flight
+  RECOVERY,       // Post-flight data collection
+  ERROR           // Error condition
+};
+
 // Define the structure that matches our binary data format
 // NOTE: This struct is the primary definition for logged data.
 //       WriteLogData() string construction and createNewLogFile() header

@@ -107,7 +107,6 @@
 
 // Logging Buffers (RAM)
 #define MAX_LOG_ENTRIES 1                       // Max log entries to buffer in RAM
-#define FLUSH_INTERVAL 100                      // Max time (ms) between buffer flushes to SD (if not full)
 #define MAX_BUFFER_SIZE 300                     // Max size (bytes) of a single log entry string
 
 // External Flash (if used)
@@ -119,7 +118,6 @@
 #define EEPROM_TIMESTAMP_ADDR 8       // EEPROM address for timestamp // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
 #define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
 #define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
-#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds
 
 // --- Madgwick Filter Configuration ---
 #define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)
@@ -169,3 +167,8 @@
   #define SD_BUF_SIZE 65535                     // 16KB buffer for SD card operations
 #endif
 // Note: Teensy 4.1 built-in SDIO SD card slot does not use a card detect pin
+
+// State Management Configuration
+// EEPROM_UPDATE_INTERVAL is now defined in constants.h
+
+// Sensor Configuration

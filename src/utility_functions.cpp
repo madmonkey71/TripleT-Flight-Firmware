@@ -1,7 +1,4 @@
 #include "utility_functions.h"
-// This is the problematic include needed if FlightState is still in the .cpp file.
-// If FlightState gets moved to data_structures.h or similar, include that instead.
-#include "TripleT_Flight_Firmware.cpp" // For FlightState enum definition
 #include "config.h" // Ensure config.h is included for SD_CONFIG and other hardware defs
 #include "data_structures.h" // Include LogData definition
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT

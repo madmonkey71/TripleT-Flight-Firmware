@@ -41,6 +41,7 @@
 #endif
 
 // Now include the GPS and sensor functions
+#include "constants.h"        // Include constants first to avoid macro conflicts
 #include "gps_config.h"
 #include "gps_functions.h"  // Include GPS functions header
 #include "ms5611_functions.h"
@@ -54,29 +55,16 @@
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
 
-// Flight State Machine Enum
-enum FlightState {
-  STARTUP,        // Initial state during power-on
-  CALIBRATION,    // Sensor calibration state
-  PAD_IDLE,       // On pad waiting for arm command
-  ARMED,          // Armed and ready for launch
-  BOOST,          // Motor burning, accelerating
-  COAST,          // Unpowered flight upward
-  APOGEE,         // Peak altitude reached
-  DROGUE_DEPLOY,  // Deploying drogue parachute
-  DROGUE_DESCENT, // Descending under drogue
-  MAIN_DEPLOY,    // Deploying main parachute
-  MAIN_DESCENT,   // Descending under main
-  LANDED,         // On ground after flight
-  RECOVERY,       // Post-flight data collection
-  ERROR           // Error condition
-};
-
 // Define variables declared as extern in utility_functions.h
-String FileDateString;  // For log file naming
-String LogDataString;   // For data logging
-unsigned long currentTime;  // For timestamp
+String FileDateString = "";
+String LogDataString = "";
+unsigned long currentTime = 0;  // For timestamp
 bool baroCalibrated = false;  // For barometric calibration status
+float launchAltitude = 0.0f;
+float maxAltitudeReached = 0.0f;
+float currentAltitude = 0.0f;
+bool kx134_initialized_ok = false;
+bool icm20948_ready = false;
 
 const char* BOARD_NAME = "Teensy 4.1";
 
@@ -129,16 +117,8 @@ static unsigned long logSequenceNumber = 0;
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS
 char logFileName[32] = ""; // To store the current log file name
 
-// Sensor polling intervals (in milliseconds)
-#define GPS_POLL_INTERVAL 200       // Poll GPS at 5Hz
-#define IMU_POLL_INTERVAL 100       // Poll IMU at 10Hz
 // Guidance Control Update Interval
 const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
-#define BARO_POLL_INTERVAL 100      // Poll barometer at 10Hz
-#define ACCEL_POLL_INTERVAL 100     // Poll accelerometer at 10Hz
-#define DISPLAY_INTERVAL 1000       // Update display once per second
-#define GPS_CHECK_INTERVAL 10000    // Check GPS connection every 10 seconds
-#define STORAGE_CHECK_INTERVAL 30000 // Check storage space every 30 seconds
 
 // Debug control variables
 bool enableDetailedOutput = false;

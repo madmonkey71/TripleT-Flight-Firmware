@@ -15,6 +15,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
     - Added forward declaration for `prepareForShutdown` in `src/flight_logic.cpp`.
     - Ensured `EEPROM_UPDATE_INTERVAL` is accessible in `src/state_management.cpp` by including `constants.h`. (Note: A persistent linter error for this suggests a build environment issue for the user to resolve).
  - ✅ Test it
+ - ✅ Updated data logging to include flight state as the third field.
  - ✅ Bugs
 	 - ✅ Test GPS
 	 - ✅ Fix GPS numbers (verified with a Type 2 fix)
@@ -197,6 +198,7 @@ You can selectively enable/disable various debug outputs:
 
 Data is logged to the SD card in CSV format with the following information:
 - Timestamp
+- Flight State (as an integer corresponding to the FlightState enum)
 - GPS information (fix type, satellites, position, altitude, speed)
 - Barometric data (pressure, temperature)
 - Accelerometer readings (X, Y, Z in g)

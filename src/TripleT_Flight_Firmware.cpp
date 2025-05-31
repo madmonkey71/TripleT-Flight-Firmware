@@ -272,6 +272,7 @@ void WriteLogData(bool forceLog) {
   LogData logEntry;
   logEntry.seqNum = logSequenceNumber++; // Increment and assign sequence number
   logEntry.timestamp = millis(); // Use current millis() for timestamp
+  logEntry.flightState = static_cast<uint8_t>(currentFlightState); // Add current flight state
   logEntry.fixType = GPS_fixType;
   logEntry.sats = SIV;
   logEntry.latitude = GPS_latitude;

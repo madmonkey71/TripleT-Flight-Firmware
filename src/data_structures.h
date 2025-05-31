@@ -29,6 +29,7 @@ enum FlightState : uint8_t {
 typedef struct {
   uint32_t seqNum;         // Log sequence number
   uint32_t timestamp;      // Milliseconds since boot
+  uint8_t flightState;    // Current flight state (as uint8_t)
   uint8_t fixType;        // GPS fix type
   uint8_t sats;           // Number of satellites in view (from global SIV)
   int32_t latitude;       // Degrees * 1e7

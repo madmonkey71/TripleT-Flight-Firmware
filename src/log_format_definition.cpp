@@ -8,6 +8,7 @@
 const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"SeqNum", TYPE_UINT32, offsetof(LogData, seqNum)},
     {"Timestamp", TYPE_UINT32, offsetof(LogData, timestamp)},
+    {"FlightState", TYPE_UINT8, offsetof(LogData, flightState)},
     {"FixType", TYPE_UINT8, offsetof(LogData, fixType)},
     {"Sats", TYPE_UINT8, offsetof(LogData, sats)},
     {"Lat", TYPE_INT32_AS_FLOAT_SCALED_1E7_P6, offsetof(LogData, latitude)},

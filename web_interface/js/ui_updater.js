@@ -6,6 +6,7 @@ let accelerationChartInstance = null;
 let icmAccelChartInstance = null; // Added for ICM20948 Accel
 let icmGyroChartInstance = null;  // Added for ICM20948 Gyro
 let icmMagChartInstance = null;   // Added for ICM20948 Mag
+let actuatorChartInstance = null; // Added for Actuator Control chart
 
 // DOM elements for numerical data
 let valLat, valLong, valSpeed, valSats, valAltGps;
@@ -19,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const icmAccelChartCtx = document.getElementById('icmAccelChart')?.getContext('2d'); // Added for ICM Accel
     const icmGyroChartCtx = document.getElementById('icmGyroChart')?.getContext('2d');   // Added for ICM Gyro
     const icmMagChartCtx = document.getElementById('icmMagChart')?.getContext('2d');     // Added for ICM Mag
+    const actuatorChartCtx = document.getElementById('actuatorChart')?.getContext('2d'); // Added for Actuator chart
 
     if (altitudeChartCtx && typeof initAltitudeChart === 'function') {
         altitudeChartInstance = initAltitudeChart(altitudeChartCtx);
@@ -54,6 +56,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("ICM20948 Magnetometer chart initialized by ui_updater.");
     } else {
         console.error("Failed to initialize ICM20948 Magnetometer chart: context or init function not found.");
+    }
+
+    // Initialize Actuator Control Chart
+    if (actuatorChartCtx && typeof initActuatorChart === 'function') {
+        actuatorChartInstance = initActuatorChart(actuatorChartCtx);
+        console.log("Actuator Control chart initialized by ui_updater.");
+    } else {
+        console.error("Failed to initialize Actuator Control chart: context or init function not found.");
     }
 
     // Get references to numerical display elements
@@ -148,6 +158,17 @@ function updateUI(parsedData) {
         updateChart(icmMagChartInstance, { 
             timestamp: timestamp, 
             values: [parsedData.ICM_MagX, parsedData.ICM_MagY, parsedData.ICM_MagZ] 
+        });
+    }
+
+    // Update Actuator Control Chart (placeholder - assuming Actuator1, Actuator2 fields)
+    if (actuatorChartInstance && timestamp !== undefined) {
+        // Use placeholder values if actual data fields aren't available yet
+        const actuator1Value = parsedData.Actuator1 !== undefined ? parsedData.Actuator1 : 0; 
+        const actuator2Value = parsedData.Actuator2 !== undefined ? parsedData.Actuator2 : 0;
+        updateChart(actuatorChartInstance, { 
+            timestamp: timestamp, 
+            values: [actuator1Value, actuator2Value] 
         });
     }
 

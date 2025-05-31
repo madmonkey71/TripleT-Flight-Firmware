@@ -60,56 +60,64 @@ header h1 {
 main {
     flex: 1; /* Allows main to grow and fill available space */
     padding: 1rem;
-    display: flex; /* For side-by-side panels */
-    flex-wrap: wrap; /* Allow wrapping for smaller screens */
+    display: flex; 
+    flex-direction: column; /* Change from wrap to column for top-to-bottom layout of sections */
     gap: 1rem;
 }
 
-#dataDashboard { /* This ID was in index.html, let's use it for the flex container */
+/* Remove #dataDashboard as it is no longer used as a main flex container */
+/* #dataDashboard { 
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
     width: 100%;
-}
+} */
 
-
-#numericalDataPanel, #chartsPanel {
+#numericalDataPanelContainer, /* New container for numerical data */
+#visualizationsContainer,
+#serialTerminalSection {
+    width: 100%; /* Ensure sections take full width */
     background-color: #ffffff;
     padding: 1rem;
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-#numericalDataPanel {
-    flex: 1; /* Takes up 1 part of the space */
-    min-width: 300px; /* Minimum width before wrapping */
+#numericalDataPanel { /* Styling for the content div inside the container */
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* Three equal columns for GPS, Orientation, Sensors */
+    gap: 1rem; /* Spacing between the grid items */
+    /* Any existing padding/background for #numericalDataPanel itself should be reviewed based on #numericalDataPanelContainer */
 }
 
-#visualizationsContainer { /* New style for the container */
-    flex: 2; /* Similar to how chartsPanel was sized */
-    min-width: 400px;
-    display: flex; /* Use flex to manage heading and chartsPanel */
+#visualizationsContainer { 
+    /* flex: 2; */ /* No longer needed as container handles width */
+    /* min-width: 400px; */
+    display: flex; 
     flex-direction: column;
-    gap: 1rem; /* Optional: if you want space between heading and chartsPanel */
+    /* gap: 1rem; */ /* Gap is handled by main or within chartsPanel */
 }
 
-#visualizationsContainer h2 { /* Style for the h2 within the new container */
+#visualizationsContainer h2 { 
     text-align: center;
     color: #4a69bd; /* Blue matching other headers */
     margin-top: 0;
     margin-bottom: 0; /* Remove default bottom margin or adjust as needed */
 }
-
+#numericalDataPanelContainer h2 { 
+    text-align: center;
+    color: #4a69bd; /* Blue matching other headers */
+    margin-top: 0;
+    margin-bottom: 0; /* Remove default bottom margin or adjust as needed */
+}
 #chartsPanel {
-    /* flex: 2; */ /* Flex is now on visualizationsContainer */
-    /* min-width: 400px; */ /* min-width is now on visualizationsContainer */
-    background-color: #ffffff;
-    padding: 1rem;
-    border-radius: 8px;
-    display: grid; /* Changed from flex to grid */
-    grid-template-columns: repeat(2, 1fr); /* Two equal columns */
+    /* flex: 2; */ 
+    /* min-width: 400px; */ 
+    /* background-color, padding, border-radius are now on #visualizationsContainer or this can be distinct */
+    display: grid; 
+    grid-template-columns: repeat(3, 1fr); /* Three equal columns */
     gap: 1rem;
-    align-content: start; /* Align items to the start of the grid container */
+    align-content: start; 
 }
 
 section h2, section h3 {
@@ -125,14 +133,23 @@ section h3 {
 
 
 #numericalDataPanel > div { /* Style for gpsData, orientationData, sensorData divs */
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-    background-color: #f9f9f9;
-    border-radius: 4px;
+    /* margin-bottom: 1rem; */ /* Replaced by grid gap on parent */
+    padding: 0.5rem; /* Keep padding within each item */
+    background-color: #f9f9f9; /* Keep background within each item */
+    border-radius: 4px; /* Keep border-radius for each item */
 }
 #numericalDataPanel span {
     font-weight: bold;
     color: #555;
+    /* #numericalDataPanel, #chartsPanel { 
+        flex-basis: 100%; 
+    } */
+    #numericalDataPanel { /* Adjust for responsive layout */
+        grid-template-columns: repeat(2, 1fr); /* 2 columns on medium screens */
+    }
+    header h1 {
+        font-size: 1.5em;
+    }
 }
 
 
@@ -140,7 +157,7 @@ section h3 {
     /* aspect-ratio: 16 / 9; /* Maintain aspect ratio */
     /* max-width: 100%; /* Ensure it scales down */
     /* Instead of aspect-ratio, let's set a height for better control in flex */
-    height: 250px; /* Adjusted height for charts in 2-column layout */
+    height: 200px; /* Adjusted height for charts in 3-column layout */
     background-color: #fdfdfd;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
@@ -183,25 +200,34 @@ footer {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-    main, #dataDashboard {
+    /* main, #dataDashboard { Remove #dataDashboard from here
         flex-direction: column;
+    } */
+    #chartsPanel {
+        grid-template-columns: repeat(2, 1fr); /* 2 columns on medium screens */
     }
-    #numericalDataPanel, #chartsPanel {
-        flex-basis: 100%; /* Full width on smaller screens */
-    }
+    /* #numericalDataPanel, #chartsPanel { 
+        flex-basis: 100%; 
+    } */
     header h1 {
         font-size: 1.5em;
     }
 }
 
+@media (max-width: 480px) { /* Add new breakpoint for smaller screens */
+    #chartsPanel {
+        grid-template-columns: 1fr; /* 1 column on small screens */
+    }
+    #numericalDataPanel { /* Adjust for responsive layout */
+        grid-template-columns: 1fr; /* Stack on smaller screens */
+    }
+}
+
 /* Serial Terminal Styles */
 #serialTerminalSection {
-    background-color: #ffffff;
-    padding: 1rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    margin-top: 1rem; /* Add some space above the terminal */
-    width: 100%; /* Make it take full width available in main */
+    /* background-color, padding, etc. are handled by the new common rule */
+    margin-top: 1rem; 
+    /* width: 100%; */
 }
 
 #serialTerminalSection h2 {

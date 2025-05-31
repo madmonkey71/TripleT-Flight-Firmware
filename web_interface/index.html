@@ -20,9 +20,10 @@
     </header>
 
     <main>
-        <section id="dataDashboard">
-            <div id="numericalDataPanel">
-                <h2>Real-time Data</h2>
+        <!-- 1. Real-time Data Panel -->
+        <section id="numericalDataPanelContainer"> <!-- New wrapper for just numerical data -->
+            <h2>Real-time Data</h2>
+            <div id="numericalDataPanel"> <!-- This ID is already styled -->
                 <div id="gpsData">
                     <h3>GPS</h3>
                     Lat: <span id="valLat">N/A</span>, 
@@ -44,35 +45,41 @@
                     Alt (Baro): <span id="valAltBaro">N/A</span> m
                 </div>
             </div>
+        </section>
 
-            <div id="visualizationsContainer">
-                <h2>Visualizations</h2>
-                <div id="chartsPanel">
-                    <div class="chart-container">
-                        <h3>Altitude (Calibrated)</h3>
-                        <canvas id="altitudeChart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <h3>Acceleration (KX134)</h3>
-                        <canvas id="accelerationChart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <h3>ICM20948 Acceleration</h3>
-                        <canvas id="icmAccelChart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <h3>ICM20948 Gyroscope</h3>
-                        <canvas id="icmGyroChart"></canvas>
-                    </div>
-                    <div class="chart-container">
-                        <h3>ICM20948 Magnetometer</h3>
-                        <canvas id="icmMagChart"></canvas>
-                    </div>
-                    <!-- Add more chart containers here as new charts are developed -->
+        <!-- 2. Visualizations Panel -->
+        <section id="visualizationsContainer"> <!-- This ID is already styled for heading + chartsPanel -->
+            <h2>Visualizations</h2>
+            <div id="chartsPanel"> <!-- This ID is styled for the grid -->
+                <div class="chart-container">
+                    <h3>Altitude (Calibrated)</h3>
+                    <canvas id="altitudeChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Acceleration (KX134)</h3>
+                    <canvas id="accelerationChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Acceleration</h3>
+                    <canvas id="icmAccelChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Gyroscope</h3>
+                    <canvas id="icmGyroChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Magnetometer</h3>
+                    <canvas id="icmMagChart"></canvas>
+                </div>
+                <!-- Add a placeholder for the 6th chart if needed for 3x2 grid -->
+                <div class="chart-container">
+                    <h3>Actuator Control</h3> <!-- Placeholder for the 6th chart -->
+                    <canvas id="actuatorChart"></canvas> <!-- Make sure this ID is unique and handled -->
                 </div>
             </div>
         </section>
 
+        <!-- 3. Serial Terminal Panel -->
         <section id="serialTerminalSection">
             <h2>Serial Terminal</h2>
             <div id="serialTerminalOutput" class="terminal-output"></div>

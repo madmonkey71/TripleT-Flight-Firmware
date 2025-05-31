@@ -301,6 +301,60 @@ function initICMMagChart(ctx) {
 }
 
 /**
+ * Initializes a new Chart.js line chart for Actuator Control (placeholder).
+ * @param {CanvasRenderingContext2D} ctx - The canvas 2D rendering context.
+ * @returns {Chart} The Chart.js instance.
+ */
+function initActuatorChart(ctx) {
+    console.log("Initializing Actuator Control Chart");
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [], // Timestamps
+            datasets: [
+                {
+                    label: 'Actuator Output 1',
+                    data: [], 
+                    borderColor: 'rgb(153, 102, 255)', // Purple
+                    backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                    tension: 0.1,
+                    pointRadius: 1,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Actuator Output 2',
+                    data: [], 
+                    borderColor: 'rgb(255, 159, 64)', // Orange (already used, consider different)
+                    backgroundColor: 'rgba(255, 159, 64, 0.5)',
+                    tension: 0.1,
+                    pointRadius: 1,
+                    borderWidth: 1
+                }
+                // Add more datasets if needed for actuators
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Timestamp (s)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Actuator Output (%)' // Or appropriate unit
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
  * Updates a Chart.js instance with new data.
  * @param {Chart} chartInstance - The Chart.js instance to update.
  * @param {object} newDataPoint - Data point. 

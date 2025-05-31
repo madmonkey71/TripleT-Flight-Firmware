@@ -17,12 +17,17 @@
                 <button id="disconnectButton">Disconnect Serial</button>
             </div>
         </div>
-        <div id="flightStateDisplayContainer">
-            Current Flight State: <span id="currentFlightStateValue">N/A</span>
-        </div>
     </header>
 
     <main>
+        <!-- Flight State Display Section -->
+        <section id="flightStateSection">
+            <h2>Current Flight State</h2>
+            <div id="flightStateDisplayContainer">
+                 <span id="currentFlightStateValue">N/A</span>
+            </div>
+        </section>
+
         <!-- 1. Real-time Data Panel -->
         <section id="numericalDataPanelContainer"> <!-- New wrapper for just numerical data -->
             <h2>Real-time Data</h2>

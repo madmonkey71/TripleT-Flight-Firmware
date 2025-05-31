@@ -17,6 +17,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
  - ✅ Test it
  - ✅ Updated data logging to include flight state as the third field.
  - ✅ Updated web interface to display the current flight state.
+ - ✅ Moved flight state display in web interface to its own section above real-time data.
  - ✅ Bugs
 	 - ✅ Test GPS
 	 - ✅ Fix GPS numbers (verified with a Type 2 fix)

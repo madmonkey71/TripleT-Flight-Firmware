@@ -18,6 +18,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
  - ✅ Updated data logging to include flight state as the third field.
  - ✅ Updated web interface to display the current flight state.
  - ✅ Moved flight state display in web interface to its own section above real-time data.
+ - ✅ Updated `State Machine.md` documentation, including the diagram, to reflect current system state.
  - ✅ Bugs
 	 - ✅ Test GPS
 	 - ✅ Fix GPS numbers (verified with a Type 2 fix)
@@ -279,6 +280,7 @@ Key firmware features can be configured by modifying `#define` statements in `sr
 
 For detailed documentation, please refer to:
 - [System Documentation](docs/TripleT_Flight_Firmware_Documentation.md)
+- [State Machine Design](State Machine.md)
 
 ## Potential Improvements and Future Work
 

@@ -5,8 +5,8 @@ This document outlines the state machine design for the TripleT Flight Controlle
 
 ## Arduino Framework Alignment
 The state machine is implemented within the Arduino framework:
-- **setup()**: Handles the STARTUP and CALIBRATION states
-- **loop()**: Manages all flight states from PAD_IDLE through RECOVERY
+- **`setup()`**: Handles the `STARTUP` and `CALIBRATION` states.
+- **`loop()`**: Manages all flight states from `PAD_IDLE` through `RECOVERY`, and handles `ERROR` states.
 
 ## State Machine Diagram
 ```mermaid
@@ -19,38 +19,57 @@ graph TD
     end
 
     C -- "Setup OK" --> PI[PAD_IDLE];
-    C -- "Abort/Test/Data" --> LND[LANDED]; // Special case path
+    C -- "Sensor/Config Error" --> ERR[ERROR];
+    C -- "Abort/Test/Data" --> LND[LANDED]; // Special case path for ground ops
 
     subgraph loop [LOOP FUNCTION]
         direction TD
-        PI --> ARM[ARMED]
-        ARM --> BST[BOOST]
-        BST --> CST[COAST]
-        CST --> APG[APOGEE]
-        APG --> DD[DROGUE_DEPLOY]
-        DD --> DDS[DROGUE_DESCENT]
-        DDS --> MD[MAIN_DEPLOY]
-        MD --> MDS[MAIN_DESCENT]
-        MDS --> LND // LANDED node shared with setup path
-        LND --> RCV[RECOVERY]
-        // Error states omitted for simplicity, shown in firmware doc diagram
+        PI --> ARM[ARMED];
+        ARM --> BST[BOOST];
+        BST --> CST[COAST];
+        CST --> APG[APOGEE];
+        APG --> DD[DROGUE_DEPLOY];
+        DD --> DDS[DROGUE_DESCENT];
+        DDS --> MD[MAIN_DEPLOY];
+        MD --> MDS[MAIN_DESCENT];
+        MDS --> LND; // LANDED node shared with setup path
+        LND --> RCV[RECOVERY];
+        RCV --> PI; // Option to re-arm or stay in RECOVERY for data download
+
+        // Generic Error Transitions (can occur from most states)
+        PI --> ERR;
+        ARM --> ERR;
+        BST --> ERR;
+        CST --> ERR;
+        APG --> ERR;
+        DD --> ERR;
+        DDS --> ERR;
+        MD --> ERR;
+        MDS --> ERR;
+        LND --> ERR;
+        RCV --> ERR;
+        ERR -- "Attempt Recovery/Clear" --> PI; // Attempt to return to PAD_IDLE
     end
 ```
 
 **Note on CALIBRATION to LANDED direct path:**
-The direct path from CALIBRATION to LANDED represents special scenarios:
-1. Abort handling - Used when critical errors are detected during calibration
-2. Ground testing - Allows testing recovery systems without a full flight sequence
-3. Data retrieval - Enables downloading calibration data before a launch without power cycling
+The direct path from `CALIBRATION` to `LANDED` represents special scenarios:
+1.  **Abort handling**: Used when critical errors are detected during calibration that don't warrant a full `ERROR` state but prevent flight.
+2.  **Ground testing**: Allows testing recovery systems without a full flight sequence.
+3.  **Data retrieval**: Enables downloading calibration data before a launch without power cycling.
 
 This path ensures the system can safely close logs and prepare for inspection regardless of when an abort becomes necessary.
+
+**Error State Handling:**
+The `ERROR` state can be entered from most other states if a critical sensor failure, configuration issue, or unexpected event occurs. The system will attempt to enter a safe mode. Depending on the error's nature and system configuration, it might attempt to recover or require manual intervention (e.g., via a serial command to clear errors and return to `PAD_IDLE`).
 
 ## Implementation Details
 
 ### State Definition
-Modify the existing `FlightState` enum in `TripleT_Flight_Firmware.cpp`:
+The `FlightState` enum is defined in `src/data_structures.h`:
 ```cpp
-enum FlightState {
+// In src/data_structures.h
+enum FlightState : uint8_t {
   STARTUP,        // Initial state during power-on
   CALIBRATION,    // Sensor calibration state
   PAD_IDLE,       // On pad waiting for arm command
@@ -69,37 +88,42 @@ enum FlightState {
 ```
 
 ### Configuration Parameters
-Add these at the top of the file after other definitions:
+Key configuration parameters affecting the state machine are primarily located in `src/config.h`. These include, but are not limited to:
+
 ```cpp
+// In src/config.h (example parameters, refer to actual file for complete list)
+
 // Recovery system configuration
 #define DROGUE_PRESENT true        // Set to true if drogue deployment is needed
 #define MAIN_PRESENT true          // Set to true if main deployment is needed
-#define PYRO_CHANNEL_1 2           // GPIO pin for drogue deployment
-#define PYRO_CHANNEL_2 3           // GPIO pin for main deployment
-#define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground
-#define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
-#define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
+#define PYRO_CHANNEL_DROGUE 2      // GPIO pin for drogue deployment (example)
+#define PYRO_CHANNEL_MAIN 3        // GPIO pin for main deployment (example)
+#define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground (AGL)
 
-// Error detection configuration
+// Flight detection thresholds
+#define BOOST_ACCEL_THRESHOLD 2.0f  // Acceleration threshold for liftoff detection (g) (tuned based on rocket)
+#define COAST_ACCEL_THRESHOLD 0.5f  // Acceleration threshold indicating motor burnout (g) (tuned)
+#define APOGEE_VELOCITY_THRESHOLD 0.5f // Vertical velocity threshold to help confirm apogee (m/s)
+#define LANDING_STABILITY_THRESHOLD 0.1f // Threshold for accelerometer magnitude stability to detect landing (g variation from 1g)
+#define LANDING_ALTITUDE_STABILITY_THRESHOLD 1.0f // Altitude change threshold for landing detection (m)
+
+
+// Error detection configuration (examples)
 #define MAX_SENSOR_FAILURES 3      // Maximum number of consecutive sensor failures before error state
-#define WATCHDOG_TIMEOUT_MS 1000   // Watchdog timer timeout in milliseconds
-#define BAROMETER_ERROR_THRESHOLD 10.0  // Barometer error threshold (m) between readings
-#define ACCEL_ERROR_THRESHOLD 10.0      // Accelerometer error threshold (g) between readings
-#define GPS_TIMEOUT_MS 5000             // GPS timeout in milliseconds
+#define WATCHDOG_TIMEOUT_MS 5000   // Watchdog timer timeout in milliseconds (Teensy specific, often hardware)
 
-// EEPROM configuration for non-volatile storage
+// EEPROM configuration for non-volatile storage (defined in src/config.h or directly in state_management.cpp)
 #define EEPROM_STATE_ADDR 0           // EEPROM address for flight state
-#define EEPROM_ALTITUDE_ADDR 4        // EEPROM address for last altitude
-#define EEPROM_TIMESTAMP_ADDR 8       // EEPROM address for timestamp
-#define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature
-#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
-#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds
+#define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature (example)
+#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data (example)
+#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds (example, may vary by state)
 
-// Redundant sensing configuration
-#define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 5  // Number of consecutive readings to confirm landing
-#define BACKUP_APOGEE_TIME 15000      // Backup time-based apogee detection (ms after boost)
+// Redundant sensing configuration (examples from config.h)
+#define APOGEE_CONFIRMATION_COUNT 5   // Number of consecutive readings/conditions to confirm apogee
+#define LANDING_CONFIRMATION_COUNT 10  // Number of consecutive readings/conditions to confirm landing
+#define BACKUP_APOGEE_TIME_MS 20000      // Backup time-based apogee detection (ms after boost detection if primary fails)
 ```
+**Note:** The C++ code blocks for `Non-Volatile Storage Implementation`, `Redundant Sensing for Critical Events`, `Enhanced Flight State Processing`, `Setup Function Enhancement`, and `Testing Considerations` are illustrative examples of how these features are implemented in the firmware (`.cpp` files within the `src` directory, primarily `TripleT_Flight_Firmware.cpp`, `flight_logic.cpp`, `state_management.cpp`, and sensor-specific files). Refer to the actual source code for the most up-to-date and complete implementation details.
 
 ### Non-Volatile Storage Implementation
 
@@ -330,7 +354,7 @@ bool detectApogee() {
   // Method 3: Time-based detection (last resort)
   if (!apogeeDetected && boostEndTime > 0) {
     // If we know when the boost phase ended, we can estimate apogee
-    if (millis() - boostEndTime > BACKUP_APOGEE_TIME) {
+    if (millis() - boostEndTime > BACKUP_APOGEE_TIME_MS) {
       Serial.println(F("APOGEE DETECTED (time-based)"));
       apogeeDetected = true;
     }
@@ -374,7 +398,7 @@ bool detectLanding() {
     float currentAltitude = getBaroAltitude();
     
     // Check if altitude is stable
-    if (fabs(currentAltitude - lastAltitude) < 1.0) {
+    if (fabs(currentAltitude - lastAltitude) < LANDING_ALTITUDE_STABILITY_THRESHOLD) {
       altitudeStableCount++;
     } else {
       altitudeStableCount = 0;
@@ -621,17 +645,17 @@ void ProcessFlightState() {
       // Activate drogue deployment channel with redundancy
       {
         // First attempt
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
+        digitalWrite(PYRO_CHANNEL_DROGUE, HIGH);
         delay(1000);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
+        digitalWrite(PYRO_CHANNEL_DROGUE, LOW);
         
         // Brief pause
         delay(500);
         
         // Secondary pulse for redundancy
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
+        digitalWrite(PYRO_CHANNEL_DROGUE, HIGH);
         delay(500);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
+        digitalWrite(PYRO_CHANNEL_DROGUE, LOW);
         
         // Log deployment
         Serial.println(F("DROGUE DEPLOYMENT COMPLETE"));
@@ -677,17 +701,17 @@ void ProcessFlightState() {
       // Deploy main if present, with redundancy
       if (MAIN_PRESENT) {
         // First attempt
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
+        digitalWrite(PYRO_CHANNEL_MAIN, HIGH);
         delay(1000);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
+        digitalWrite(PYRO_CHANNEL_MAIN, LOW);
         
         // Brief pause
         delay(500);
         
         // Secondary pulse for redundancy
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
+        digitalWrite(PYRO_CHANNEL_MAIN, HIGH);
         delay(500);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
+        digitalWrite(PYRO_CHANNEL_MAIN, LOW);
         
         // Log deployment
         Serial.println(F("MAIN DEPLOYMENT COMPLETE"));
@@ -794,17 +818,17 @@ void setup() {
     switch (flightState) {
       case DROGUE_DEPLOY:
         // If resuming during deployment, do it now
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
+        digitalWrite(PYRO_CHANNEL_DROGUE, HIGH);
         delay(1000);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
+        digitalWrite(PYRO_CHANNEL_DROGUE, LOW);
         flightState = DROGUE_DESCENT;
         break;
         
       case MAIN_DEPLOY:
         // If resuming during deployment, do it now
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
+        digitalWrite(PYRO_CHANNEL_MAIN, HIGH);
         delay(1000);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
+        digitalWrite(PYRO_CHANNEL_MAIN, LOW);
         flightState = MAIN_DESCENT;
         break;
         
@@ -820,10 +844,10 @@ void setup() {
   tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN);
   
   // Initialize recovery system channels
-  pinMode(PYRO_CHANNEL_1, OUTPUT);
-  pinMode(PYRO_CHANNEL_2, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_1, LOW);
-  digitalWrite(PYRO_CHANNEL_2, LOW);
+  pinMode(PYRO_CHANNEL_DROGUE, OUTPUT);
+  pinMode(PYRO_CHANNEL_MAIN, OUTPUT);
+  digitalWrite(PYRO_CHANNEL_DROGUE, LOW);
+  digitalWrite(PYRO_CHANNEL_MAIN, LOW);
   
   // Initialize I2C, SPI, etc.
   Wire.begin();
@@ -1079,9 +1103,9 @@ void testApogeeDetection() {
   // Test time-based detection
   Serial.print(F("Time-based detection: "));
   unsigned long originalBoostEnd = boostEndTime;
-  boostEndTime = millis() - (BACKUP_APOGEE_TIME + 1000);
+  boostEndTime = millis() - (BACKUP_APOGEE_TIME_MS + 1000);
   
-  bool timeDetection = (millis() - boostEndTime > BACKUP_APOGEE_TIME);
+  bool timeDetection = (millis() - boostEndTime > BACKUP_APOGEE_TIME_MS);
   Serial.println(timeDetection ? F("PASS") : F("FAIL"));
   
   // Restore original values

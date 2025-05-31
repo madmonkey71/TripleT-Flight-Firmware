@@ -163,6 +163,61 @@ void MadgwickAHRSupdateMARG(float gx, float gy, float gz, float ax, float ay, fl
     icm_q3 = q3;
 }
 
+// Function to perform static gyro bias calibration
+void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
+    if (enableSensorDebug) {
+        Serial.println(F("Starting ICM-20948 Gyro Bias Calibration. Keep the device very still..."));
+    }
+
+    float temp_gyro_sum[3] = {0.0f, 0.0f, 0.0f};
+
+    // Ensure sensor is initialized
+    if (myICM.status != ICM_20948_Stat_Ok) {
+        if (enableSensorDebug) {
+            Serial.println(F("ICM-20948 not initialized. Cannot calibrate gyro bias."));
+        }
+        return;
+    }
+
+    // Discard initial readings
+    for (int i = 0; i < 100; ++i) {
+        if (myICM.dataReady()) {
+            myICM.getAGMT(); // Read and discard
+        }
+        delay(delay_ms);
+    }
+
+    int samples_collected = 0;
+    for (int i = 0; i < num_samples; ++i) {
+        if (myICM.dataReady()) {
+            myICM.getAGMT();
+            // Gyro data is in dps, convert to rad/s for consistency with Madgwick input and gyroBias storage
+            temp_gyro_sum[0] += myICM.gyrX() * DEG_TO_RAD;
+            temp_gyro_sum[1] += myICM.gyrY() * DEG_TO_RAD;
+            temp_gyro_sum[2] += myICM.gyrZ() * DEG_TO_RAD;
+            samples_collected++;
+        }
+        delay(delay_ms); // Small delay between samples
+    }
+
+    if (samples_collected > 0) {
+        gyroBias[0] = temp_gyro_sum[0] / samples_collected;
+        gyroBias[1] = temp_gyro_sum[1] / samples_collected;
+        gyroBias[2] = temp_gyro_sum[2] / samples_collected;
+
+        if (enableSensorDebug) {
+            Serial.println(F("Gyro Bias Calibration Complete."));
+            Serial.print(F("  Bias X (rad/s): ")); Serial.println(gyroBias[0], 6);
+            Serial.print(F("  Bias Y (rad/s): ")); Serial.println(gyroBias[1], 6);
+            Serial.print(F("  Bias Z (rad/s): ")); Serial.println(gyroBias[2], 6);
+        }
+    } else {
+        if (enableSensorDebug) {
+            Serial.println(F("Gyro Bias Calibration Failed: No samples collected."));
+        }
+        // Keep existing/default (zero) bias if calibration fails
+    }
+}
 
 // Initialize ICM-20948 IMU
 void ICM_20948_init() {
@@ -453,68 +508,20 @@ void ICM_20948_read() {
   }
 }
 
-// Calibrate the magnetometer
+// Initialize ICM-20948 IMU
 void ICM_20948_calibrate() {
-  const int numSamples = 500;
-  float magMin[3] = {99999.0f, 99999.0f, 99999.0f};
-  float magMax[3] = {-99999.0f, -99999.0f, -99999.0f};
-  
-  Serial.println("Starting magnetometer calibration. Move the sensor in a figure-8 pattern...");
-  
-  // Collect calibration data
-  for (int i = 0; i < numSamples; i++) {
-    if (myICM.dataReady()) {
-      myICM.getAGMT();
-      
-      float mx = myICM.magX();
-      float my = myICM.magY();
-      float mz = myICM.magZ();
-      
-      // Update min/max values
-      magMin[0] = min(magMin[0], mx);
-      magMin[1] = min(magMin[1], my);
-      magMin[2] = min(magMin[2], mz);
-      
-      magMax[0] = max(magMax[0], mx);
-      magMax[1] = max(magMax[1], my);
-      magMax[2] = max(magMax[2], mz);
-      
-      if (i % 50 == 0) {
-        Serial.print("Progress: ");
-        Serial.print(i * 100 / numSamples);
-        Serial.println("%");
-      }
-      
-      delay(10);
+    if (enableSensorDebug) {
+        Serial.println(F("Starting ICM-20948 Full Calibration Sequence..."));
     }
-  }
-  
-  // Calculate bias (hard iron) and scale (soft iron)
-  for (int i = 0; i < 3; i++) {
-    magBias[i] = (magMax[i] + magMin[i]) / 2.0f;
-    magScale[i] = (magMax[i] - magMin[i]) / 2.0f;
-  }
-  
-  // Normalize scale factors
-  float avg_scale = (magScale[0] + magScale[1] + magScale[2]) / 3.0f;
-  for (int i = 0; i < 3; i++) {
-    if (magScale[i] != 0) {
-      magScale[i] = avg_scale / magScale[i];
-    } else {
-      magScale[i] = 1.0f;  // Avoid division by zero
+    // For now, it only calls the gyro bias calibration.
+    // Magnetometer calibration is separate and interactive (ICM_20948_calibrate_mag_interactive)
+    ICM_20948_calibrate_gyro_bias(); 
+
+    // TODO: Add magnetometer calibration call here if a non-interactive one is developed.
+
+    if (enableSensorDebug) {
+        Serial.println(F("ICM-20948 Full Calibration Sequence Finished."));
     }
-  }
-  
-  Serial.println("Magnetometer calibration complete!");
-  Serial.println("Bias (hard iron):");
-  Serial.print("X: "); Serial.print(magBias[0]);
-  Serial.print(" Y: "); Serial.print(magBias[1]);
-  Serial.print(" Z: "); Serial.println(magBias[2]);
-  
-  Serial.println("Scale (soft iron):");
-  Serial.print("X: "); Serial.print(magScale[0]);
-  Serial.print(" Y: "); Serial.print(magScale[1]);
-  Serial.print(" Z: "); Serial.println(magScale[2]);
 }
 
 // Print ICM-20948 data to serial

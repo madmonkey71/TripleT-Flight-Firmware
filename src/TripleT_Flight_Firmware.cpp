@@ -129,7 +129,7 @@ bool enableIMUDebug = false;         // For IMU data
 bool enableBaroDebug = false;        // For barometer data
 bool enableStorageDebug = false;     // For SD card and storage operations
 bool enableStatusSummary = false;    // Flag to control status summary output
-bool enableICMRawDebug = false;     // Flag to control ICM raw data debug output (OFF by default)
+bool enableICMRawDebug = true;     // Flag to control ICM raw data debug output (ON by default for tuning)
 bool displayMode = false;           // Toggle for compact vs detailed display
 bool enableSerialCSV = false;  // Global variable to control serial CSV output
 
@@ -985,7 +985,15 @@ void setup() {
   }
   
   ICM_20948_init();
-  Serial.println(F("ICM-20948 initialized"));
+  if (myICM.status == ICM_20948_Stat_Ok) { // Check if initialization was successful
+    icm20948_ready = true; // Set flag if successful
+    Serial.println(F("ICM-20948 (9-DOF IMU) reported successful initialization."));
+    ICM_20948_calibrate(); // Perform static gyro bias calibration and other calibrations
+  } else {
+    icm20948_ready = false;
+    Serial.println(F("ICM-20948 (9-DOF IMU) reported initialization FAILED."));
+    // Potentially set flightState = ERROR; here if critical
+  }
   
   ms5611_init();
   Serial.println(F("MS5611 initialized"));

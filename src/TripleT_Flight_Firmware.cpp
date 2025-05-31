@@ -52,6 +52,25 @@
 #include "guidance_control.h" // For guidance and control functions
 #include "flight_logic.h"     // For update_guidance_targets()
 #include "config.h"          // For pin definitions and other config
+#include "state_management.h" // For recoverFromPowerLoss()
+
+// Flight State Machine Enum
+enum FlightState {
+  STARTUP,        // Initial state during power-on
+  CALIBRATION,    // Sensor calibration state
+  PAD_IDLE,       // On pad waiting for arm command
+  ARMED,          // Armed and ready for launch
+  BOOST,          // Motor burning, accelerating
+  COAST,          // Unpowered flight upward
+  APOGEE,         // Peak altitude reached
+  DROGUE_DEPLOY,  // Deploying drogue parachute
+  DROGUE_DESCENT, // Descending under drogue
+  MAIN_DEPLOY,    // Deploying main parachute
+  MAIN_DESCENT,   // Descending under main
+  LANDED,         // On ground after flight
+  RECOVERY,       // Post-flight data collection
+  ERROR           // Error condition
+};
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString;  // For log file naming
@@ -86,6 +105,12 @@ bool sdCardAvailable = false;
 bool sdCardPresent = false;   // Physical presence of SD card
 bool sdCardMounted = false;   // Whether SD card is mounted
 bool loggingEnabled = true;  // Whether logging is enabled
+
+// Flight State Variables
+FlightState currentFlightState = STARTUP;
+FlightState previousFlightState = STARTUP;
+unsigned long stateEntryTime = 0; // To store the time when the current state was entered
+
 uint64_t availableSpace = 0;  // Available space on SD card in bytes
 bool flashAvailable = false;
 FsFile root;
@@ -844,8 +869,26 @@ void setup() {
   // Wait for the Serial monitor to be opened.
   Serial.begin(115200);
   delay(500); // Give the serial port time to initialize
+
+  // Initialize NeoPixel first for visual feedback
+  pixels.begin(); // Initialize pixels early for feedback during setup
+  pixels.clear();
+  pixels.setPixelColor(0, pixels.Color(20, 0, 0)); // Red during startup
+  pixels.setPixelColor(1, pixels.Color(20, 0, 0)); // Red during startup
+  pixels.show();
+
+  // Basic hardware init needed for recovery check (e.g. EEPROM access via I2C)
+  Wire.begin();
+  Wire.setClock(400000); // Ensure I2C is up for EEPROM
+  SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
+
+  Serial.println(F("Checking for flight state recovery..."));
+  recoverFromPowerLoss(); // This function will update currentFlightState
+
+  Serial.print(F("Flight state after recovery attempt: "));
+  Serial.println(getStateName(currentFlightState)); // Assumes getStateName is available via utility_functions.h
   
-  // Important: Disable all debugging immediately at startup
+  // Important: Disable all debugging immediately at startup (unless recovery dictates otherwise, though not typical)
   enableDetailedOutput = false;
   enableSystemDebug = false;
   enableSensorDebug = false;
@@ -856,14 +899,7 @@ void setup() {
   enableICMRawDebug = false;
   displayMode = false;
   
-  // Initialize NeoPixel first for visual feedback
-  pixels.begin();
-  pixels.clear();
-  pixels.setPixelColor(0, pixels.Color(20, 0, 0)); // Red during startup
-  pixels.setPixelColor(1, pixels.Color(20, 0, 0)); // Red during startup
-  pixels.show();
-  
-  // Startup Tone
+  // Startup Tone (after initial pixel setup and recovery message)
   delay(500);
   tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN); delay(75);
   noTone(BUZZER_PIN);
@@ -888,21 +924,10 @@ void setup() {
   pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow during init
   pixels.show();
 
-  // Setup SPI and I2C for Teensy 4.1
-  // Teensy 4.1 with SDIO doesn't need explicit SPI setup for SD card
-  
-  // For other SPI devices (if any)
-  SPI.begin();
-  
-  // Standard I2C setup
-  Wire.begin();
-  Wire.setClock(400000);
-  
-  Serial.println("Teensy 4.1 SPI and I2C initialized (SDIO mode for SD card)");
-  // Scan the I2C bus for devices
+  // Scan the I2C bus for devices (can be after recovery attempt)
   scan_i2c();
 
-  // Initialize GPS first to get accurate time
+  // Initialize GPS first to get accurate time (essential for logging and potentially calibration)
   Serial.println(F("Initializing GPS module..."));
   enableGPSDebug = false; // Disable GPS debug output
   gps_init();
@@ -1022,12 +1047,18 @@ void setup() {
   sdCardPresent = false;
   sdCardMounted = false;
 #endif // !DISABLE_SDCARD_LOGGING
-  // Change LED to green to indicate successful initialization (regardless of SD status)
-  pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-  pixels.show();
+  // Change LED to green to indicate successful initialization (regardless of SD status) - This might be too early, state-dependent now.
+  // pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green
+  // pixels.show();
   
-  // Barometric calibration is now done via command
-  Serial.println(F("Use 'calibrate' command to perform barometric calibration with GPS"));
+  // Barometric calibration is now done via command OR if state is CALIBRATION
+  if (currentFlightState == CALIBRATION) {
+    Serial.println(F("State is CALIBRATION. Attempting barometric calibration if not already done."));
+    // performCalibration(); // This function has user interaction/blocking, might need adjustment for setup
+                           // For now, assume calibration is initiated here or handled by main loop if state is CALIBRATION
+  } else {
+    Serial.println(F("Barometric calibration can be initiated via 'calibrate' command if needed."));
+  }
 
   // Initialize Guidance Control System
   guidance_init();
@@ -1044,246 +1075,204 @@ void setup() {
   servo_roll.write(SERVO_DEFAULT_ANGLE);
   servo_yaw.write(SERVO_DEFAULT_ANGLE);
   Serial.println(F("Actuators initialized and set to default positions."));
+
+  // --- State-based setup adjustments after all hardware init ---
+
+  // Initialize Pyro Pins (as per State Machine.md setup)
+  // This should be done regardless of state to ensure pins are in a known safe state.
+  pinMode(PYRO_CHANNEL_1, OUTPUT);
+  pinMode(PYRO_CHANNEL_2, OUTPUT);
+  digitalWrite(PYRO_CHANNEL_1, LOW);
+  digitalWrite(PYRO_CHANNEL_2, LOW);
+  Serial.println(F("Pyro channels initialized to LOW."));
+
+  // Conditional transition to CALIBRATION or other states
+  if (currentFlightState == STARTUP) { // Only transition if starting fresh (recovery didn't set a later state)
+    Serial.println(F("Fresh start detected, proceeding to CALIBRATION state."));
+    currentFlightState = CALIBRATION;
+    stateEntryTime = millis(); 
+    pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow during calibration
+    pixels.show();
+    // updateLoggingRate(currentFlightState); // To be handled by ProcessFlightState or main loop
+    // setStateTimeout(CALIBRATION);         // To be handled by ProcessFlightState or main loop
+  } else {
+    Serial.print(F("Resuming operation in state: "));
+    Serial.println(getStateName(currentFlightState));
+    // If resuming directly into a state that expects certain hardware to be active (e.g. pyro channels for deployment states)
+    // The actual deployment actions should be part of ProcessFlightState to ensure consistency.
+    // For setup(), just ensuring pyro pins are initialized (done above) is sufficient.
+  }
+
+  // Final state assignment before loop()
+  // This needs to be careful not to override a recovered state if it's valid.
+  bool systemHealthy = true; // Placeholder for actual health check. 
+                            // TODO: Implement isSensorSuiteHealthy() or similar.
+                            // This function should check GPS, IMU, Baro, SD card status.
+  
+  if (!sdCardAvailable && loggingEnabled) { // Example check: if logging is on but SD fails, system is not healthy.
+      Serial.println(F("ERROR: Logging enabled but SD card not available. System unhealthy."));
+      systemHealthy = false;
+  }
+  // Add more checks for critical sensors to set systemHealthy = false if they fail init.
+  // For example:
+  // if (!ms5611Sensor.isConnected()) systemHealthy = false; // Assuming ms5611_init updates this
+  // if (!kx134_initialized_ok && !icm20948_ready) systemHealthy = false; // If no IMU is good. (Need to define these flags based on init funcs)
+
+
+  if (currentFlightState == CALIBRATION) { 
+      if (systemHealthy) {
+          Serial.println(F("System healthy, proceeding to PAD_IDLE state."));
+          currentFlightState = PAD_IDLE;
+      } else {
+          Serial.println(F("System unhealthy after calibration attempt, proceeding to ERROR state."));
+          currentFlightState = ERROR;
+      }
+      stateEntryTime = millis();
+      // updateLoggingRate(currentFlightState); // Handled by ProcessFlightState
+  } else if (currentFlightState == STARTUP && systemHealthy) {
+       // This case handles if recovery somehow ended in STARTUP (e.g. EEPROM invalid) but system is now healthy
+       Serial.println(F("Fresh start, system healthy, proceeding to PAD_IDLE state."));
+       currentFlightState = PAD_IDLE;
+       stateEntryTime = millis();
+  } else if (!systemHealthy && currentFlightState != ERROR) {
+      // If system is not healthy and not already in ERROR state (e.g. recovered into a flight state but sensors now fail during setup)
+      Serial.println(F("System became unhealthy during setup, transitioning to ERROR state."));
+      currentFlightState = ERROR;
+      stateEntryTime = millis();
+  }
+  // If currentFlightState is already a later flight state (e.g., DROGUE_DESCENT) and system is healthy,
+  // it will remain in that state. If system becomes unhealthy during its specific setup/checks, it transitions to ERROR.
+
+  Serial.print(F("Setup complete. Initial flight state for loop(): "));
+  Serial.println(getStateName(currentFlightState));
+  
+  // Final LED indication based on state
+  if (currentFlightState == PAD_IDLE) pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green
+  else if (currentFlightState == ERROR) pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red
+  else if (currentFlightState == CALIBRATION) pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow
+  // Other states will be handled by ProcessFlightState's display logic in the main loop.
+  pixels.show();
 }
 
 void loop() {
+  // --- Timekeeping and Sensor Update Flags ---
   static unsigned long lastDisplayTime = 0;
-  static unsigned long lastDetailedTime = 0;
+  static unsigned long lastDetailedTime = 0; // For ICM_20948_print
   static unsigned long lastGPSReadTime = 0;
-  static unsigned long lastIMUReadTime = 0;
+  static unsigned long lastIMUReadTime = 0;   // For ICM20948 IMU
   static unsigned long lastBaroReadTime = 0;
-  static unsigned long lastAccelReadTime = 0;
+  static unsigned long lastAccelReadTime = 0; // For KX134 Accelerometer
   static unsigned long lastGPSCheckTime = 0;
   static unsigned long lastStorageCheckTime = 0;
-  static unsigned long lastFlushTime = 0;  // Track when we last flushed data
-  static bool sensorsUpdated = false;
   static unsigned long lastGuidanceUpdateTime = 0;
-  
-  // Check for serial commands
+
+  bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
+
+  // --- Serial Command Processing ---
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    
-    // Pass command to our command handler function
-    processCommand(command);
+    processCommand(command); // Existing command processor
   }
-  
-  // Read GPS data at GPS_POLL_INTERVAL
+
+  // --- Sensor Data Reads ---
   if (millis() - lastGPSReadTime >= GPS_POLL_INTERVAL) {
     lastGPSReadTime = millis();
-    gps_read();
-    sensorsUpdated = true;
-
-    // Check for automatic calibration opportunity
-    if (!baroCalibrated && pDOP < 300) {  // pDOP is stored as integer * 100
-      static unsigned long lastCalibrationAttempt = 0;
-      static int calibrationAttempts = 0;
-      static int validReadingsCount = 0;
-      static bool readingStable = false;
-      
-      // Only attempt calibration once every 30 seconds and limit to 3 attempts
-      if (millis() - lastCalibrationAttempt > 30000 && calibrationAttempts < 3) {
-        // Before starting calibration, ensure we have several good sensor readings
-        if (!readingStable) {
-          // Check if we have a valid barometer reading
-          int result = ms5611_read();
-          if (result == MS5611_READ_OK && pressure >= 800 && pressure <= 1100) {
-            validReadingsCount++;
-            Serial.print(F("Valid barometer reading #"));
-            Serial.print(validReadingsCount);
-            Serial.print(F(": Pressure = "));
-            Serial.print(pressure);
-            Serial.println(F(" hPa"));
-            
-            // Need at least 5 good readings before considering calibration
-            if (validReadingsCount >= 5) {
-              readingStable = true;
-              Serial.println(F("Barometer readings are stable. Ready for calibration."));
-            }
-          } else {
-            // Reset count if we get bad readings
-            validReadingsCount = 0;
-            Serial.println(F("Invalid barometer reading. Waiting for sensor to stabilize..."));
-            delay(200);
-            return; // Skip calibration for now
-          }
-          
-          if (!readingStable) {
-            return; // Skip calibration until readings are stable
-          }
-        }
-        
-        // Now we can attempt calibration
-        lastCalibrationAttempt = millis();
-        calibrationAttempts++;
-        
-        Serial.println(F("Good GPS fix detected (pDOP < 3.0), starting automatic barometric calibration..."));
-        
-        // Change LED to purple to indicate calibration in progress
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50));
-        pixels.show();
-        
-        if (ms5611_calibrate_with_gps(30000)) {  // Wait up to 30 seconds for calibration
-          Serial.println(F("Automatic barometric calibration successful!"));
-          baroCalibrated = true;
-          // Change LED to green to indicate success
-          pixels.setPixelColor(0, pixels.Color(0, 50, 0));
-          pixels.show();
-          delay(1000);
-        } else {
-          Serial.println(F("Automatic barometric calibration timed out or failed."));
-          Serial.print(F("Attempt "));
-          Serial.print(calibrationAttempts);
-          Serial.println(F(" of 3"));
-          // Change LED to red to indicate failure
-          pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-          pixels.show();
-          delay(1000);
-          
-          // Reset stable reading flag to require fresh readings before next attempt
-          readingStable = false;
-          validReadingsCount = 0;
-        }
-      }
-    }
+    gps_read(); // Existing GPS read function
+    sensorsUpdatedThisCycle = true;
+    // NOTE: Old automatic barometer calibration logic based on pDOP < 300 from loop() should be REMOVED.
+    // Calibration is now handled by setup() and the CALIBRATION state in ProcessFlightState.
   }
-  
-  // Read barometer data at BARO_POLL_INTERVAL
   if (millis() - lastBaroReadTime >= BARO_POLL_INTERVAL) {
     lastBaroReadTime = millis();
-    int result = ms5611_read();
-    if (result == MS5611_READ_OK) {
-      sensorsUpdated = true;
+    if (ms5611_read() == MS5611_READ_OK) { // Existing barometer read
+        sensorsUpdatedThisCycle = true;
     }
   }
-  
-  // Read IMU data at 10Hz
-  if (millis() - lastIMUReadTime >= 100) {
+  if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
-    ICM_20948_read();
-    sensorsUpdated = true;
+    ICM_20948_read(); // Existing ICM read
+    sensorsUpdatedThisCycle = true;
   }
-  
-  // Read accelerometer data at 10Hz
-  if (millis() - lastAccelReadTime >= 100) {
+  if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
-    kx134_read();
-    sensorsUpdated = true;
+    kx134_read(); // Existing KX134 read
+    sensorsUpdatedThisCycle = true;
   }
-  
-  
-  #if DISABLE_SDCARD_LOGGING
-  // Logging disabled by configuration, ensure flags are false.
-  // The actual sdCardAvailable = false etc. is handled in setup.
-  // Removing the early return that prevented serial CSV output.
-  // sdCardPresent = false; // These are already set in setup if this macro is defined
-  // sdCardMounted = false;
-  // sdCardAvailable = false;
-  // return; // <--- REMOVED THIS LINE
-#endif
-  // Log data immediately after any sensor update
-  if (sensorsUpdated) {
-    WriteLogData(true);
-    sensorsUpdated = false;
+
+  // --- Flight State Machine ---
+  ProcessFlightState(); // Call the main state machine logic
+
+  // --- Data Logging ---
+  // WriteLogData has its own rate-limiting logic.
+  // ProcessFlightState also calls WriteLogData(true) for critical events.
+  if (sensorsUpdatedThisCycle) { // Log if sensor data was updated this cycle
+      WriteLogData(false); // false means it will use its internal timing logic for periodic logging
   }
-  
-  // Periodically check GPS connection - simplified approach
+
+  // --- Periodic Checks ---
   if (millis() - lastGPSCheckTime >= GPS_CHECK_INTERVAL) {
     lastGPSCheckTime = millis();
-    checkGPSConnection();
+    checkGPSConnection(); // Existing GPS connection check
   }
-  
-  // Periodically check storage space
   if (millis() - lastStorageCheckTime >= STORAGE_CHECK_INTERVAL) {
     lastStorageCheckTime = millis();
-    checkStorageSpace();
+    checkStorageSpace(); // Existing storage space check
   }
-  
-  // Periodically flush data to SD card (every 10 seconds)
-  if (millis() - lastFlushTime >= 10000) {  // 10 seconds
-    lastFlushTime = millis();
-    
-    // Flush SD card data
-    if (sdCardAvailable && LogDataFile) {
-      LogDataFile.flush();
-      // Only print flush message if storage debugging is enabled
-      if (enableStorageDebug) {
-        Serial.println(F("SD card data flushed"));
-      }
-    }
-  }
-  
-  // Print status summary once per second, but only if enabled
+  // NOTE: Explicit LogDataFile.flush() every 10 seconds from old loop() should be REMOVED.
+  // WriteLogData() in TripleT_Flight_Firmware.cpp already has a flush-every-10-writes mechanism.
+
+  // --- Display/Status Updates ---
   if (enableStatusSummary && millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
     lastDisplayTime = millis();
-    printStatusSummary();
+    printStatusSummary(); // Existing status summary
   }
-  
-  // Print detailed data less frequently
-  if (displayMode && millis() - lastDetailedTime >= 5000) {
+  if (displayMode && millis() - lastDetailedTime >= 5000) { // For ICM_20948_print
     lastDetailedTime = millis();
     ICM_20948_print();
   }
 
-  // Update dynamic guidance targets based on flight logic
-  update_guidance_targets();
+  // --- Guidance Control System ---
+  // This logic is kept as is. ProcessFlightState might indirectly control it
+  // by setting targets or flags that this system uses.
+  update_guidance_targets(); // Existing function or its equivalent for setting guidance targets
 
-  // --- Guidance Control System Update ---
   if (millis() - lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
       float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
       lastGuidanceUpdateTime = millis();
 
-      // 1. Get current orientation (Euler angles)
       float roll_rad, pitch_rad, yaw_rad;
-      // Assuming icm_q0, icm_q1, icm_q2, icm_q3 are globally accessible after AHRS update
-      // These are extern declared in icm_20948_functions.h and defined in icm_20948_functions.cpp
       convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_rad, pitch_rad, yaw_rad);
 
-      // 2. Get current angular velocities (calibrated)
       float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
       float calibrated_gyro_data[3];
-      ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Function from icm_20948_functions.cpp
-      roll_rate_radps = calibrated_gyro_data[0];  // Assuming X-axis from sensor is roll axis
-      pitch_rate_radps = calibrated_gyro_data[1]; // Assuming Y-axis from sensor is pitch axis
-      yaw_rate_radps = calibrated_gyro_data[2];   // Assuming Z-axis from sensor is yaw axis
-                                              // TODO: Verify axis mapping based on actual sensor orientation on rocket
+      ICM_20948_get_calibrated_gyro(calibrated_gyro_data);
+      roll_rate_radps = calibrated_gyro_data[0];
+      pitch_rate_radps = calibrated_gyro_data[1];
+      yaw_rate_radps = calibrated_gyro_data[2];
 
-      // 3. Update guidance controller
-      // Target orientation is currently set by guidance_set_target_orientation_euler().
-      // For now, it will use the default (0,0,0) or whatever was last set via command.
       guidance_update(roll_rad, pitch_rad, yaw_rad,
                       roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
                       deltat_guidance);
 
-      // 4. Get actuator outputs
       float actuator_x, actuator_y, actuator_z;
       guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
 
-      // 5. Drive Servos
-      // Map PID outputs (-1.0 to 1.0 from PID_OUTPUT_MIN/MAX) to servo angles (0 to 180 degrees)
       float pitch_angle = map_float(actuator_x, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
       float roll_angle  = map_float(actuator_y, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
       float yaw_angle   = map_float(actuator_z, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
 
-      // Clamp angles to ensure they are within servo limits (0-180 typical)
-      pitch_angle = constrain(pitch_angle, 0, 180);
-      roll_angle  = constrain(roll_angle,  0, 180);
-      yaw_angle   = constrain(yaw_angle,   0, 180);
+      servo_pitch.write(static_cast<int>(constrain(pitch_angle, 0, 180)));
+      servo_roll.write(static_cast<int>(constrain(roll_angle,  0, 180)));
+      servo_yaw.write(static_cast<int>(constrain(yaw_angle,   0, 180)));
       
-      // Write to servos
-      servo_pitch.write(static_cast<int>(pitch_angle));
-      servo_roll.write(static_cast<int>(roll_angle));
-      servo_yaw.write(static_cast<int>(yaw_angle));
-
-      // For now, add a debug print if SystemDebug is enabled
-      if (enableSystemDebug) { // Using existing SystemDebug flag for this
+      if (enableSystemDebug) { // Existing guidance debug print logic
           static unsigned long lastGuidanceDebugPrintTime = 0;
-          if (millis() - lastGuidanceDebugPrintTime > 500) { // Print every 500ms
+          if (millis() - lastGuidanceDebugPrintTime > 500) {
               lastGuidanceDebugPrintTime = millis();
               Serial.print("Guidance Out - X(Pitch): "); Serial.print(actuator_x, 2);
               Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
               Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
-              
               Serial.print("Guidance In  - R: "); Serial.print(roll_rad * (180.0f/PI), 1);
               Serial.print(" P: "); Serial.print(pitch_rad * (180.0f/PI), 1);
               Serial.print(" Y: "); Serial.println(yaw_rad * (180.0f/PI), 1);

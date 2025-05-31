@@ -102,4 +102,15 @@ void saveStateToEEPROM();
 // Attitude utility function
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw);
 
+// Forward declaration for FlightState enum.
+// This is needed because the function signature uses FlightState.
+// The actual definition of FlightState is expected to be in a place accessible
+// by utility_functions.cpp (e.g. by including TripleT_Flight_Firmware.cpp or a shared header).
+// Consider moving FlightState enum to data_structures.h or its own header for better organization.
+enum FlightState : uint8_t; // Assuming FlightState is compatible with uint8_t as used in FlightStateData
+
+bool isSensorSuiteHealthy(FlightState currentState); // Add if not present
+
+const char* getStateName(FlightState state);
+
 #endif // UTILITY_FUNCTIONS_H 

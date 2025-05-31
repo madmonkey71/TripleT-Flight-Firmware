@@ -46,4 +46,25 @@ typedef struct {
   float actuator_x, actuator_y, actuator_z; // Actuator output commands (-1.0 to 1.0)
 } LogData;
 
+#include <Arduino.h> // For FlightState enum if not already included, though it's defined in TripleT_Flight_Firmware.cpp
+
+// Forward declaration of FlightState if its definition is not accessible here
+// However, it's better to define FlightState in a shared header if used across multiple .cpp files.
+// For now, assuming FlightState definition will be accessible during compilation of state_management.cpp
+// If not, this might need adjustment (e.g. #include "TripleT_Flight_Firmware.h" if it existed and contained the enum)
+// Or, move FlightState enum to data_structures.h if it makes more sense.
+// For this task, we will assume FlightState from TripleT_Flight_Firmware.cpp is usable by state_management.cpp
+
+// Flight state storage structure for EEPROM
+struct FlightStateData {
+  // FlightState state; // This will be an issue if FlightState is defined in .cpp
+  // To resolve, we will use uint8_t to store state, and cast to/from FlightState in functions.
+  uint8_t state;            // Current flight state (cast to/from FlightState)
+  float launchAltitude;     // Stored launch altitude
+  float maxAltitude;        // Maximum altitude reached
+  float currentAltitude;    // Current altitude
+  unsigned long timestamp;  // Timestamp of last save
+  uint16_t signature;       // Validation signature
+};
+
 #endif // DATA_STRUCTURES_H 

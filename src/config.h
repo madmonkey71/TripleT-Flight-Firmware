@@ -14,8 +14,10 @@
 
 // --- Features & Hardware Presence ---
 // Configure parachute presence. At least MAIN must be present.
-#define DROGUE_PRESENT 1 // 1 = Present, 0 = Not Present
-#define MAIN_PRESENT 1   // 1 = Present, 0 = Not Present
+#define DROGUE_PRESENT true // Set to true if drogue deployment is needed
+#define MAIN_PRESENT true   // Set to true if main deployment is needed
+#define PYRO_CHANNEL_1 2           // GPIO pin for drogue deployment
+#define PYRO_CHANNEL_2 3           // GPIO pin for main deployment
 
 // --- Automatically derive deployment type and check for errors ---
 #if MAIN_PRESENT == 0
@@ -46,17 +48,55 @@
 #define NEOPIXEL_COUNT 2                         // Number of NeoPixels
 
 // --- Flight Logic Parameters ---
-#define MAIN_DEPLOY_ALTITUDE 150.0               // Deploy main parachute at 100m AGL
-#define BOOST_ACCEL_THRESHOLD 1.5                // Threshold to detect liftoff (g)
-#define COAST_ACCEL_THRESHOLD 0.5                // Threshold to detect end of boost (g)
-#define APOGEE_CONFIRMATION_COUNT 3              // Multiple readings required to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 10            // Multiple readings required to confirm landing
+#define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground
+#define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
+#define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
+#define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee
+#define LANDING_CONFIRMATION_COUNT 5  // Number of consecutive readings to confirm landing
+#define BACKUP_APOGEE_TIME 15000      // Backup time-based apogee detection (ms after boost)
+
+// Redundant Sensing Apogee Detection
+#ifndef APOGEE_BARO_DESCENT_THRESHOLD
+#define APOGEE_BARO_DESCENT_THRESHOLD 1.0 // Meters change to confirm descent for apogee
+#endif
+#ifndef APOGEE_ACCEL_THRESHOLD
+#define APOGEE_ACCEL_THRESHOLD -0.1     // G value for Z-axis accelerometer apogee detection
+#endif
+#ifndef APOGEE_ACCEL_SAMPLES
+#define APOGEE_ACCEL_SAMPLES 5          // Consecutive samples for accelerometer apogee detection
+#endif
+
+// Redundant Sensing Landing Detection
+#ifndef LANDING_ACCEL_MIN_G
+#define LANDING_ACCEL_MIN_G 0.95        // Minimum G for landing detection
+#endif
+#ifndef LANDING_ACCEL_MAX_G
+#define LANDING_ACCEL_MAX_G 1.05        // Maximum G for landing detection
+#endif
+#ifndef LANDING_ALTITUDE_STABLE_THRESHOLD
+#define LANDING_ALTITUDE_STABLE_THRESHOLD 1.0 // Meters altitude change for landing stability
+#endif
+
+// --- State Machine Timeouts & Durations ---
+#ifndef PYRO_FIRE_DURATION
+#define PYRO_FIRE_DURATION 1000 // Milliseconds for pyro channel to be active
+#endif
+#ifndef LANDED_TIMEOUT_MS
+#define LANDED_TIMEOUT_MS 10000 // Milliseconds to stay in LANDED state before RECOVERY
+#endif
+#ifndef RECOVERY_TIMEOUT_MS
+#define RECOVERY_TIMEOUT_MS 300000 // Milliseconds in RECOVERY before auto-shutdown (5 mins)
+#endif
+#ifndef ERROR_RECOVERY_ATTEMPT_MS
+#define ERROR_RECOVERY_ATTEMPT_MS 10000 // Milliseconds in ERROR state before attempting recovery
+#endif
 
 // --- Sensor Error & Timeout Thresholds ---
-#define MAX_SENSOR_FAILURES 3
-#define BAROMETER_ERROR_THRESHOLD 10.0           // 10 hPa change between readings is suspicious
-#define ACCEL_ERROR_THRESHOLD 10.0               // 10g change between readings is suspicious
-#define GPS_TIMEOUT_MS 5000                      // 5 seconds without GPS update is considered a failure
+#define MAX_SENSOR_FAILURES 3      // Maximum number of consecutive sensor failures before error state
+#define WATCHDOG_TIMEOUT_MS 1000   // Watchdog timer timeout in milliseconds
+#define BAROMETER_ERROR_THRESHOLD 10.0  // Barometer error threshold (m) between readings
+#define ACCEL_ERROR_THRESHOLD 10.0      // Accelerometer error threshold (g) between readings
+#define GPS_TIMEOUT_MS 5000             // GPS timeout in milliseconds
 
 // --- Storage & Logging Configuration ---
 // SD Card
@@ -74,8 +114,12 @@
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 
 // --- EEPROM Configuration ---
-#define EEPROM_STATE_ADDR 0                     // EEPROM address for flight state structure
-#define EEPROM_SIGNATURE_VALUE 0xABCD           // Signature to validate EEPROM data
+#define EEPROM_STATE_ADDR 0           // EEPROM address for flight state
+#define EEPROM_ALTITUDE_ADDR 4        // EEPROM address for last altitude // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_TIMESTAMP_ADDR 8       // EEPROM address for timestamp // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
+#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds
 
 // --- Madgwick Filter Configuration ---
 #define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)

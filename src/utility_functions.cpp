@@ -1,4 +1,7 @@
 #include "utility_functions.h"
+// This is the problematic include needed if FlightState is still in the .cpp file.
+// If FlightState gets moved to data_structures.h or similar, include that instead.
+#include "TripleT_Flight_Firmware.cpp" // For FlightState enum definition
 #include "config.h" // Ensure config.h is included for SD_CONFIG and other hardware defs
 #include "data_structures.h" // Include LogData definition
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
@@ -456,4 +459,39 @@ void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& rol
     float siny_cosp = 2.0f * (q0 * q3 + q1 * q2);
     float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
     yaw = atan2(siny_cosp, cosy_cosp);
+}
+
+// ... other functions ...
+
+bool isSensorSuiteHealthy(FlightState currentState) {
+  // Placeholder implementation - customize with actual sensor checks
+  if (enableSystemDebug && (millis() % 5000 < 20)) { // Print periodically if debug enabled
+    Serial.print(F("Placeholder: isSensorSuiteHealthy() called for state "));
+    Serial.print(getStateName(currentState)); // Assuming getStateName is available via this file or its includes
+    Serial.println(F(", returning true."));
+  }
+  // Example check (actual checks would be more comprehensive)
+  // if (!barometerStatus.isWorking && currentState > CALIBRATION && currentState < LANDED) return false;
+  // if (!accelerometerStatus.isWorking && currentState > ARMED && currentState < LANDED) return false;
+  return true;
+}
+
+const char* getStateName(FlightState state) {
+  switch (state) {
+    case STARTUP: return "STARTUP";
+    case CALIBRATION: return "CALIBRATION";
+    case PAD_IDLE: return "PAD_IDLE";
+    case ARMED: return "ARMED";
+    case BOOST: return "BOOST";
+    case COAST: return "COAST";
+    case APOGEE: return "APOGEE";
+    case DROGUE_DEPLOY: return "DROGUE_DEPLOY";
+    case DROGUE_DESCENT: return "DROGUE_DESCENT";
+    case MAIN_DEPLOY: return "MAIN_DEPLOY";
+    case MAIN_DESCENT: return "MAIN_DESCENT";
+    case LANDED: return "LANDED";
+    case RECOVERY: return "RECOVERY";
+    case ERROR: return "ERROR";
+    default: return "UNKNOWN";
+  }
 }

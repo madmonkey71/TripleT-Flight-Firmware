@@ -77,6 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
  * @param {object} parsedData - The structured JavaScript object from data_parser.js.
  */
 function updateUI(parsedData) {
+    // Helper to convert radians to degrees
+    const toDegrees = (radians) => (radians * 180 / Math.PI);
+
     if (!parsedData) {
         console.warn("updateUI called with no data.");
         return;
@@ -168,7 +171,6 @@ function updateUI(parsedData) {
     updateElementText(valAltGps, parsedData.Alt, 'N/A', 1); // GPS Altitude (Alt)
 
     // Orientation Data (Euler angles in radians, convert to degrees)
-    const toDegrees = (radians) => (radians * 180 / Math.PI);
     updateElementText(valRoll, parsedData.EulerRoll_rad !== undefined ? toDegrees(parsedData.EulerRoll_rad) : undefined, 'N/A', 2);
     updateElementText(valPitch, parsedData.EulerPitch_rad !== undefined ? toDegrees(parsedData.EulerPitch_rad) : undefined, 'N/A', 2);
     updateElementText(valYaw, parsedData.EulerYaw_rad !== undefined ? toDegrees(parsedData.EulerYaw_rad) : undefined, 'N/A', 2);

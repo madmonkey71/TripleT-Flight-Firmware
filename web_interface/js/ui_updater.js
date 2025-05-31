@@ -3,6 +3,9 @@
 // Chart instances, will be initialized on DOMContentLoaded
 let altitudeChartInstance = null;
 let accelerationChartInstance = null;
+let icmAccelChartInstance = null; // Added for ICM20948 Accel
+let icmGyroChartInstance = null;  // Added for ICM20948 Gyro
+let icmMagChartInstance = null;   // Added for ICM20948 Mag
 
 // DOM elements for numerical data
 let valLat, valLong, valSpeed, valSats, valAltGps;
@@ -13,6 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize chart contexts
     const altitudeChartCtx = document.getElementById('altitudeChart')?.getContext('2d');
     const accelerationChartCtx = document.getElementById('accelerationChart')?.getContext('2d');
+    const icmAccelChartCtx = document.getElementById('icmAccelChart')?.getContext('2d'); // Added for ICM Accel
+    const icmGyroChartCtx = document.getElementById('icmGyroChart')?.getContext('2d');   // Added for ICM Gyro
+    const icmMagChartCtx = document.getElementById('icmMagChart')?.getContext('2d');     // Added for ICM Mag
 
     if (altitudeChartCtx && typeof initAltitudeChart === 'function') {
         altitudeChartInstance = initAltitudeChart(altitudeChartCtx);
@@ -26,6 +32,28 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("Acceleration chart initialized by ui_updater.");
     } else {
         console.error("Failed to initialize acceleration chart: context or init function not found.");
+    }
+
+    // Initialize ICM20948 Charts
+    if (icmAccelChartCtx && typeof initICMAccelChart === 'function') {
+        icmAccelChartInstance = initICMAccelChart(icmAccelChartCtx);
+        console.log("ICM20948 Acceleration chart initialized by ui_updater.");
+    } else {
+        console.error("Failed to initialize ICM20948 Acceleration chart: context or init function not found.");
+    }
+
+    if (icmGyroChartCtx && typeof initICMGyroChart === 'function') {
+        icmGyroChartInstance = initICMGyroChart(icmGyroChartCtx);
+        console.log("ICM20948 Gyroscope chart initialized by ui_updater.");
+    } else {
+        console.error("Failed to initialize ICM20948 Gyroscope chart: context or init function not found.");
+    }
+
+    if (icmMagChartCtx && typeof initICMMagChart === 'function') {
+        icmMagChartInstance = initICMMagChart(icmMagChartCtx);
+        console.log("ICM20948 Magnetometer chart initialized by ui_updater.");
+    } else {
+        console.error("Failed to initialize ICM20948 Magnetometer chart: context or init function not found.");
     }
 
     // Get references to numerical display elements
@@ -57,10 +85,18 @@ function updateUI(parsedData) {
     // --- Update Charts ---
     const timestamp = parsedData.Timestamp; // Assuming Timestamp is available and numeric
 
-    if (altitudeChartInstance && parsedData.CalibratedAltitude !== undefined && timestamp !== undefined) {
-        updateChart(altitudeChartInstance, { timestamp: timestamp, value: parsedData.CalibratedAltitude });
+    // Update Altitude Chart (now with Calibrated and GPS altitude)
+    if (altitudeChartInstance && 
+        parsedData.CalibratedAltitude !== undefined && 
+        parsedData.Alt !== undefined &&  // Alt is GPS altitude
+        timestamp !== undefined) {
+        updateChart(altitudeChartInstance, { 
+            timestamp: timestamp, 
+            values: [parsedData.CalibratedAltitude, parsedData.Alt] 
+        });
     }
 
+    // Update KX134 Acceleration Chart
     if (accelerationChartInstance && 
         parsedData.KX134_AccelX !== undefined && 
         parsedData.KX134_AccelY !== undefined && 
@@ -68,9 +104,47 @@ function updateUI(parsedData) {
         timestamp !== undefined) {
         updateChart(accelerationChartInstance, { 
             timestamp: timestamp, 
-            x: parsedData.KX134_AccelX, 
-            y: parsedData.KX134_AccelY, 
-            z: parsedData.KX134_AccelZ 
+            values: [parsedData.KX134_AccelX, parsedData.KX134_AccelY, parsedData.KX134_AccelZ] 
+        });
+    }
+
+    // Update ICM20948 Acceleration Chart
+    if (icmAccelChartInstance && 
+        parsedData.ICM_AccelX !== undefined && 
+        parsedData.ICM_AccelY !== undefined && 
+        parsedData.ICM_AccelZ !== undefined && 
+        timestamp !== undefined) {
+        updateChart(icmAccelChartInstance, { 
+            timestamp: timestamp, 
+            values: [parsedData.ICM_AccelX, parsedData.ICM_AccelY, parsedData.ICM_AccelZ] 
+        });
+    }
+
+    // Update ICM20948 Gyroscope Chart (convert rad/s to deg/s)
+    if (icmGyroChartInstance && 
+        parsedData.ICM_GyroX_rad !== undefined && 
+        parsedData.ICM_GyroY_rad !== undefined && 
+        parsedData.ICM_GyroZ_rad !== undefined && 
+        timestamp !== undefined) {
+        updateChart(icmGyroChartInstance, { 
+            timestamp: timestamp, 
+            values: [
+                toDegrees(parsedData.ICM_GyroX_rad), 
+                toDegrees(parsedData.ICM_GyroY_rad), 
+                toDegrees(parsedData.ICM_GyroZ_rad)
+            ]
+        });
+    }
+
+    // Update ICM20948 Magnetometer Chart
+    if (icmMagChartInstance && 
+        parsedData.ICM_MagX !== undefined && 
+        parsedData.ICM_MagY !== undefined && 
+        parsedData.ICM_MagZ !== undefined && 
+        timestamp !== undefined) {
+        updateChart(icmMagChartInstance, { 
+            timestamp: timestamp, 
+            values: [parsedData.ICM_MagX, parsedData.ICM_MagY, parsedData.ICM_MagZ] 
         });
     }
 

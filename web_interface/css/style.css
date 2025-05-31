@@ -85,9 +85,27 @@ main {
     min-width: 300px; /* Minimum width before wrapping */
 }
 
+#visualizationsContainer { /* New style for the container */
+    flex: 2; /* Similar to how chartsPanel was sized */
+    min-width: 400px;
+    display: flex; /* Use flex to manage heading and chartsPanel */
+    flex-direction: column;
+    gap: 1rem; /* Optional: if you want space between heading and chartsPanel */
+}
+
+#visualizationsContainer h2 { /* Style for the h2 within the new container */
+    text-align: center;
+    color: #4a69bd; /* Blue matching other headers */
+    margin-top: 0;
+    margin-bottom: 0; /* Remove default bottom margin or adjust as needed */
+}
+
 #chartsPanel {
-    flex: 2; /* Takes up 2 parts of the space */
-    min-width: 400px; /* Minimum width before wrapping */
+    /* flex: 2; */ /* Flex is now on visualizationsContainer */
+    /* min-width: 400px; */ /* min-width is now on visualizationsContainer */
+    background-color: #ffffff;
+    padding: 1rem;
+    border-radius: 8px;
     display: grid; /* Changed from flex to grid */
     grid-template-columns: repeat(2, 1fr); /* Two equal columns */
     gap: 1rem;
@@ -128,6 +146,7 @@ section h3 {
     border-radius: 4px;
     padding: 0.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    margin-bottom: 1rem; /* Added to create space for timestamp labels */
 }
 .chart-container canvas {
     width: 100% !important; /* Override Chart.js inline style if necessary */

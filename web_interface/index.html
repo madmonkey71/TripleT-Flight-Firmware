@@ -45,29 +45,31 @@
                 </div>
             </div>
 
-            <div id="chartsPanel">
+            <div id="visualizationsContainer">
                 <h2>Visualizations</h2>
-                <div class="chart-container">
-                    <h3>Altitude (Calibrated)</h3>
-                    <canvas id="altitudeChart"></canvas>
+                <div id="chartsPanel">
+                    <div class="chart-container">
+                        <h3>Altitude (Calibrated)</h3>
+                        <canvas id="altitudeChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Acceleration (KX134)</h3>
+                        <canvas id="accelerationChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>ICM20948 Acceleration</h3>
+                        <canvas id="icmAccelChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>ICM20948 Gyroscope</h3>
+                        <canvas id="icmGyroChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>ICM20948 Magnetometer</h3>
+                        <canvas id="icmMagChart"></canvas>
+                    </div>
+                    <!-- Add more chart containers here as new charts are developed -->
                 </div>
-                <div class="chart-container">
-                    <h3>Acceleration (KX134)</h3>
-                    <canvas id="accelerationChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>ICM20948 Acceleration</h3>
-                    <canvas id="icmAccelChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>ICM20948 Gyroscope</h3>
-                    <canvas id="icmGyroChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>ICM20948 Magnetometer</h3>
-                    <canvas id="icmMagChart"></canvas>
-                </div>
-                <!-- Add more chart containers here as new charts are developed -->
             </div>
         </section>
         <!-- Removed the old #content div as its purpose is now served by main or specific sections -->

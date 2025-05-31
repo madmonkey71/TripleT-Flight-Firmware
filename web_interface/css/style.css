@@ -193,3 +193,49 @@ footer {
         font-size: 1.5em;
     }
 }
+
+/* Serial Terminal Styles */
+#serialTerminalSection {
+    background-color: #ffffff;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    margin-top: 1rem; /* Add some space above the terminal */
+    width: 100%; /* Make it take full width available in main */
+}
+
+#serialTerminalSection h2 {
+    color: #4a69bd;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.terminal-output {
+    height: 150px; /* Adjust as needed */
+    background-color: #2c3e50; /* Dark background for terminal */
+    color: #ecf0f1; /* Light text */
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    padding: 0.5rem;
+    border-radius: 4px;
+    overflow-y: auto; /* Scroll for older content */
+    white-space: pre-wrap; /* Preserve whitespace and wrap lines */
+    border: 1px solid #34495e;
+}
+
+#serialTerminalInputContainer {
+    display: flex;
+    margin-top: 0.5rem;
+    gap: 0.5rem;
+}
+
+#serialCommandInput {
+    flex-grow: 1;
+    padding: 0.5em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+#serialSendCommandButton {
+    /* Uses existing button styles, can add specific overrides if needed */
+}

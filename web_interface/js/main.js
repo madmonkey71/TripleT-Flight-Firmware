@@ -6,16 +6,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const connectButton = document.getElementById('connectButton');
     const disconnectButton = document.getElementById('disconnectButton');
     const connectionStatusDiv = document.getElementById('connectionStatus');
+    const serialTerminalOutput = document.getElementById('serialTerminalOutput');
+    const serialCommandInput = document.getElementById('serialCommandInput');
+    const serialSendCommandButton = document.getElementById('serialSendCommandButton');
     let parserInitialized = false;
 
-    // --- Update Connection Status Display ---
+    // --- Serial Terminal Logging Function ---
+    function logToTerminal(message, type = 'info') { // type can be 'info', 'sent', 'received', 'error'
+        if (serialTerminalOutput) {
+            const D = new Date();
+            const timestamp = `${String(D.getHours()).padStart(2, '0')}:${String(D.getMinutes()).padStart(2, '0')}:${String(D.getSeconds()).padStart(2, '0')}`;
+            const line = document.createElement('div');
+            line.textContent = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            switch (type) {
+                case 'sent': line.style.color = '#82E0AA'; break; // Light green
+                case 'received': line.style.color = '#AED6F1'; break; // Light blue
+                case 'error': line.style.color = '#F1948A'; break; // Light red
+                case 'info':
+                default: line.style.color = '#F7DC6F'; break; // Light yellow for info
+            }
+            serialTerminalOutput.appendChild(line);
+            serialTerminalOutput.scrollTop = serialTerminalOutput.scrollHeight; // Auto-scroll
+        }
+    }
+
+    // --- Update Connection Status Display (and log to terminal) ---
     function updateConnectionStatus(message, statusClass) {
         if (connectionStatusDiv) {
             connectionStatusDiv.textContent = `Status: ${message}`;
             connectionStatusDiv.className = 'status-' + statusClass; // e.g., status-connected, status-disconnected
-        } else {
-            console.warn("connectionStatusDiv not found.");
         }
+        logToTerminal(`Connection status: ${message}`, statusClass === 'error' ? 'error' : 'info');
     }
     // Set initial status
     updateConnectionStatus("Disconnected", "disconnected");
@@ -43,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleSerialConnect(connectionInfo) { // Updated to receive an object
         // connectionInfo can be { status: 'connecting', message: '...' } or { status: 'connected', message: '...', portInfo: {...} }
         console.log("Serial connection event:", connectionInfo.message);
+        logToTerminal(`Serial connection event: ${connectionInfo.message}`, 'info'); // Log to terminal
         if (connectionInfo.status === 'connected') {
             updateConnectionStatus(connectionInfo.message, "connected");
             if (connectButton) connectButton.disabled = true;
@@ -56,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleReceivedData(data) {
         if (!parserInitialized) return;
+        logToTerminal(data, 'received'); // Log raw received data to terminal
         const parsedData = parseSerialData(data);
         if (parsedData) {
             if (typeof updateUI === 'function') {
@@ -68,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleSerialDisconnect(reason, isActiveDisconnect) {
         console.log("Serial port disconnected:", reason);
+        logToTerminal(`Serial port disconnected: ${reason}`, isActiveDisconnect ? 'info' : 'error'); // Log to terminal
         updateConnectionStatus(reason, isActiveDisconnect ? "disconnected" : "error");
         if (connectButton) connectButton.disabled = !parserInitialized; // Only enable if parser is OK
         if (disconnectButton) disconnectButton.disabled = true;
@@ -99,6 +123,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } else {
         console.error("Disconnect button not found.");
+    }
+
+    // --- Serial Command Sending ---
+    function sendSerialCommand() {
+        if (serialCommandInput && serialCommandInput.value.trim() !== "") {
+            const command = serialCommandInput.value.trim();
+            if (typeof sendSerialData === 'function') {
+                sendSerialData(command); // Assumes sendSerialData is globally available from serial_handler.js
+                logToTerminal(command, 'sent');
+                serialCommandInput.value = ""; // Clear input after sending
+            } else {
+                logToTerminal("sendSerialData function not available.", "error");
+                console.error("sendSerialData function is not defined in serial_handler.js or not accessible.");
+            }
+        } else {
+            logToTerminal("No command to send.", "info");
+        }
+    }
+
+    if (serialSendCommandButton) {
+        serialSendCommandButton.addEventListener('click', sendSerialCommand);
+    } else {
+        console.error("Send Serial Command button not found.");
+    }
+
+    if (serialCommandInput) {
+        serialCommandInput.addEventListener('keypress', (event) => {
+            if (event.key === "Enter") {
+                sendSerialCommand();
+            }
+        });
+    } else {
+        console.error("Serial Command Input field not found.");
     }
 
     // --- Initial Check for Web Serial API Support ---

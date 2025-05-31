@@ -26,14 +26,14 @@ float accelMagnitudePrev = 0;
 float accelVariance = 0;
 float gyroMagnitude = 0;
 const float GYRO_THRESHOLD = 0.03;      // Reduced from 0.06 to 0.03 rad/s (about 1.7 deg/s) for better sensitivity
-const float ACCEL_VARIANCE_THRESHOLD = 0.005; // Reduced from 0.008 to 0.005 for better sensitivity
+const float ACCEL_VARIANCE_THRESHOLD = 0.008f; // Increased from 0.005 for less sensitivity
 float sampleFreq = 100.0f;              // Hz
 uint32_t lastUpdateTime = 0;            // micros
 
 // Add state transition counters for hysteresis
 int stationaryCounter = 0;
 int movingCounter = 0;
-const int STATE_CHANGE_THRESHOLD = 3;   // Reduced from 5 to 3 for faster state change detection
+const int STATE_CHANGE_THRESHOLD = 5;   // Increased from 3 for more stable stationary detection
 
 // Madgwick filter parameters
 float beta = MADGWICK_BETA_INIT;       // Initialized from config.h
@@ -58,8 +58,12 @@ unsigned long lastZuptTime = 0;
 const unsigned long ZUPT_INTERVAL = 30000; // Perform ZUPT every 30 seconds when stationary
 
 // Magnetometer calibration
-float magBias[3] = {0, 0, 0};           // Hard iron correction
-float magScale[3] = {1, 1, 1};          // Soft iron correction
+float magBias[3] = {-371.89521075f, -58.02547425f, -286.3834353f}; // Hard iron correction from calibrate3.py output
+float magScale[3][3] = { // Soft iron correction matrix from calibrate3.py output
+  {1.06757205f, -0.02487542f,  0.01539642f},
+  {-0.02487542f, 1.07100769f, -0.00649950f},
+  {0.01539642f, -0.00649950f,  1.13008801f}
+};
 
 // Function to update quaternion using 9-axis Madgwick filter
 void MadgwickAHRSupdateMARG(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz, float deltat, float beta_val) {
@@ -324,11 +328,17 @@ void ICM_20948_init() {
 
 // Apply magnetometer calibration
 void applyMagnetometerCalibration() {
-  // Apply hard iron correction (offset) and soft iron correction (scale)
+  // Apply hard iron correction (offset)
+  float hardIronCorrected[3];
+  hardIronCorrected[0] = icm_mag[0] - magBias[0];
+  hardIronCorrected[1] = icm_mag[1] - magBias[1];
+  hardIronCorrected[2] = icm_mag[2] - magBias[2];
+
+  // Apply soft iron correction (matrix multiplication)
   float calibratedMag[3];
-  calibratedMag[0] = (icm_mag[0] - magBias[0]) * magScale[0];
-  calibratedMag[1] = (icm_mag[1] - magBias[1]) * magScale[1];
-  calibratedMag[2] = (icm_mag[2] - magBias[2]) * magScale[2];
+  calibratedMag[0] = magScale[0][0] * hardIronCorrected[0] + magScale[0][1] * hardIronCorrected[1] + magScale[0][2] * hardIronCorrected[2];
+  calibratedMag[1] = magScale[1][0] * hardIronCorrected[0] + magScale[1][1] * hardIronCorrected[1] + magScale[1][2] * hardIronCorrected[2];
+  calibratedMag[2] = magScale[2][0] * hardIronCorrected[0] + magScale[2][1] * hardIronCorrected[1] + magScale[2][2] * hardIronCorrected[2];
   
   // Update the global values
   icm_mag[0] = calibratedMag[0];
@@ -344,6 +354,11 @@ void ICM_20948_read() {
     if (myICM.dataReady()) {
     myICM.getAGMT();  // Get the latest data
     
+    // Store raw magnetometer data first before calibration
+    icm_mag[0] = myICM.magX();
+    icm_mag[1] = myICM.magY();
+    icm_mag[2] = myICM.magZ();
+    
     // Apply magnetometer calibration before using the mag data
     applyMagnetometerCalibration(); 
 
@@ -357,10 +372,10 @@ void ICM_20948_read() {
     icm_gyro[1] = myICM.gyrY() * DEG_TO_RAD;
     icm_gyro[2] = myICM.gyrZ() * DEG_TO_RAD;
     
-    // Store magnetometer data in global array (uT)
-    icm_mag[0] = myICM.magX();
-    icm_mag[1] = myICM.magY();
-    icm_mag[2] = myICM.magZ();
+    // Magnetometer data is already stored and calibrated (icm_mag global updated by applyMagnetometerCalibration)
+    // icm_mag[0] = myICM.magX(); // This line is now redundant as it's done before calibration
+    // icm_mag[1] = myICM.magY(); // This line is now redundant
+    // icm_mag[2] = myICM.magZ(); // This line is now redundant
 
     // Store temperature in global variable (C)
     icm_temp = myICM.temp();

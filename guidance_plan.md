@@ -79,6 +79,21 @@ The strategy will focus on improving the signal-to-noise ratio of the sensor dat
 1.  **Verify Calibration:** Ensure the magnetometer calibration routine (`ICM_20948_calibrate()` and `applyMagnetometerCalibration()`) is effective and being used correctly. Poor magnetometer data primarily affects yaw but can have secondary effects.
 2.  **Check for Interference:** Log raw magnetometer data and look for signs of environmental magnetic interference.
 
+### Phase 4.6: Magnetometer Calibration (Completed)
+
+*   **Status:** DONE
+*   **Action:** Performed magnetometer calibration using an external Python script (`calibrate3.py`) to generate hard and soft iron correction parameters.
+*   **Details:**
+    *   Raw magnetometer data was collected by rotating the sensor through all orientations.
+    *   `calibrate3.py` fits an ellipsoid to this data to determine:
+        *   **Hard Iron Offset (Bias Vector):** This corrects for DC offsets in the magnetometer readings.
+        *   **Soft Iron Correction (Transformation Matrix):** This corrects for distortions (scaling and cross-axis interference) in the magnetic field caused by nearby ferrous materials.
+    *   The hard iron bias vector has been applied in `src/icm_20948_functions.cpp`.
+    *   The full 3x3 soft iron transformation matrix has been implemented in `src/icm_20948_functions.cpp`, replacing the previous simple diagonal scaling. This provides a more comprehensive correction.
+*   **Firmware Update:** `magBias[3]` and `magScale[3][3]` in `src/icm_20948_functions.cpp` updated with these values. The `applyMagnetometerCalibration()` function now performs full matrix-vector multiplication for soft iron correction.
+*   **Expected Outcome:** Significantly improved magnetometer accuracy, leading to more stable and reliable heading (Yaw) estimation from the Madgwick filter.
+*   **Next Steps:** Test thoroughly, observing Yaw stability both when stationary and during motion.
+
 ## 5. Implementation Steps (Initial Focus on Gyro and Madgwick)
 
 1.  **Create `guidance_plan.md`:** Document this plan. (This step)

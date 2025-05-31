@@ -39,7 +39,10 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
       - ✅ With a card on startup
       - ✅ Without a card on startup and adding it later.
 
-
+- ✅ Implemented static gyroscope bias calibration during startup.
+- ✅ Enabled ICM-20948 raw data debug output by default for tuning.
+- ✅ Iteratively tuned Madgwick filter parameters (`MADGWICK_BETA_STATIONARY`, `MADGWICK_GYRO_BIAS_LEARN_RATE`) and motion detection thresholds (`ACCEL_VARIANCE_THRESHOLD`, `STATE_CHANGE_THRESHOLD`) to improve stationary stability and reduce RPY drift.
+- ✅ Updated magnetometer calibration to use full hard and soft iron correction (3x3 matrix) derived from `calibrate3.py` for more accurate heading.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
@@ -56,8 +59,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ 9-axis MARG Sensor Fusion (Madgwick AHRS for orientation)
 - ✅ Dynamic Target Orientation System (Time-based example framework)
 - ✅ Logging of PID Controller States and Dynamic Targets
-- 🚧 IMU Calibration (How do we fix drift in the madgwick implementation)
-  - 🚧 The current setup has significant drift in it's current form
+- ✅ IMU Calibration (How do we fix drift in the madgwick implementation)
+  - ✅ The current setup has significant drift in it's current form
+  - ✅ Implemented static gyro bias calibration.
+  - ✅ Tuned Madgwick filter parameters and motion detection thresholds.
+  - ✅ Implemented full hard and soft iron magnetometer calibration.
 - 🚧 Enhanced telemetry (Planned)
   - ✅ Add all data to the logging so that it's exposed to being processed as telemetry.
 - 🚧 Live Transmission of data via radio (Planned)

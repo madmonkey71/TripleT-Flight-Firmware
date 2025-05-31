@@ -3,6 +3,7 @@
   "column_mappings": [
     { "internal_name": "SeqNum", "csv_header": "SeqNum", "csv_index": null, "default_value": null, "type": "int" },
     { "internal_name": "Timestamp", "csv_header": "Timestamp", "csv_index": null, "default_value": null, "type": "int" },
+    { "internal_name": "FlightState", "csv_header": "FlightState", "csv_index": null, "default_value": 0, "type": "int", "displayName": "Flight State" },
     { "internal_name": "FixType", "csv_header": "FixType", "csv_index": null, "default_value": 0, "type": "int" },
     { "internal_name": "Sats", "csv_header": "Sats", "csv_index": null, "default_value": 0, "type": "int" },
     { "internal_name": "Lat", "csv_header": "Lat", "csv_index": null, "default_value": 0.0, "type": "float" },

@@ -12,6 +12,35 @@ let actuatorChartInstance = null; // Added for Actuator Control chart
 let valLat, valLong, valSpeed, valSats, valAltGps;
 let valRoll, valPitch, valYaw;
 let valPressure, valTemp, valAltBaro;
+let currentFlightStateValueElement; // Added for flight state
+
+// Flight State Enum (matches data_structures.h)
+const FlightState = {
+    0: "STARTUP",
+    1: "CALIBRATION",
+    2: "PAD_IDLE",
+    3: "ARMED",
+    4: "BOOST",
+    5: "COAST",
+    6: "APOGEE",
+    7: "DROGUE_DEPLOY",
+    8: "DROGUE_DESCENT",
+    9: "MAIN_DEPLOY",
+    10: "MAIN_DESCENT",
+    11: "LANDED",
+    12: "RECOVERY",
+    13: "ERROR",
+    UNKNOWN: "UNKNOWN"
+};
+
+/**
+ * Converts a flight state number to its string representation.
+ * @param {number} stateNumber - The flight state number from the firmware.
+ * @returns {string} The string representation of the flight state.
+ */
+function getFlightStateString(stateNumber) {
+    return FlightState[stateNumber] || FlightState.UNKNOWN;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize chart contexts
@@ -80,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     valPressure = document.getElementById('valPressure');
     valTemp = document.getElementById('valTemp');
     valAltBaro = document.getElementById('valAltBaro');
+    currentFlightStateValueElement = document.getElementById('currentFlightStateValue'); // Added for flight state
 });
 
 /**
@@ -93,6 +123,11 @@ function updateUI(parsedData) {
     if (!parsedData) {
         console.warn("updateUI called with no data.");
         return;
+    }
+
+    // --- Update Flight State Display ---
+    if (parsedData.FlightState !== undefined && currentFlightStateValueElement) {
+        currentFlightStateValueElement.textContent = getFlightStateString(parsedData.FlightState);
     }
 
     // --- Update Charts ---

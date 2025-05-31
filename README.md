@@ -16,6 +16,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
     - Ensured `EEPROM_UPDATE_INTERVAL` is accessible in `src/state_management.cpp` by including `constants.h`. (Note: A persistent linter error for this suggests a build environment issue for the user to resolve).
  - ✅ Test it
  - ✅ Updated data logging to include flight state as the third field.
+ - ✅ Updated web interface to display the current flight state.
  - ✅ Bugs
 	 - ✅ Test GPS
 	 - ✅ Fix GPS numbers (verified with a Type 2 fix)

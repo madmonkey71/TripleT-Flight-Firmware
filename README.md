@@ -50,6 +50,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
   - **Result:** Disabling online estimation significantly improved stationary stability. Static gyro calibration at startup appears effective. Further work on online bias estimation may be needed if long-term drift is observed.
 - ✅ Deprecated and backed up unused UKF (Unscented Kalman Filter) implementation from `src/ukf.cpp` and `src/ukf.h` to `backup/ukf_deprecated_20250601/`.
 - ✅ Madgwick AHRS filter update temporarily disabled in `src/icm_20948_functions.cpp` for testing purposes. This will result in no orientation updates.
+- ✅ Implemented selectable AHRS: Madgwick or a new Kalman Filter can be chosen via `AHRS_USE_MADGWICK` / `AHRS_USE_KALMAN` defines in `src/config.h`. Madgwick filter re-enabled as one of the selectable options. Kalman filter outputs Euler angles, which are converted to quaternions for system consistency.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

@@ -110,6 +110,9 @@ void saveStateToEEPROM();
 // Attitude utility function
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw);
 
+// Function to convert Euler angles (roll, pitch, yaw) to quaternion
+void convertEulerToQuaternion(float roll, float pitch, float yaw, float &q0, float &q1, float &q2, float &q3);
+
 // Forward declaration for FlightState enum.
 // This is needed because the function signature uses FlightState.
 // The actual definition of FlightState is expected to be in a place accessible

@@ -122,15 +122,18 @@
 // --- Madgwick Filter Configuration ---
 #define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)
 #define MADGWICK_BETA_STATIONARY 0.02f   // Beta value when system is stationary (lower for stability)
-
-// --- Orientation System Configuration ---
-// Determines which orientation system is active at startup.
-// If KALMAN_FILTER_ACTIVE_BY_DEFAULT is true, the Kalman filter will be used.
-// Otherwise, the Madgwick filter will be used.
-#define KALMAN_FILTER_ACTIVE_BY_DEFAULT true
 #define MADGWICK_BETA_MOTION 0.1f        // Beta value when system is in motion (higher for responsiveness)
 #define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f // Rate at which gyro bias is learned (Increased from 0.001f)
 
+// --- AHRS Filter Selection ---
+// Select which Attitude and Heading Reference System (AHRS) to use.
+// Set one to 1 and the other to 0.
+#define AHRS_USE_MADGWICK    1
+#define AHRS_USE_KALMAN      0
+
+#if (AHRS_USE_MADGWICK + AHRS_USE_KALMAN != 1)
+  #error "Please select exactly one AHRS implementation (AHRS_USE_MADGWICK or AHRS_USE_KALMAN) in config.h"
+#endif
 
 // --- PID Controller Gains ---
 

@@ -458,6 +458,24 @@ void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& rol
     yaw = atan2(siny_cosp, cosy_cosp);
 }
 
+// Function to convert Euler angles (roll, pitch, yaw) to quaternion
+// Roll (phi, X-axis rotation), Pitch (theta, Y-axis rotation), Yaw (psi, Z-axis rotation)
+// Output: q0 (w), q1 (x), q2 (y), q3 (z)
+void convertEulerToQuaternion(float roll, float pitch, float yaw, float &q0, float &q1, float &q2, float &q3) {
+    // Abbreviations for the various angular functions
+    float cr = cos(roll * 0.5f);
+    float sr = sin(roll * 0.5f);
+    float cp = cos(pitch * 0.5f);
+    float sp = sin(pitch * 0.5f);
+    float cy = cos(yaw * 0.5f);
+    float sy = sin(yaw * 0.5f);
+
+    q0 = cr * cp * cy + sr * sp * sy; // q.w
+    q1 = sr * cp * cy - cr * sp * sy; // q.x
+    q2 = cr * sp * cy + sr * cp * sy; // q.y
+    q3 = cr * cp * sy - sr * sp * cy; // q.z
+}
+
 // ... other functions ...
 
 bool isSensorSuiteHealthy(FlightState currentState) {

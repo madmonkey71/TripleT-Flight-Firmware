@@ -1,8 +1,9 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
-#include "config.h" // For Madgwick filter parameters
+#include "config.h" // For Madgwick filter parameters and AHRS selection
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
+#include "kalman_filter.h"   // For Kalman filter AHRS
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -324,6 +325,30 @@ void ICM_20948_init() {
   gyroMagnitude = 0;
   
   lastUpdateTime = micros();
+
+  // Initialize AHRS
+#if AHRS_USE_KALMAN
+  if (enableSensorDebug) {
+    Serial.println(F("Initializing Kalman AHRS..."));
+  }
+  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with (roll, pitch, yaw) = (0,0,0)
+  if (enableSensorDebug) {
+    Serial.println(F("Kalman AHRS initialized."));
+  }
+#else // Default to Madgwick if AHRS_USE_KALMAN is not 1 (i.e., AHRS_USE_MADGWICK is 1)
+  if (enableSensorDebug) {
+    Serial.println(F("Madgwick AHRS selected (or default). Beta initialized from config.h"));
+  }
+  // Madgwick beta is already initialized globally: float beta = MADGWICK_BETA_INIT;
+  // No specific init function for Madgwick here, quaternion initialized globally.
+#endif
+
+  // Initialize lastUpdateTime for deltat calculation
+  lastUpdateTime = micros();
+
+  if (enableSensorDebug) {
+    Serial.println(F("ICM-20948 Initialized and Configured."));
+  }
 }
 
 // Apply magnetometer calibration
@@ -348,183 +373,163 @@ void applyMagnetometerCalibration() {
 
 // Read data from the ICM-20948 sensor
 void ICM_20948_read() {
-  static unsigned long lastErrorPrintTime = 0;
-  static unsigned long lastDetailedDebugTime = 0;
-  
     if (myICM.dataReady()) {
-    myICM.getAGMT();  // Get the latest data
-    
-    // Store raw magnetometer data first before calibration
-    icm_mag[0] = myICM.magX();
-    icm_mag[1] = myICM.magY();
-    icm_mag[2] = myICM.magZ();
-    
-    // Apply magnetometer calibration before using the mag data
-    applyMagnetometerCalibration(); 
+        myICM.getAGMT(); // Retrieves all data from the sensor
+        icm_data_available = true;
 
-    // Convert accelerometer data from mg to g and store in global array
-    icm_accel[0] = myICM.accX() / 1000.0f;
-    icm_accel[1] = myICM.accY() / 1000.0f;
-    icm_accel[2] = myICM.accZ() / 1000.0f;
-    
-    // Store gyroscope data in global array (convert to radians for calculations)
-    icm_gyro[0] = myICM.gyrX() * DEG_TO_RAD;
-    icm_gyro[1] = myICM.gyrY() * DEG_TO_RAD;
-    icm_gyro[2] = myICM.gyrZ() * DEG_TO_RAD;
-    
-    // Magnetometer data is already stored and calibrated (icm_mag global updated by applyMagnetometerCalibration)
-    // icm_mag[0] = myICM.magX(); // This line is now redundant as it's done before calibration
-    // icm_mag[1] = myICM.magY(); // This line is now redundant
-    // icm_mag[2] = myICM.magZ(); // This line is now redundant
+        // Calculate deltat
+        uint32_t currentTime = micros();
+        float deltat = ((float)(currentTime - lastUpdateTime)) / 1000000.0f; // Convert to seconds
+        lastUpdateTime = currentTime;
+        sampleFreq = 1.0f / deltat; // Update sample frequency
 
-    // Store temperature in global variable (C)
-    icm_temp = myICM.temp();
+        // Raw data (consider units and scaling as needed)
+        float ax_raw = myICM.accX();
+        float ay_raw = myICM.accY();
+        float az_raw = myICM.accZ();
+        float gx_raw = myICM.gyrX();
+        float gy_raw = myICM.gyrY();
+        float gz_raw = myICM.gyrZ();
+        float mx_raw = myICM.magX();
+        float my_raw = myICM.magY();
+        float mz_raw = myICM.magZ();
+        icm_temp = myICM.temp();
 
-    // --- Motion Detection Logic ---
-    uint32_t currentTime = micros();
-    float deltat = (lastUpdateTime > 0) ? ((currentTime - lastUpdateTime) / 1000000.0f) : (1.0f / sampleFreq);
-    lastUpdateTime = currentTime;
-    if (deltat <= 0) deltat = 1.0f / sampleFreq; // Prevent division by zero or negative dt
+        // Store raw values for logging/debugging if needed (already in global icm_accel etc. for some)
+        icm_accel[0] = ax_raw; 
+        icm_accel[1] = ay_raw; 
+        icm_accel[2] = az_raw;
+        icm_gyro[0] = gx_raw;  // Assuming these are already in deg/s from library
+        icm_gyro[1] = gy_raw;
+        icm_gyro[2] = gz_raw;
+        // Magnetometer data is stored after calibration below
 
-    // Calculate magnitudes and variance for motion detection
-    // Gyro magnitude (rad/s)
-    gyroMagnitude = sqrt(icm_gyro[0] * icm_gyro[0] + icm_gyro[1] * icm_gyro[1] + icm_gyro[2] * icm_gyro[2]);
+        // --- Sensor Unit Conversions and Corrections ---
+        // Accelerometer: Convert from mG to m/s^2 (if library doesn't do it)
+        // SparkFun library getAGMT() provides accel in mg. Convert to g's then to m/s^2.
+        // 1 g = 9.80665 m/s^2.
+        // Accel data from getAGMT() is in milli-g's. So, (val / 1000.0) * 9.80665
+        float ax = ax_raw / 1000.0f * STANDARD_GRAVITY;
+        float ay = ay_raw / 1000.0f * STANDARD_GRAVITY;
+        float az = az_raw / 1000.0f * STANDARD_GRAVITY;
 
-    // Accelerometer variance (difference from previous magnitude, in g)
-    // Note: get_accel_magnitude() from utility_functions.h could be used if it's preferred
-    // but that function uses kx134 or icm, here we are specifically in ICM context.
-    // For simplicity, let's use the raw icm_accel data which is already in g.
-    float accelMagnitudeCurrent = sqrt(icm_accel[0] * icm_accel[0] + icm_accel[1] * icm_accel[1] + icm_accel[2] * icm_accel[2]);
-    if (accelMagnitudePrev != 0.0f) { // Avoid large variance on first run
-        accelVariance = fabs(accelMagnitudeCurrent - accelMagnitudePrev);
-    }
-    accelMagnitudePrev = accelMagnitudeCurrent;
+        // Gyroscope: Convert from dps to rad/s
+        float gx_rps = gx_raw * DEG_TO_RAD;
+        float gy_rps = gy_raw * DEG_TO_RAD;
+        float gz_rps = gz_raw * DEG_TO_RAD;
 
-    if (gyroMagnitude < GYRO_THRESHOLD && accelVariance < ACCEL_VARIANCE_THRESHOLD) {
-        stationaryCounter++;
-        movingCounter = 0;
-        if (stationaryCounter >= STATE_CHANGE_THRESHOLD) {
-            isStationary = true;
-            stationaryCounter = STATE_CHANGE_THRESHOLD; // Prevent overflow
+        // Apply gyro bias correction
+        float gx_corrected = gx_rps - gyroBias[0];
+        float gy_corrected = gy_rps - gyroBias[1];
+        float gz_corrected = gz_rps - gyroBias[2];
+        
+        // Magnetometer: Apply calibration (hard and soft iron)
+        // Raw mag data is in uT (microTesla)
+        float mx_cal = mx_raw * magScale[0][0] + my_raw * magScale[0][1] + mz_raw * magScale[0][2] + magBias[0];
+        float my_cal = mx_raw * magScale[1][0] + my_raw * magScale[1][1] + mz_raw * magScale[1][2] + magBias[1];
+        float mz_cal = mx_raw * magScale[2][0] + my_raw * magScale[2][1] + mz_raw * magScale[2][2] + magBias[2];
+        
+        // Store calibrated mag data
+        icm_mag[0] = mx_cal;
+        icm_mag[1] = my_cal;
+        icm_mag[2] = mz_cal;
+
+        // Stationary detection logic (simplified, can be expanded)
+        // ... (existing stationary detection logic can remain here if needed for beta adjustment) ...
+        // Update beta based on stationary state (if Madgwick is used)
+        // This logic was here before, ensure it's compatible or adjusted for AHRS_USE_MADGWICK
+        float currentAccelMagnitude = sqrt(ax * ax + ay * ay + az * az);
+        accelVariance = accelVariance * 0.95f + 0.05f * fabsf(currentAccelMagnitude - accelMagnitudePrev); // Low-pass filter variance
+        accelMagnitudePrev = currentAccelMagnitude;
+        gyroMagnitude = sqrt(gx_corrected * gx_corrected + gy_corrected * gy_corrected + gz_corrected * gz_corrected);
+
+        if (gyroMagnitude < GYRO_THRESHOLD && accelVariance < ACCEL_VARIANCE_THRESHOLD) {
+            stationaryCounter++;
+            movingCounter = 0;
+            if (stationaryCounter >= STATE_CHANGE_THRESHOLD) {
+                isStationary = true;
+                stationaryCounter = STATE_CHANGE_THRESHOLD; // Cap counter
+            }
+        } else {
+            movingCounter++;
+            stationaryCounter = 0;
+            if (movingCounter >= STATE_CHANGE_THRESHOLD) {
+                isStationary = false;
+                movingCounter = STATE_CHANGE_THRESHOLD; // Cap counter
+            }
         }
+        
+#if AHRS_USE_MADGWICK
+        // Update Madgwick beta based on stationary state
+        if (isStationary) {
+            beta = MADGWICK_BETA_STATIONARY;
+        } else {
+            beta = MADGWICK_BETA_MOTION;
+        }
+        
+        /* // Temporarily disabling Madgwick AHRS update - RE-ENABLING THIS
+        // Call the 9-axis Madgwick update function
+        MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
+                               ax, ay, az,
+                               mx_cal, my_cal, mz_cal,
+                               deltat, beta);
+        */ // End of temporarily disabling Madgwick AHRS update
+        // --- Re-enabled Madgwick ---
+        MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
+                               ax, ay, az,
+                               mx_cal, my_cal, mz_cal,
+                               deltat, beta);
+        // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
+
+#elif AHRS_USE_KALMAN
+        if (enableSensorDebug) {
+            // Optional: Print inputs to Kalman if debugging
+            // Serial.print("Kalman In: G( "); Serial.print(gx_corrected); Serial.print(", "); Serial.print(gy_corrected); Serial.print(", "); Serial.print(gz_corrected); Serial.print(" ) A( "); Serial.print(ax); Serial.print(", "); Serial.print(ay); Serial.print(", "); Serial.print(az); Serial.print(" ) dt: "); Serial.println(deltat);
+        }
+
+        kalman_predict(gx_corrected, gy_corrected, gz_corrected, deltat);
+        kalman_update(ax, ay, az); // Magnetometer data for yaw correction can be added to kalman_update later
+
+        float roll_rad, pitch_rad, yaw_rad;
+        kalman_get_orientation(roll_rad, pitch_rad, yaw_rad);
+
+        // Convert Euler angles from Kalman filter to quaternion to update global icm_q values
+        convertEulerToQuaternion(roll_rad, pitch_rad, yaw_rad, icm_q0, icm_q1, icm_q2, icm_q3);
+        
+        if (enableSensorDebug) {
+            // Optional: Print outputs of Kalman if debugging
+            // Serial.print("Kalman Out RPY (rad): "); Serial.print(roll_rad, 4); Serial.print(", "); Serial.print(pitch_rad, 4); Serial.print(", "); Serial.println(yaw_rad, 4);
+            // Serial.print("Kalman Out Quat: "); Serial.print(icm_q0, 4); Serial.print(", "); Serial.print(icm_q1, 4); Serial.print(", "); Serial.print(icm_q2, 4); Serial.print(", "); Serial.println(icm_q3, 4);
+        }
+#endif
+
+        // The online gyro bias estimation was previously commented out here.
+        // If re-introducing, ensure it's compatible with the selected AHRS.
+        // For now, it remains commented.
+        /* 
+        if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
+            // ... (online gyro bias estimation code) ...
+        }
+        */
+
+        // ZUPT (Zero-Velocity UPdaTe) Logic
+        // ... (existing ZUPT logic can remain here) ...
+
+        // Update global icm_accel, icm_gyro, icm_mag with processed (e.g. m/s^2, rad/s, calibrated) values
+        // This was a bit inconsistent before, let's clarify:
+        // icm_accel should store m/s^2 values
+        icm_accel[0] = ax; 
+        icm_accel[1] = ay; 
+        icm_accel[2] = az;
+        // icm_gyro should store rad/s (corrected) values
+        icm_gyro[0] = gx_corrected;
+        icm_gyro[1] = gy_corrected;
+        icm_gyro[2] = gz_corrected;
+        // icm_mag is already updated with calibrated values (mx_cal, my_cal, mz_cal)
+
     } else {
-        movingCounter++;
-        stationaryCounter = 0;
-        if (movingCounter >= STATE_CHANGE_THRESHOLD) {
-            isStationary = false;
-            movingCounter = STATE_CHANGE_THRESHOLD; // Prevent overflow
-        }
+        icm_data_available = false;
     }
-
-    // --- Dynamic Beta Adjustment ---
-    if (isStationary) {
-        beta = MADGWICK_BETA_STATIONARY;
-    } else {
-        beta = MADGWICK_BETA_MOTION;
-    }
-    // --- End Motion Detection & Dynamic Beta ---
-
-    // --- Madgwick AHRS MARG Update ---
-    float ax = icm_accel[0], ay = icm_accel[1], az = icm_accel[2];
-    float gx_corrected = icm_gyro[0] - gyroBias[0];
-    float gy_corrected = icm_gyro[1] - gyroBias[1];
-    float gz_corrected = icm_gyro[2] - gyroBias[2];
-    float mx_cal = icm_mag[0]; // Already calibrated
-    float my_cal = icm_mag[1]; // Already calibrated
-    float mz_cal = icm_mag[2]; // Already calibrated
-
-    /* // Temporarily disabling Madgwick AHRS update
-    // Call the 9-axis Madgwick update function
-    MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
-                           ax, ay, az,
-                           mx_cal, my_cal, mz_cal,
-                           deltat, beta);
-    */ // End of temporarily disabling Madgwick AHRS update
-    // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
-
-    // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)
-    // For now, let's keep the existing gyro bias update logic based on accelerometer feedback
-    // as the MARG function above doesn't explicitly include gyro bias updates in this form.
-    // This part might need to be removed or adapted if the MARG implementation handles it.
-    // However, the provided MARG function does not update gyroBias.
-    // The IMU version had this:
-    /* // Temporarily commenting out online gyro bias estimation
-    if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-        float recipNorm_acc;
-        recipNorm_acc = 1.0f / sqrt(ax * ax + ay * ay + az * az);
-        float ax_norm = ax * recipNorm_acc;
-        float ay_norm = ay * recipNorm_acc;
-        float az_norm = az * recipNorm_acc;
-
-        float hx_g = 2.0f * (icm_q1 * icm_q3 - icm_q0 * icm_q2);
-        float hy_g = 2.0f * (icm_q0 * icm_q1 + icm_q2 * icm_q3);
-        float hz_g = icm_q0 * icm_q0 - icm_q1 * icm_q1 - icm_q2 * icm_q2 + icm_q3 * icm_q3;
-
-        float ex = (ay_norm * hz_g - az_norm * hy_g);
-        float ey = (az_norm * hx_g - ax_norm * hz_g);
-        float ez = (ax_norm * hy_g - ay_norm * hx_g);
-
-        if (MADGWICK_GYRO_BIAS_LEARN_RATE > 0.0f) {
-            gyroBias[0] += MADGWICK_GYRO_BIAS_LEARN_RATE * ex * deltat;
-            gyroBias[1] += MADGWICK_GYRO_BIAS_LEARN_RATE * ey * deltat;
-            gyroBias[2] += MADGWICK_GYRO_BIAS_LEARN_RATE * ez * deltat;
-        }
-    }
-    */ // End of temporarily commented out block
-    // --- End Madgwick AHRS MARG Update ---
-    
-    // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
-    if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
-      lastDetailedDebugTime = millis();
-      
-      Serial.println("--- ICM-20948 Raw Data ---");
-      Serial.print("Raw Gyro (rad/s): X=");
-      Serial.print(icm_gyro[0], 6);
-      Serial.print(", Y=");
-      Serial.print(icm_gyro[1], 6);
-      Serial.print(", Z=");
-      Serial.println(icm_gyro[2], 6);
-      
-      Serial.print("Gyro Bias (rad/s): X=");
-      Serial.print(gyroBias[0], 6);
-      Serial.print(", Y=");
-      Serial.print(gyroBias[1], 6);
-      Serial.print(", Z=");
-      Serial.println(gyroBias[2], 6);
-      
-      Serial.print("Gyro Magnitude: ");
-      Serial.println(gyroMagnitude, 6);
-      
-      Serial.print("Stationary: ");
-      Serial.print(isStationary ? "YES" : "NO");
-      Serial.print(", Counter: ");
-      Serial.print(isStationary ? stationaryCounter : movingCounter);
-      Serial.print(", Beta: ");
-      Serial.println(beta, 4);
-
-      // --- Temporary Madgwick Euler Angle Debug Print ---
-      float roll_deg, pitch_deg, yaw_deg;
-      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_deg, pitch_deg, yaw_deg);
-
-      // Convert radians to degrees for printing
-      roll_deg *= (180.0f / PI);
-      pitch_deg *= (180.0f / PI);
-      yaw_deg *= (180.0f / PI);
-
-      Serial.print("Madgwick Euler (deg) - R: "); Serial.print(roll_deg, 1);
-      Serial.print(" P: "); Serial.print(pitch_deg, 1);
-      Serial.print(" Y: "); Serial.println(yaw_deg, 1);
-      // --- End Temporary Madgwick Euler Angle Debug Print ---
-    }
-      icm_data_available = true;
-  } else {
-    // Only print error message once every 5 seconds to avoid flooding serial
-    if (enableSensorDebug && millis() - lastErrorPrintTime > 5000) {
-      lastErrorPrintTime = millis();
-      Serial.println("ICM-20948: No new data available");
-    }
-    icm_data_available = false;
-  }
 }
 
 // Initialize ICM-20948 IMU

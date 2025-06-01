@@ -51,6 +51,8 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Deprecated and backed up unused UKF (Unscented Kalman Filter) implementation from `src/ukf.cpp` and `src/ukf.h` to `backup/ukf_deprecated_20250601/`.
 - ✅ Madgwick AHRS filter update temporarily disabled in `src/icm_20948_functions.cpp` for testing purposes. This will result in no orientation updates.
 - ✅ Implemented selectable AHRS: Madgwick or a new Kalman Filter can be chosen via `AHRS_USE_MADGWICK` / `AHRS_USE_KALMAN` defines in `src/config.h`. Madgwick filter re-enabled as one of the selectable options. Kalman filter outputs Euler angles, which are converted to quaternions for system consistency.
+- ✅ Resolved compilation errors related to constant definitions and AHRS selection logic.
+- ✅ Integrated magnetometer data into Kalman filter for yaw correction, addressing significant yaw drift issues.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

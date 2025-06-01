@@ -29,8 +29,11 @@ void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt);
  * @param accel_x Acceleration along X-axis in m/s^2.
  * @param accel_y Acceleration along Y-axis in m/s^2.
  * @param accel_z Acceleration along Z-axis in m/s^2.
+ * @param mag_x Magnetometer reading along X-axis in uT (or any consistent unit).
+ * @param mag_y Magnetometer reading along Y-axis in uT.
+ * @param mag_z Magnetometer reading along Z-axis in uT.
  */
-void kalman_update(float accel_x, float accel_y, float accel_z);
+void kalman_update(float accel_x, float accel_y, float accel_z, float mag_x, float mag_y, float mag_z);
 
 /**
  * @brief Retrieves the current orientation estimates from the Kalman filter.

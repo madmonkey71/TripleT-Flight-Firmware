@@ -24,6 +24,9 @@ static float Q_angle[3] = {0.001f, 0.001f, 0.001f}; // Roll, Pitch, Yaw process 
 // R_accel = [[R_accel_roll, 0], [0, R_accel_pitch]]
 static float R_accel[2] = {0.03f, 0.03f}; // Measurement noise for roll and pitch from accelerometer
 
+// Measurement noise for yaw from magnetometer
+static float R_mag_yaw = 0.1f; // Measurement noise for yaw from magnetometer (can be tuned)
+
 // --- Kalman Filter Functions ---
 
 void kalman_init(float initial_roll, float initial_pitch, float initial_yaw) {
@@ -74,7 +77,7 @@ void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt) {
     P_diag[2] += Q_angle[2] * dt; // Yaw uncertainty also grows
 }
 
-void kalman_update(float accel_x, float accel_y, float accel_z) {
+void kalman_update(float accel_x, float accel_y, float accel_z, float mag_x, float mag_y, float mag_z) {
     // --- Calculate Roll and Pitch from Accelerometer ---
     // These are the "measurements" for the Kalman filter.
     // atan2 is generally preferred over atan for robustness.
@@ -107,6 +110,46 @@ void kalman_update(float accel_x, float accel_y, float accel_z) {
     P_diag[0] = (1 - K_roll) * P_diag[0];
     P_diag[1] = (1 - K_pitch) * P_diag[1];
     // P_diag[2] for yaw remains unchanged as yaw is not updated by accelerometer.
+
+    // --- Calculate Yaw from Magnetometer (Tilt Compensated) ---
+    // First, normalize magnetometer readings (optional, but good practice if scales vary wildly)
+    // float mag_norm = sqrt(mag_x * mag_x + mag_y * mag_y + mag_z * mag_z);
+    // if (mag_norm > 0.0001f) { // Avoid division by zero
+    //     mag_x /= mag_norm;
+    //     mag_y /= mag_norm;
+    //     mag_z /= mag_norm;
+    // }
+
+    // Tilt compensation using current roll (kf_roll) and pitch (kf_pitch) estimates
+    // Rotate magnetometer readings back to horizontal plane
+    float mag_x_horiz = mag_x * cos(kf_pitch) + mag_y * sin(kf_roll) * sin(kf_pitch) - mag_z * cos(kf_roll) * sin(kf_pitch);
+    float mag_y_horiz = mag_y * cos(kf_roll) + mag_z * sin(kf_roll);
+
+    // Calculate measured yaw from horizontal magnetometer components
+    float measured_yaw = atan2(-mag_y_horiz, mag_x_horiz); // Note: Standard NED (North-East-Down) or ENU (East-North-Up) conventions affect sign and axis order.
+                                                       // This typical atan2(-Y, X) is common for a compass heading where X is North, Y is East.
+                                                       // Adjust if your magnetometer/frame conventions are different.
+
+    // --- Kalman Gain K calculation for Yaw ---
+    // K_yaw = P_yaw / (P_yaw + R_mag_yaw)
+    float K_yaw = P_diag[2] / (P_diag[2] + R_mag_yaw);
+
+    // --- Update yaw state estimate with measurement ---
+    // yaw_k = yaw_{k-} + K_yaw * (shortest_angular_distance(measured_yaw, yaw_{k-}))
+    // Calculate innovation (error) considering angle wrap-around for yaw
+    float yaw_error = measured_yaw - kf_yaw;
+    if (yaw_error > M_PI) yaw_error -= 2.0f * M_PI;
+    if (yaw_error < -M_PI) yaw_error += 2.0f * M_PI;
+    
+    kf_yaw = kf_yaw + K_yaw * yaw_error;
+
+    // Normalize Yaw to +/- PI again after update
+    if (kf_yaw > M_PI) kf_yaw -= 2.0f * M_PI;
+    if (kf_yaw < -M_PI) kf_yaw += 2.0f * M_PI;
+
+    // --- Update error covariance matrix P for Yaw ---
+    // P_k_yaw = (1 - K_yaw) * P_{k-}_yaw
+    P_diag[2] = (1 - K_yaw) * P_diag[2];
 }
 
 void kalman_get_orientation(float &roll, float &pitch, float &yaw) {

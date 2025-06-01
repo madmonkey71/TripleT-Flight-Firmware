@@ -489,7 +489,7 @@ void ICM_20948_read() {
         }
 
         kalman_predict(gx_corrected, gy_corrected, gz_corrected, deltat);
-        kalman_update(ax, ay, az); // Magnetometer data for yaw correction can be added to kalman_update later
+        kalman_update(ax, ay, az, mx_cal, my_cal, mz_cal); // Pass calibrated magnetometer data
 
         float roll_rad, pitch_rad, yaw_rad;
         kalman_get_orientation(roll_rad, pitch_rad, yaw_rad);

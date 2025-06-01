@@ -128,8 +128,8 @@
 // --- AHRS Filter Selection ---
 // Select which Attitude and Heading Reference System (AHRS) to use.
 // Set one to 1 and the other to 0.
-#define AHRS_USE_MADGWICK    1
-#define AHRS_USE_KALMAN      0
+#define AHRS_USE_MADGWICK    0
+#define AHRS_USE_KALMAN      1
 
 #if (AHRS_USE_MADGWICK + AHRS_USE_KALMAN != 1)
   #error "Please select exactly one AHRS implementation (AHRS_USE_MADGWICK or AHRS_USE_KALMAN) in config.h"

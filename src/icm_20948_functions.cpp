@@ -433,11 +433,13 @@ void ICM_20948_read() {
     float my_cal = icm_mag[1]; // Already calibrated
     float mz_cal = icm_mag[2]; // Already calibrated
 
+    /* // Temporarily disabling Madgwick AHRS update
     // Call the 9-axis Madgwick update function
     MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
                            ax, ay, az,
                            mx_cal, my_cal, mz_cal,
                            deltat, beta);
+    */ // End of temporarily disabling Madgwick AHRS update
     // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
 
     // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)

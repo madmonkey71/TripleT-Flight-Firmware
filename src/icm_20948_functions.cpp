@@ -446,6 +446,7 @@ void ICM_20948_read() {
     // This part might need to be removed or adapted if the MARG implementation handles it.
     // However, the provided MARG function does not update gyroBias.
     // The IMU version had this:
+    /* // Temporarily commenting out online gyro bias estimation
     if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
         float recipNorm_acc;
         recipNorm_acc = 1.0f / sqrt(ax * ax + ay * ay + az * az);
@@ -467,6 +468,7 @@ void ICM_20948_read() {
             gyroBias[2] += MADGWICK_GYRO_BIAS_LEARN_RATE * ez * deltat;
         }
     }
+    */ // End of temporarily commented out block
     // --- End Madgwick AHRS MARG Update ---
     
     // Print detailed raw sensor data and Madgwick Euler angles every second for debugging

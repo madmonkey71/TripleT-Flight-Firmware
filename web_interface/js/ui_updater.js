@@ -110,6 +110,14 @@ document.addEventListener('DOMContentLoaded', () => {
     valTemp = document.getElementById('valTemp');
     valAltBaro = document.getElementById('valAltBaro');
     currentFlightStateValueElement = document.getElementById('currentFlightStateValue'); // Added for flight state
+
+    // Initialize 3D Visualizer
+    if (typeof init3DVisualizer === 'function') {
+        init3DVisualizer();
+        console.log("3D Visualizer initialized by ui_updater.");
+    } else {
+        console.error("Failed to initialize 3D Visualizer: init3DVisualizer function not found.");
+    }
 });
 
 /**
@@ -230,6 +238,18 @@ function updateUI(parsedData) {
     updateElementText(valRoll, parsedData.EulerRoll_rad !== undefined ? toDegrees(parsedData.EulerRoll_rad) : undefined, 'N/A', 2);
     updateElementText(valPitch, parsedData.EulerPitch_rad !== undefined ? toDegrees(parsedData.EulerPitch_rad) : undefined, 'N/A', 2);
     updateElementText(valYaw, parsedData.EulerYaw_rad !== undefined ? toDegrees(parsedData.EulerYaw_rad) : undefined, 'N/A', 2);
+
+    // --- Update 3D Visualizer ---
+    if (typeof update3DVisualizer === 'function' && 
+        parsedData.EulerRoll_rad !== undefined && 
+        parsedData.EulerPitch_rad !== undefined && 
+        parsedData.EulerYaw_rad !== undefined) {
+        update3DVisualizer(
+            toDegrees(parsedData.EulerRoll_rad),
+            toDegrees(parsedData.EulerPitch_rad),
+            toDegrees(parsedData.EulerYaw_rad)
+        );
+    }
 
     // Sensor Data
     updateElementText(valPressure, parsedData.Pressure, 'N/A', 2); // Pressure in hPa

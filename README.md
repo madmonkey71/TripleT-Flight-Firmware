@@ -43,6 +43,10 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Enabled ICM-20948 raw data debug output by default for tuning.
 - ✅ Iteratively tuned Madgwick filter parameters (`MADGWICK_BETA_STATIONARY`, `MADGWICK_GYRO_BIAS_LEARN_RATE`) and motion detection thresholds (`ACCEL_VARIANCE_THRESHOLD`, `STATE_CHANGE_THRESHOLD`) to improve stationary stability and reduce RPY drift.
 - ✅ Updated magnetometer calibration to use full hard and soft iron correction (3x3 matrix) derived from `calibrate3.py` for more accurate heading.
+- Add flight state to data logging and web UI.
+- Moved flight state display in web UI to its own section.
+- Investigated sensor data anomalies (rapidly changing RPY while stationary).
+  - Temporarily disabled online gyro bias estimation in `icm_20948_functions.cpp` to isolate potential cause of drift.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

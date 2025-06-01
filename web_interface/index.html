@@ -6,6 +6,7 @@
     <title>TripleT Flight Data Visualizer</title>
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <header>
@@ -26,6 +27,12 @@
             <div id="flightStateDisplayContainer">
                  <span id="currentFlightStateValue">N/A</span>
             </div>
+        </section>
+
+        <!-- 3D Visualizer Section -->
+        <section id="visualizer3DSection">
+            <h2>3D Orientation</h2>
+            <div id="visualizer3DContainer"></div>
         </section>
 
         <!-- 1. Real-time Data Panel -->
@@ -108,6 +115,7 @@
     <script src="js/data_parser.js"></script>
     <script src="js/visualizations.js"></script>
     <script src="js/ui_updater.js"></script>
+    <script src="js/visualizer_3d.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>

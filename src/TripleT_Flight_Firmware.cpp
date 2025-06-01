@@ -70,8 +70,8 @@ bool icm20948_ready = false;
 const char* BOARD_NAME = "Teensy 4.1";
 
 // Orientation Filter Selection
-bool useMadgwickFilter = !KALMAN_FILTER_ACTIVE_BY_DEFAULT;
-bool useKalmanFilter = KALMAN_FILTER_ACTIVE_BY_DEFAULT;
+bool useMadgwickFilter = (AHRS_USE_MADGWICK == 1);
+bool useKalmanFilter = (AHRS_USE_KALMAN == 1);
 float kalmanRoll = 0.0f;
 float kalmanPitch = 0.0f;
 float kalmanYaw = 0.0f;

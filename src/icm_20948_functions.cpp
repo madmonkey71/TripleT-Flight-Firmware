@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "config.h" // For Madgwick filter parameters and AHRS selection
+#include "constants.h" // For physical constants like STANDARD_GRAVITY, DEG_TO_RAD
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
 #include "kalman_filter.h"   // For Kalman filter AHRS
 

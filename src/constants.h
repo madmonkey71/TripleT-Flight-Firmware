@@ -30,10 +30,11 @@ static constexpr uint32_t EXPECTED_APOGEE_TIME       = 10000; // Expected time f
 
 // --- Physical Constants ---
 static constexpr float STANDARD_SEA_LEVEL_PRESSURE  = 1013.25f; // Standard sea level pressure in hPa (millibars) 
-static constexpr float STANDARD_GRAVITY           = 9.80665f; // Standard gravity in m/s^2
-static constexpr float PI                         = 3.14159265358979323846f;
-static constexpr float DEG_TO_RAD                 = PI / 180.0f;
-static constexpr float RAD_TO_DEG                 = 180.0f / PI;
+extern const float STANDARD_GRAVITY;           // Standard gravity in m/s^2
+// PI, DEG_TO_RAD, RAD_TO_DEG are defined in Arduino.h or underlying core files (e.g. wiring.h for Teensy)
+// static constexpr float PI                         = 3.14159265358979323846f;
+// static constexpr float DEG_TO_RAD                 = PI / 180.0f;
+// static constexpr float RAD_TO_DEG                 = 180.0f / PI;
 
 // --- Pin Definitions (example, update as needed) ---
 // ... existing code ... 

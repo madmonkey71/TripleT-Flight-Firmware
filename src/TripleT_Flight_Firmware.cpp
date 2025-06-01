@@ -1307,7 +1307,8 @@ void loop() {
             // Accel data for Kalman is now in current_accel_for_kalman (g's)
 
             kalman_predict(icm_gyro[0], icm_gyro[1], icm_gyro[2], dt_kalman);
-            kalman_update(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2]);
+            // kalman_update(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2]);
+            kalman_update(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2], icm_mag[0], icm_mag[1], icm_mag[2]);
             kalman_get_orientation(kalmanRoll, kalmanPitch, kalmanYaw);
 
             if (enableIMUDebug) { // Optional: Add specific Kalman debug

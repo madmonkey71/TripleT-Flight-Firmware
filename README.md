@@ -53,6 +53,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Implemented selectable AHRS: Madgwick or a new Kalman Filter can be chosen via `AHRS_USE_MADGWICK` / `AHRS_USE_KALMAN` defines in `src/config.h`. Madgwick filter re-enabled as one of the selectable options. Kalman filter outputs Euler angles, which are converted to quaternions for system consistency.
 - ✅ Resolved compilation errors related to constant definitions and AHRS selection logic.
 - ✅ Integrated magnetometer data into Kalman filter for yaw correction, addressing significant yaw drift issues.
+- ✅ Fixed compilation error: Ensured magnetometer data is passed to `kalman_update` in the main loop.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

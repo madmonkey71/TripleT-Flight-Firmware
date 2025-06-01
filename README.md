@@ -54,6 +54,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - ✅ Resolved compilation errors related to constant definitions and AHRS selection logic.
 - ✅ Integrated magnetometer data into Kalman filter for yaw correction, addressing significant yaw drift issues.
 - ✅ Fixed compilation error: Ensured magnetometer data is passed to `kalman_update` in the main loop.
+- ✅ Adjusted Kalman filter tuning parameters (`R_accel`, `R_mag_yaw`) to improve yaw stability and reduce roll/pitch sensitivity.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)

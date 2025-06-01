@@ -22,10 +22,11 @@ static float Q_angle[3] = {0.001f, 0.001f, 0.001f}; // Roll, Pitch, Yaw process 
 // Measurement noise covariance matrix R (2x2 for accel-based roll/pitch).
 // Represents the uncertainty of the measurements. Higher values mean the filter trusts the accelerometer less.
 // R_accel = [[R_accel_roll, 0], [0, R_accel_pitch]]
-static float R_accel[2] = {0.03f, 0.03f}; // Measurement noise for roll and pitch from accelerometer
+static float R_accel[2] = {0.2f, 0.2f}; // Increased R_accel to reduce sensitivity
 
 // Measurement noise for yaw from magnetometer
-static float R_mag_yaw = 0.1f; // Measurement noise for yaw from magnetometer (can be tuned)
+// static float R_mag_yaw = 0.1f; // Measurement noise for yaw from magnetometer (can be tuned)
+static float R_mag_yaw = 0.8f; // Increased R_mag_yaw to reduce snap-back
 
 // --- Kalman Filter Functions ---
 

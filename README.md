@@ -46,7 +46,9 @@ An eventually comprehensive flight controller firmware for Teensy 4.0/4.1 microc
 - Add flight state to data logging and web UI.
 - Moved flight state display in web UI to its own section.
 - Investigated sensor data anomalies (rapidly changing RPY while stationary).
-  - Temporarily disabled online gyro bias estimation in `icm_20948_functions.cpp` to isolate potential cause of drift.
+  - Temporarily disabled online gyro bias estimation in `icm_20948_functions.cpp`.
+  - **Result:** Disabling online estimation significantly improved stationary stability. Static gyro calibration at startup appears effective. Further work on online bias estimation may be needed if long-term drift is observed.
+- ✅ Deprecated and backed up unused UKF (Unscented Kalman Filter) implementation from `src/ukf.cpp` and `src/ukf.h` to `backup/ukf_deprecated_20250601/`.
 
 ### Development Status
 - ✅ Core sensor integration (GPS, Barometer, IMU, Accelerometer)
@@ -296,7 +298,7 @@ For detailed documentation, please refer to:
 
 - [ ] **Persistent Magnetometer Calibration:** Implement a mechanism to save and load magnetometer calibration values (bias and scale) to/from EEPROM or the SD card. This would avoid the need for recalibration or manual code changes after each power cycle.
 - [ ] **Advanced Flight State Machine for Guidance:** Integrate the dynamic target update system more deeply with a comprehensive flight state machine. Target orientations for the PID controllers should ideally be determined by the active flight phase (e.g., ascent, coast, specific pointing maneuvers, landing orientation).
-- [ ] **UKF and MARG Synergy:** Review and clarify the roles of the existing 1D Unscented Kalman Filter (UKF for altitude/velocity) and the new 9-axis Madgwick (MARG for attitude). Explore options for tighter integration, such as using MARG attitude to improve the UKF's state estimation or extending the UKF to a full 3D state estimator.
+- [ ] **UKF and MARG Synergy:** Review and clarify the roles of any future Kalman filtering for altitude/velocity (as the previous UKF was deprecated) and the existing 9-axis Madgwick (MARG for attitude). Explore options for tighter integration if a new altitude/velocity filter is implemented, such as using MARG attitude to improve its state estimation or extending it to a full 3D state estimator.
 - [ ] **Consolidate Helper Functions:** Resolve any duplicate helper functions (e.g., `convertQuaternionToEuler`) by ensuring a single, canonical version is used throughout the codebase, properly declared in a shared header.
 - [ ] **Configurable Actuator Axis Mapping:** Provide clear documentation and potentially runtime or compile-time configuration options for mapping logical PID axes (X, Y, Z from `guidance_control`) to physical servo outputs and their corresponding control effects (e.g., which servo controls pitch, roll, or yaw, and in which direction).
 - [ ] **Advanced PID Control Techniques:** Investigate and potentially implement advanced PID features such as derivative-on-measurement (to reduce setpoint kick), feedforward control (to improve response to known disturbances), or even auto-tuning capabilities.

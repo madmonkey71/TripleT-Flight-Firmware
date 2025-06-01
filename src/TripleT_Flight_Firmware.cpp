@@ -54,6 +54,7 @@
 #include "flight_logic.h"     // For update_guidance_targets()
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
+#include "kalman_filter.h"   // For Kalman filter functions
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString = "";
@@ -67,6 +68,14 @@ bool kx134_initialized_ok = false;
 bool icm20948_ready = false;
 
 const char* BOARD_NAME = "Teensy 4.1";
+
+// Orientation Filter Selection
+bool useMadgwickFilter = !KALMAN_FILTER_ACTIVE_BY_DEFAULT;
+bool useKalmanFilter = KALMAN_FILTER_ACTIVE_BY_DEFAULT;
+float kalmanRoll = 0.0f;
+float kalmanPitch = 0.0f;
+float kalmanYaw = 0.0f;
+bool usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
 // External declarations for sensor data
 extern SFE_UBLOX_GNSS myGNSS;  // GPS object
@@ -309,9 +318,17 @@ void WriteLogData(bool forceLog) {
   logEntry.q1 = icm_q1;
   logEntry.q2 = icm_q2;
   logEntry.q3 = icm_q3;
-  convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, 
-                           logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
-  logEntry.gyro_bias_x = gyroBias[0];
+
+  if (useKalmanFilter) {
+      logEntry.euler_roll = kalmanRoll;   // Assuming kalmanRoll, Pitch, Yaw are in radians
+      logEntry.euler_pitch = kalmanPitch;
+      logEntry.euler_yaw = kalmanYaw;
+  } else { // Default to Madgwick if Kalman is not active
+      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
+                               logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
+  }
+
+  logEntry.gyro_bias_x = gyroBias[0]; // Keep logging gyro bias from Madgwick/ICM
   logEntry.gyro_bias_y = gyroBias[1];
   logEntry.gyro_bias_z = gyroBias[2];
 
@@ -537,6 +554,8 @@ void printHelpMessage() {
   Serial.println(F("  calibrate                  : Attempt barometer calibration"));
   Serial.println(F("  status                     : Show system component status"));
   Serial.println(F("  summary                    : Toggle status summary display"));
+  Serial.println(F("  set_orientation_filter [madgwick|kalman] : Selects the active orientation filter."));
+  Serial.println(F("  get_orientation_filter                 : Shows the currently active orientation filter."));
   Serial.println(F("\nLegacy Commands (use new versions if possible):"));
   Serial.println(F("  sd                         : Toggle sensor_detail_debug"));
   Serial.println(F("  rd                         : Toggle icm_raw_debug"));
@@ -825,6 +844,48 @@ void processCommand(String command) {
             Serial.print(F("Unknown debug flag: "));
             Serial.println(flagIdentifier);
         }
+    } else if (command.startsWith("set_orientation_filter ")) {
+        String filterType = command.substring(23); // Length of "set_orientation_filter "
+        filterType.trim();
+        if (filterType == "madgwick") {
+            useMadgwickFilter = true;
+            useKalmanFilter = false;
+            Serial.println(F("Orientation filter set to Madgwick."));
+            // Optional: if Madgwick needs specific re-initialization, add here
+        } else if (filterType == "kalman") {
+            if (icm20948_ready) { // Kalman needs ICM to be ready
+                useMadgwickFilter = false;
+                useKalmanFilter = true;
+                // Re-initialize Kalman filter when switching.
+                float initial_roll = 0.0f;
+                float initial_pitch = 0.0f;
+                float initial_yaw = 0.0f;
+                // Optionally, use current Madgwick orientation if available:
+                // if (!useMadgwickFilter && icm_q0 != 1.0f && (icm_q1 != 0.0f || icm_q2 != 0.0f || icm_q3 != 0.0f)) { // Check if Madgwick has valid non-default quaternion
+                //    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, initial_roll, initial_pitch, initial_yaw);
+                // }
+                kalman_init(initial_roll, initial_pitch, initial_yaw);
+                Serial.println(F("Orientation filter set to Kalman. Initialized/Re-initialized."));
+            } else {
+                Serial.println(F("Cannot switch to Kalman filter: ICM20948 not ready."));
+            }
+        } else {
+            Serial.print(F("Unknown filter type: "));
+            Serial.println(filterType);
+        }
+    } else if (command == "get_orientation_filter") {
+        Serial.print(F("Current orientation filter: "));
+        if (useKalmanFilter) {
+            Serial.println(F("Kalman"));
+        } else if (useMadgwickFilter) { // Madgwick is effectively the default if Kalman is not chosen
+            Serial.println(F("Madgwick"));
+        } else {
+            // This case should ideally not be reached if one is always true.
+            // However, if KALMAN_FILTER_ACTIVE_BY_DEFAULT was false, and useMadgwickFilter was also set to false somehow.
+            Serial.println(F("None (Madgwick is default if Kalman is false)"));
+        }
+        Serial.print(F("  useKalmanFilter flag: ")); Serial.println(useKalmanFilter);
+        Serial.print(F("  useMadgwickFilter flag: ")); Serial.println(useMadgwickFilter);
     } else if (command == "debug_all_off") { // Direct command for convenience
         Serial.println(F("Disabling all debug flags:"));
         toggleDebugFlag(enableSerialCSV, F("Serial CSV output"), Serial, 0);
@@ -989,9 +1050,23 @@ void setup() {
     icm20948_ready = true; // Set flag if successful
     Serial.println(F("ICM-20948 (9-DOF IMU) reported successful initialization."));
     ICM_20948_calibrate(); // Perform static gyro bias calibration and other calibrations
+
+    // Initialize Kalman Filter after ICM is ready and calibrated
+    if (useKalmanFilter) { // Only initialize if Kalman filter is selected
+        // Potentially read initial orientation from ICM if stable, otherwise use zeros
+        // For now, using zeros as specified. Madgwick's icm_q0 etc. are not yet populated here.
+        float initial_roll = 0.0f;
+        float initial_pitch = 0.0f;
+        float initial_yaw = 0.0f;
+        // If Madgwick were run once (e.g. if ICM_20948_read() also updates icm_q0-q3):
+        // ICM_20948_read(); // Ensure icm_q0-q3 are populated if using them
+        // convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, initial_roll, initial_pitch, initial_yaw);
+        kalman_init(initial_roll, initial_pitch, initial_yaw);
+        Serial.println(F("Kalman filter initialized."));
+    }
   } else {
     icm20948_ready = false;
-    Serial.println(F("ICM-20948 (9-DOF IMU) reported initialization FAILED."));
+    Serial.println(F("ICM-20948 (9-DOF IMU) reported initialization FAILED. Kalman filter not initialized."));
     // Potentially set flightState = ERROR; here if critical
   }
   
@@ -1154,6 +1229,7 @@ void loop() {
   static unsigned long lastGPSCheckTime = 0;
   static unsigned long lastStorageCheckTime = 0;
   static unsigned long lastGuidanceUpdateTime = 0;
+  static unsigned long lastKalmanUpdateTime = 0; // For Kalman filter dt calculation
 
   bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
 
@@ -1182,6 +1258,87 @@ void loop() {
     lastIMUReadTime = millis();
     ICM_20948_read(); // Existing ICM read
     sensorsUpdatedThisCycle = true;
+
+    // --- Kalman Filter Processing ---
+    if (useKalmanFilter && icm20948_ready) {
+        // Sensor switching logic for Kalman filter accelerometer
+        float current_accel_for_kalman[3]; // Temporary array to hold accel data for Kalman
+        bool kx134_was_used = usingKX134ForKalman; // Store previous state for message toggling
+
+        // Default to ICM20948 accelerometer
+        memcpy(current_accel_for_kalman, icm_accel, sizeof(icm_accel));
+        usingKX134ForKalman = false;
+
+        // Calculate magnitude of ICM20948 acceleration
+        float icm_accel_magnitude = sqrt(icm_accel[0] * icm_accel[0] +
+                                         icm_accel[1] * icm_accel[1] +
+                                         icm_accel[2] * icm_accel[2]);
+
+        if (icm_accel_magnitude > 16.0f) { // Threshold for switching to KX134 (e.g. >16g)
+            if (kx134_initialized_ok) { // Check if KX134 is available and working
+                memcpy(current_accel_for_kalman, kx134_accel, sizeof(kx134_accel));
+                usingKX134ForKalman = true;
+                if (!kx134_was_used && enableIMUDebug) { // Print only on change
+                    Serial.println(F("KALMAN: High-G detected. Switched to KX134 for accelerometer data."));
+                }
+            } else {
+                if (enableIMUDebug) { // If KX134 not ok, print warning but continue with ICM (already copied)
+                    Serial.println(F("KALMAN: High-G detected, but KX134 not available. Using ICM20948 accel."));
+                }
+            }
+        } else {
+            // Already using ICM20948 (default), no change needed for data
+            // usingKX134ForKalman is already false
+            if (kx134_was_used && enableIMUDebug) { // Print only on change
+                Serial.println(F("KALMAN: Low-G detected. Switched back to ICM20948 for accelerometer data."));
+            }
+        }
+
+        float dt_kalman = 0.0f;
+        unsigned long currentTimeMillis = millis(); // Cache current time
+
+        if (lastKalmanUpdateTime > 0) { // Ensure lastKalmanUpdateTime has been initialized after the first run
+            dt_kalman = (currentTimeMillis - lastKalmanUpdateTime) / 1000.0f;
+        }
+        lastKalmanUpdateTime = currentTimeMillis;
+
+        if (dt_kalman > 0.0f && dt_kalman < 1.0f) { // Basic sanity check for dt
+            // Gyro data is in icm_gyro (rad/s)
+            // Accel data for Kalman is now in current_accel_for_kalman (g's)
+
+            kalman_predict(icm_gyro[0], icm_gyro[1], icm_gyro[2], dt_kalman);
+            kalman_update(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2]);
+            kalman_get_orientation(kalmanRoll, kalmanPitch, kalmanYaw);
+
+            if (enableIMUDebug) { // Optional: Add specific Kalman debug
+                static unsigned long lastKalmanDebugPrintTime = 0;
+                if (millis() - lastKalmanDebugPrintTime > 500) { // Print every 500ms
+                    lastKalmanDebugPrintTime = millis();
+                    Serial.print(F("Kalman Out - R: ")); Serial.print(kalmanRoll * (180.0f/PI), 1);
+                    Serial.print(F(" P: ")); Serial.print(kalmanPitch * (180.0f/PI), 1);
+                    Serial.print(F(" Y: ")); Serial.println(kalmanYaw * (180.0f/PI), 1);
+                }
+            }
+        } else if (dt_kalman <= 0.0f && lastKalmanUpdateTime != 0) { // Handles first run or timer rollover after initialization
+             // If dt is zero or negative (e.g. timer rollover or first pass),
+             // re-initialize lastKalmanUpdateTime to current time to ensure next dt is valid.
+             // Don't run predict/update with invalid dt.
+             lastKalmanUpdateTime = currentTimeMillis;
+        }
+        // If lastKalmanUpdateTime was 0 (first ever call in loop), it's now set,
+        // and dt_kalman would be based on millis() which is fine for the first dt after setup.
+        // The condition dt_kalman > 0 above handles the very first call if lastKalmanUpdateTime was 0.
+        // To be more robust for the very first loop iteration:
+        // if (lastKalmanUpdateTime == 0) { // First time in loop
+        //    lastKalmanUpdateTime = currentTimeMillis; // Initialize, skip processing this one cycle
+        // } else { ... process ... }
+        // The current logic should be okay as dt_kalman will be large on the first run if lastKalmanUpdateTime is 0,
+        // so the dt_kalman < 1.0f check might prevent it.
+        // Let's refine the dt_kalman initialization slightly for clarity on the first run.
+        // The current logic: if lastKalmanUpdateTime is 0, dt_kalman = millis()/1000.0. This is usually large.
+        // The check dt_kalman < 1.0f would prevent execution on the first frame if setup took >1s.
+        // Setting lastKalmanUpdateTime = millis() if dt_kalman <=0 handles subsequent calls correctly.
+    }
   }
   if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
     lastAccelReadTime = millis();
@@ -1230,17 +1387,41 @@ void loop() {
       float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
       lastGuidanceUpdateTime = millis();
 
-      float roll_rad, pitch_rad, yaw_rad;
-      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_rad, pitch_rad, yaw_rad);
+      float current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance;
 
+      if (useKalmanFilter && icm20948_ready) { // Ensure Kalman is active AND sensor is ready
+          current_roll_rad_for_guidance = kalmanRoll;   // Assumed to be in radians
+          current_pitch_rad_for_guidance = kalmanPitch; // Assumed to be in radians
+          current_yaw_rad_for_guidance = kalmanYaw;     // Assumed to be in radians
+      } else if (useMadgwickFilter && icm20948_ready) { // Fallback to Madgwick if it's active or Kalman isn't usable
+          convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
+                                   current_roll_rad_for_guidance,
+                                   current_pitch_rad_for_guidance,
+                                   current_yaw_rad_for_guidance);
+      } else {
+          // No valid orientation source is active or sensor not ready
+          // Default to zero orientation to prevent erratic behavior, or log error
+          current_roll_rad_for_guidance = 0.0f;
+          current_pitch_rad_for_guidance = 0.0f;
+          current_yaw_rad_for_guidance = 0.0f;
+          if (enableSystemDebug) { // Add a debug message for this case
+              static unsigned long lastGuidanceWarnTime = 0;
+              if (millis() - lastGuidanceWarnTime > 1000) { // Rate limit warning
+                  lastGuidanceWarnTime = millis();
+                  Serial.println(F("GUIDANCE_WARN: No valid orientation source for guidance update!"));
+              }
+          }
+      }
+
+      // Gyroscope data for rates (remains the same, directly from ICM)
       float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
-      float calibrated_gyro_data[3];
-      ICM_20948_get_calibrated_gyro(calibrated_gyro_data);
+      float calibrated_gyro_data[3]; // Ensure this is correctly populated
+      ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Assumes this function is available and works
       roll_rate_radps = calibrated_gyro_data[0];
       pitch_rate_radps = calibrated_gyro_data[1];
       yaw_rate_radps = calibrated_gyro_data[2];
 
-      guidance_update(roll_rad, pitch_rad, yaw_rad,
+      guidance_update(current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance,
                       roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
                       deltat_guidance);
 
@@ -1262,9 +1443,9 @@ void loop() {
               Serial.print("Guidance Out - X(Pitch): "); Serial.print(actuator_x, 2);
               Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
               Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
-              Serial.print("Guidance In  - R: "); Serial.print(roll_rad * (180.0f/PI), 1);
-              Serial.print(" P: "); Serial.print(pitch_rad * (180.0f/PI), 1);
-              Serial.print(" Y: "); Serial.println(yaw_rad * (180.0f/PI), 1);
+              Serial.print("Guidance In  - R: "); Serial.print(current_roll_rad_for_guidance * (180.0f/PI), 1);
+              Serial.print(" P: "); Serial.print(current_pitch_rad_for_guidance * (180.0f/PI), 1);
+              Serial.print(" Y: "); Serial.println(current_yaw_rad_for_guidance * (180.0f/PI), 1);
           }
       }
   }

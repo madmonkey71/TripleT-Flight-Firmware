@@ -44,6 +44,14 @@ extern uint64_t availableSpace;
 extern bool flashAvailable;
 extern String FileDateString;
 
+// Kalman Filter Global Variables
+extern bool useMadgwickFilter;
+extern bool useKalmanFilter;
+extern float kalmanRoll;
+extern float kalmanPitch;
+extern float kalmanYaw;
+extern bool usingKX134ForKalman; // Flag to indicate if KX134 is being used for Kalman accel input
+
 // External logging variables
 extern unsigned long currentTime;
 extern bool baroCalibrated;

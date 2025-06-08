@@ -52,8 +52,8 @@
 #define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
 #define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
 #define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 5  // Number of consecutive readings to confirm landing
-#define BACKUP_APOGEE_TIME 15000      // Backup time-based apogee detection (ms after boost)
+#define LANDING_CONFIRMATION_COUNT 10  // Number of consecutive readings to confirm landing
+#define BACKUP_APOGEE_TIME_MS 20000      // Backup time-based apogee detection (ms after boost)
 
 // Redundant Sensing Apogee Detection
 #ifndef APOGEE_BARO_DESCENT_THRESHOLD

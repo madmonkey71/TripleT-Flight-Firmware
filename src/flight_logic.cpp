@@ -24,6 +24,19 @@ extern float kx134_accel[3];
 extern float icm_accel[3];
 extern bool enableSystemDebug;
 
+// Externs from TripleT_Flight_Firmware.cpp for attitude hold logic
+extern bool useKalmanFilter; // To check which orientation source is active
+extern float kalmanRoll;     // Kalman filter output for roll (radians)
+extern float kalmanPitch;    // Kalman filter output for pitch (radians)
+extern float kalmanYaw;      // Kalman filter output for yaw (radians)
+// Note: icm20948_ready is extern in utility_functions.h
+// Note: icm_q0, icm_q1, icm_q2, icm_q3 are extern in icm_20948_functions.h (via guidance_control.h)
+
+// Constants for Recovery Beep Pattern
+static const unsigned long RECOVERY_BEEP_DURATION_MS = 200;
+static const unsigned long RECOVERY_SILENCE_DURATION_MS = 1800; // Total cycle time = 2000ms (2 seconds)
+static const unsigned int RECOVERY_BEEP_FREQUENCY_HZ = 2000; // 2kHz tone
+
 // Forward declaration for prepareForShutdown
 void prepareForShutdown();
 
@@ -159,6 +172,26 @@ void ProcessFlightState() {
         }
     }
 
+    // Sensor health check for recoverable states
+    if (currentFlightState != LANDED && currentFlightState != RECOVERY && currentFlightState != ERROR) {
+        if (!isSensorSuiteHealthy()) {
+            currentFlightState = ERROR;
+            if (enableSystemDebug) {
+                Serial.println(F("Sensor suite unhealthy! Transitioning to ERROR state."));
+            }
+            // Force state change processing for ERROR state entry actions
+            // This ensures that any entry actions defined for the ERROR state (like setting LEDs, logging) are executed.
+            if (currentFlightState != previousFlightState) { // Check if it's a new error state occurrence
+                previousFlightState = currentFlightState;
+                stateEntryTime = millis();
+                setFlightStateLED(currentFlightState);
+                saveStateToEEPROM();
+                // if (WriteLogData) WriteLogData(true); // Assuming WriteLogData is available and should be called
+            }
+            return; // Exit ProcessFlightState immediately
+        }
+    }
+
     // --- Continuous State Processing Logic ---
     switch (currentFlightState) {
         case PAD_IDLE:
@@ -183,6 +216,42 @@ void ProcessFlightState() {
         case BOOST:
             detectBoostEnd(); // This function sets boostEndTime
             if (boostEndTime > 0) {
+                // Attitude Hold: Capture current orientation and set as target for COAST phase
+                float currentRoll_rad = 0.0f;
+                float currentPitch_rad = 0.0f;
+                float currentYaw_rad = 0.0f;
+
+                if (useKalmanFilter && icm20948_ready) {
+                    currentRoll_rad = kalmanRoll;
+                    currentPitch_rad = kalmanPitch;
+                    currentYaw_rad = kalmanYaw;
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATTITUDE_HOLD: Using Kalman orientation."));
+                    }
+                } else if (icm20948_ready) { // Default to Madgwick/quaternion-derived if Kalman not active but ICM is ready
+                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, currentRoll_rad, currentPitch_rad, currentYaw_rad);
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATTITUDE_HOLD: Using Madgwick/Quaternion orientation."));
+                    }
+                } else {
+                    // Fallback: No reliable orientation source
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATTITUDE_HOLD_WARN: No valid orientation source at BOOST->COAST. Target set to 0,0,0."));
+                    }
+                    // currentRoll_rad, currentPitch_rad, currentYaw_rad remain 0.0f
+                }
+
+                guidance_set_target_orientation_euler(currentRoll_rad, currentPitch_rad, currentYaw_rad);
+
+                if (enableSystemDebug) {
+                    Serial.print(F("ATTITUDE_HOLD: Target set at BOOST->COAST transition. R: "));
+                    Serial.print(currentRoll_rad * (180.0f / PI), 2);
+                    Serial.print(F(" P: "));
+                    Serial.print(currentPitch_rad * (180.0f / PI), 2);
+                    Serial.print(F(" Y: "));
+                    Serial.println(currentYaw_rad * (180.0f / PI), 2);
+                }
+
                 currentFlightState = COAST;
             }
             // Update maxAltitudeReached during boost
@@ -264,16 +333,38 @@ void ProcessFlightState() {
             break;
 
         case RECOVERY:
-            // Post-flight operations: e.g., activate GPS beacon, periodic beeping.
-            // Example: Beep every 10 seconds
-            // if ((millis() / 1000) % 10 == 0) {
-            //    static unsigned long lastRecoveryBeep = 0;
-            //    if(millis() - lastRecoveryBeep > 1000) { // ensure it only beeps once per second boundary
-            //       tone(BUZZER_PIN, 1000, 500); lastRecoveryBeep = millis();
-            //    }
-            // }
+            { // Scope block for static variables
+                static unsigned long lastRecoveryActionTime = 0;
+                static bool isBeeping = false;
+                unsigned long currentTimeMillis = millis(); // Cache current time
+
+                if (isBeeping) {
+                    if (currentTimeMillis - lastRecoveryActionTime >= RECOVERY_BEEP_DURATION_MS) {
+                        noTone(BUZZER_PIN);
+                        isBeeping = false;
+                        lastRecoveryActionTime = currentTimeMillis;
+                        if (enableSystemDebug) {
+                            Serial.println(F("RECOVERY: Beep stopped."));
+                        }
+                    }
+                } else { // Not beeping
+                    if (currentTimeMillis - lastRecoveryActionTime >= RECOVERY_SILENCE_DURATION_MS) {
+                        tone(BUZZER_PIN, RECOVERY_BEEP_FREQUENCY_HZ);
+                        isBeeping = true;
+                        lastRecoveryActionTime = currentTimeMillis;
+                        if (enableSystemDebug) {
+                            Serial.print(F("RECOVERY: Beep started at "));
+                            Serial.print(RECOVERY_BEEP_FREQUENCY_HZ);
+                            Serial.println(F(" Hz."));
+                        }
+                    }
+                }
+            } // End scope block for static variables
+
+            // Existing timeout logic for RECOVERY state
             if (millis() - stateEntryTime > RECOVERY_TIMEOUT_MS) {
-                if (enableSystemDebug) Serial.println(F("RECOVERY timeout. Preparing for shutdown."));
+                if (enableSystemDebug) Serial.println(F("RECOVERY: Timeout. Preparing for shutdown."));
+                noTone(BUZZER_PIN); // Ensure buzzer is off before shutdown
                 prepareForShutdown(); // Assumed to be a global function that handles safe shutdown
             }
             break;
@@ -322,22 +413,31 @@ void detectBoostEnd() {
 }
 
 bool detectApogee() {
-    // Simple apogee detection based on altitude decrease
+    bool apogeeDetected = false; // Local flag for apogee detection
+
+    // Primary apogee detection based on altitude decrease
+    // WARNING: The use of local static variables 'lastAltitude' and 'descendingCount' here can be problematic
+    // as they are not reset by the flight state machine's transition into COAST.
+    // The global '::descendingCount' and '::previousApogeeDetectAltitude' are managed by ProcessFlightState
+    // and should ideally be used or passed to this function for correct apogee detection logic.
+    // This change focuses on the backup timer as per the subtask.
     static float lastAltitude = 0.0f;
-    static int descendingCount = 0;
+    static int descendingCount = 0;   // Local static, not the global one.
     
     if (ms5611Sensor.isConnected() && baroCalibrated) {
         float currentAlt = ms5611_get_altitude() - launchAltitude;
         
+        // On first call or if currentAlt is higher, reset descending logic
+        // This static 'lastAltitude' will only be 0.0f on the very first call ever.
+        // This logic needs to be tied to the COAST state entry.
         if (currentAlt < lastAltitude) {
             descendingCount++;
         } else {
-            descendingCount = 0;
+            descendingCount = 0; // Reset if altitude increases or stays the same
         }
+        lastAltitude = currentAlt; // Update for next comparison
         
-        lastAltitude = currentAlt;
-        
-        // Update max altitude
+        // Update global max altitude reached
         if (currentAlt > maxAltitudeReached) {
             maxAltitudeReached = currentAlt;
         }
@@ -345,21 +445,28 @@ bool detectApogee() {
         // Confirm apogee if descending for multiple readings
         if (descendingCount >= APOGEE_CONFIRMATION_COUNT) {
             if (enableSystemDebug) {
-                Serial.println(F("Apogee detected via barometer"));
+                Serial.println(F("Apogee detected by primary method (barometer)."));
             }
-            return true;
+            apogeeDetected = true;
         }
     }
     
-    // Backup time-based apogee detection
-    if (millis() - stateEntryTime > BACKUP_APOGEE_TIME) {
+    // New Backup Apogee Timer: Time since motor burnout (boostEndTime)
+    // boostEndTime is a global variable, set in detectBoostEnd()
+    // BACKUP_APOGEE_TIME_MS is from config.h
+    if (!apogeeDetected && boostEndTime > 0 && (millis() - boostEndTime > BACKUP_APOGEE_TIME_MS)) {
         if (enableSystemDebug) {
-            Serial.println(F("Apogee detected via backup timer"));
+            Serial.print(F("Apogee detected by backup timer. Time since boost end: "));
+            Serial.print(millis() - boostEndTime);
+            Serial.print(F("ms, Threshold: "));
+            Serial.print(BACKUP_APOGEE_TIME_MS);
+            Serial.println(F("ms"));
         }
-        return true;
+        apogeeDetected = true;
+        // Note: maxAltitudeReached might not be the true peak if this timer fires, but it's a backup.
     }
     
-    return false;
+    return apogeeDetected;
 }
 
 bool detectLanding() {

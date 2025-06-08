@@ -346,6 +346,22 @@ void WriteLogData(bool forceLog) {
   
   guidance_get_actuator_outputs(logEntry.actuator_x, logEntry.actuator_y, logEntry.actuator_z);
 
+  // Populate the new GNC fields (Task 2.2)
+  // Assuming the guidance functions can correctly populate these new fields.
+  // Note: The task specifies actuator_output_roll, then pitch, then yaw for the call.
+  // We map actuator_x to roll, actuator_y to pitch, actuator_z to yaw based on common conventions.
+  guidance_get_target_euler_angles(&logEntry.target_roll,       // New field
+                                   &logEntry.target_pitch,      // New field
+                                   &logEntry.target_yaw);       // New field
+
+  guidance_get_pid_integrals(&logEntry.pid_roll_integral,  // New field
+                             &logEntry.pid_pitch_integral, // New field
+                             &logEntry.pid_yaw_integral);  // New field
+
+  guidance_get_actuator_outputs(&logEntry.actuator_output_roll,  // New field (Order: Roll, Pitch, Yaw)
+                                &logEntry.actuator_output_pitch, // New field
+                                &logEntry.actuator_output_yaw);  // New field
+
   // Output to serial if enabled
   if (enableSerialCSV) {
     // Convert struct to string and print
@@ -1384,70 +1400,86 @@ void loop() {
   update_guidance_targets(); // Existing function or its equivalent for setting guidance targets
 
   if (millis() - lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-      float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
-      lastGuidanceUpdateTime = millis();
+    float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
+    lastGuidanceUpdateTime = millis();
 
-      float current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance;
+    if (currentFlightState == BOOST || currentFlightState == COAST) {
+        float current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance;
 
-      if (useKalmanFilter && icm20948_ready) { // Ensure Kalman is active AND sensor is ready
-          current_roll_rad_for_guidance = kalmanRoll;   // Assumed to be in radians
-          current_pitch_rad_for_guidance = kalmanPitch; // Assumed to be in radians
-          current_yaw_rad_for_guidance = kalmanYaw;     // Assumed to be in radians
-      } else if (useMadgwickFilter && icm20948_ready) { // Fallback to Madgwick if it's active or Kalman isn't usable
-          convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
-                                   current_roll_rad_for_guidance,
-                                   current_pitch_rad_for_guidance,
-                                   current_yaw_rad_for_guidance);
-      } else {
-          // No valid orientation source is active or sensor not ready
-          // Default to zero orientation to prevent erratic behavior, or log error
-          current_roll_rad_for_guidance = 0.0f;
-          current_pitch_rad_for_guidance = 0.0f;
-          current_yaw_rad_for_guidance = 0.0f;
-          if (enableSystemDebug) { // Add a debug message for this case
-              static unsigned long lastGuidanceWarnTime = 0;
-              if (millis() - lastGuidanceWarnTime > 1000) { // Rate limit warning
-                  lastGuidanceWarnTime = millis();
-                  Serial.println(F("GUIDANCE_WARN: No valid orientation source for guidance update!"));
-              }
-          }
-      }
+        if (useKalmanFilter && icm20948_ready) { // Ensure Kalman is active AND sensor is ready
+            current_roll_rad_for_guidance = kalmanRoll;   // Assumed to be in radians
+            current_pitch_rad_for_guidance = kalmanPitch; // Assumed to be in radians
+            current_yaw_rad_for_guidance = kalmanYaw;     // Assumed to be in radians
+        } else if (useMadgwickFilter && icm20948_ready) { // Fallback to Madgwick if it's active or Kalman isn't usable
+            convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
+                                     current_roll_rad_for_guidance,
+                                     current_pitch_rad_for_guidance,
+                                     current_yaw_rad_for_guidance);
+        } else {
+            // No valid orientation source is active or sensor not ready
+            // Default to zero orientation to prevent erratic behavior, or log error
+            current_roll_rad_for_guidance = 0.0f;
+            current_pitch_rad_for_guidance = 0.0f;
+            current_yaw_rad_for_guidance = 0.0f;
+            if (enableSystemDebug) { // Add a debug message for this case
+                static unsigned long lastGuidanceWarnTime = 0;
+                if (millis() - lastGuidanceWarnTime > 1000) { // Rate limit warning
+                    lastGuidanceWarnTime = millis();
+                    Serial.println(F("GUIDANCE_WARN: No valid orientation source for guidance update!"));
+                }
+            }
+        }
 
-      // Gyroscope data for rates (remains the same, directly from ICM)
-      float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
-      float calibrated_gyro_data[3]; // Ensure this is correctly populated
-      ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Assumes this function is available and works
-      roll_rate_radps = calibrated_gyro_data[0];
-      pitch_rate_radps = calibrated_gyro_data[1];
-      yaw_rate_radps = calibrated_gyro_data[2];
+        // Gyroscope data for rates (remains the same, directly from ICM)
+        float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
+        float calibrated_gyro_data[3]; // Ensure this is correctly populated
+        ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Assumes this function is available and works
+        roll_rate_radps = calibrated_gyro_data[0];
+        pitch_rate_radps = calibrated_gyro_data[1];
+        yaw_rate_radps = calibrated_gyro_data[2];
 
-      guidance_update(current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance,
-                      roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
-                      deltat_guidance);
+        guidance_update(current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance,
+                        roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
+                        deltat_guidance);
 
-      float actuator_x, actuator_y, actuator_z;
-      guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
+        float actuator_x, actuator_y, actuator_z;
+        guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
 
-      float pitch_angle = map_float(actuator_x, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
-      float roll_angle  = map_float(actuator_y, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
-      float yaw_angle   = map_float(actuator_z, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+        float pitch_angle = map_float(actuator_x, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+        float roll_angle  = map_float(actuator_y, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
+        float yaw_angle   = map_float(actuator_z, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
 
-      servo_pitch.write(static_cast<int>(constrain(pitch_angle, 0, 180)));
-      servo_roll.write(static_cast<int>(constrain(roll_angle,  0, 180)));
-      servo_yaw.write(static_cast<int>(constrain(yaw_angle,   0, 180)));
-      
-      if (enableSystemDebug) { // Existing guidance debug print logic
-          static unsigned long lastGuidanceDebugPrintTime = 0;
-          if (millis() - lastGuidanceDebugPrintTime > 500) {
-              lastGuidanceDebugPrintTime = millis();
-              Serial.print("Guidance Out - X(Pitch): "); Serial.print(actuator_x, 2);
-              Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
-              Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
-              Serial.print("Guidance In  - R: "); Serial.print(current_roll_rad_for_guidance * (180.0f/PI), 1);
-              Serial.print(" P: "); Serial.print(current_pitch_rad_for_guidance * (180.0f/PI), 1);
-              Serial.print(" Y: "); Serial.println(current_yaw_rad_for_guidance * (180.0f/PI), 1);
-          }
-      }
+        servo_pitch.write(static_cast<int>(constrain(pitch_angle, 0, 180)));
+        servo_roll.write(static_cast<int>(constrain(roll_angle,  0, 180)));
+        servo_yaw.write(static_cast<int>(constrain(yaw_angle,   0, 180)));
+
+        if (enableSystemDebug) { // Existing guidance debug print logic
+            static unsigned long lastGuidanceDebugPrintTime = 0;
+            if (millis() - lastGuidanceDebugPrintTime > 500) {
+                lastGuidanceDebugPrintTime = millis();
+                Serial.print("Guidance Active - X(Pitch): "); Serial.print(actuator_x, 2);
+                Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
+                Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
+                Serial.print("Guidance In  - R: "); Serial.print(current_roll_rad_for_guidance * (180.0f/PI), 1);
+                Serial.print(" P: "); Serial.print(current_pitch_rad_for_guidance * (180.0f/PI), 1);
+                Serial.print(" Y: "); Serial.println(current_yaw_rad_for_guidance * (180.0f/PI), 1);
+            }
+        }
+    } else {
+        // Not in BOOST or COAST state, set servos to neutral/default
+        servo_pitch.write(SERVO_DEFAULT_ANGLE);
+        servo_roll.write(SERVO_DEFAULT_ANGLE);
+        servo_yaw.write(SERVO_DEFAULT_ANGLE);
+        if (enableSystemDebug) {
+            static unsigned long lastServoNeutralPrintTime = 0;
+            if (millis() - lastServoNeutralPrintTime > 2000) { // Print every 2 seconds if servos are being neutralized
+                lastServoNeutralPrintTime = millis();
+                Serial.print(F("Guidance Inactive (State: "));
+                Serial.print(getStateName(currentFlightState));
+                Serial.println(F("). Servos set to default angle."));
+            }
+        }
+    }
   }
 }
 

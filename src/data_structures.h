@@ -63,6 +63,17 @@ typedef struct {
   float pid_integral_pitch; // PID integral for pitch
   float pid_integral_yaw;   // PID integral for yaw
   float actuator_x, actuator_y, actuator_z; // Actuator output commands (-1.0 to 1.0)
+
+  // Added GNC fields as per Task 2.1
+  float target_roll;
+  float target_pitch;
+  float target_yaw;
+  float pid_roll_integral;
+  float pid_pitch_integral;
+  float pid_yaw_integral;
+  float actuator_output_pitch;
+  float actuator_output_roll;
+  float actuator_output_yaw;
 } LogData;
 
 #include <Arduino.h> // For FlightState enum if not already included, though it's defined in TripleT_Flight_Firmware.cpp

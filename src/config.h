@@ -48,7 +48,8 @@
 #define NEOPIXEL_COUNT 2                         // Number of NeoPixels
 
 // --- Flight Logic Parameters ---
-#define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground
+// #define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground - Now dynamic, see g_main_deploy_altitude_m_agl
+#define MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M 100.0f // Main parachute deployment height above ground level (meters)
 #define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
 #define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
 #define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee

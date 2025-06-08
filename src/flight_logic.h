@@ -3,6 +3,9 @@
 
 #include <Arduino.h> // Include Arduino framework for standard types
 
+// Extern declaration for global dynamic main deployment altitude
+extern float g_main_deploy_altitude_m_agl;
+
 // Forward declaration for FlightState enum if its definition is not in a common header yet.
 // Assuming FlightState is uint8_t compatible for now.
 enum FlightState : uint8_t;

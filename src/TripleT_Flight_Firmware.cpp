@@ -67,6 +67,9 @@ float currentAltitude = 0.0f;
 bool kx134_initialized_ok = false;
 bool icm20948_ready = false;
 
+// Global variable for dynamic main deployment altitude (Task Step 2)
+float g_main_deploy_altitude_m_agl = 0.0f;
+
 const char* BOARD_NAME = "Teensy 4.1";
 
 // Orientation Filter Selection

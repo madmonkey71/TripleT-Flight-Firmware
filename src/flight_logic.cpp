@@ -115,6 +115,27 @@ void ProcessFlightState() {
                 break;
             case ARMED:
                 if (enableSystemDebug) Serial.println(F("ARMED: System armed and ready for launch."));
+
+                // Set dynamic main deployment altitude based on current AGL alt at arming time
+                // currentAglAlt is calculated at the start of ProcessFlightState().
+                // launchAltitude (used by currentAglAlt) is set in PAD_IDLE entry.
+                if (baroCalibrated && ms5611Sensor.isConnected()) { // Only set if we have a valid AGL altitude source
+                    g_main_deploy_altitude_m_agl = currentAglAlt + MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M;
+                    if (enableSystemDebug) {
+                        Serial.print(F("ARMED: Dynamic main deployment altitude set to: "));
+                        Serial.print(g_main_deploy_altitude_m_agl, 2); // Print with 2 decimal places
+                        Serial.println(F(" m AGL"));
+                    }
+                } else {
+                    // Fallback: Barometer not ready or not calibrated.
+                    // Default to MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M as AGL, though actual ground reference is uncertain.
+                    g_main_deploy_altitude_m_agl = MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M;
+                    if (enableSystemDebug) {
+                        Serial.print(F("ARMED_WARN: Baro not ready/calibrated. Main deploy altitude defaulting to fixed height: "));
+                        Serial.print(g_main_deploy_altitude_m_agl, 2);
+                        Serial.println(F(" m above current (potentially uncalibrated) launch altitude."));
+                    }
+                }
                 // Optional: short beep sequence
                 // tone(BUZZER_PIN, 3000, 100); delay(150); tone(BUZZER_PIN, 3000, 100);
                 break;
@@ -297,7 +318,8 @@ void ProcessFlightState() {
 
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
-                if (ms5611Sensor.isConnected() && baroCalibrated && currentAglAlt < MAIN_DEPLOY_ALTITUDE) {
+                // Use the new global dynamic deployment altitude
+                if (ms5611Sensor.isConnected() && baroCalibrated && currentAglAlt < g_main_deploy_altitude_m_agl) {
                     currentFlightState = MAIN_DEPLOY;
                 }
             } else { // No main parachute, look for landing under drogue

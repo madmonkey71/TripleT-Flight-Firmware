@@ -108,7 +108,7 @@ void ProcessFlightState() {
             Serial.print(F("Transitioning to state: "));
             Serial.println(getStateName(currentFlightState));
         }
-        // WriteLogData(true); // Force log on state change - Assuming WriteLogData is globally accessible
+        WriteLogData(true); // Force log on state change
         saveStateToEEPROM(); // Force save state on transition
         setFlightStateLED(currentFlightState);
     }

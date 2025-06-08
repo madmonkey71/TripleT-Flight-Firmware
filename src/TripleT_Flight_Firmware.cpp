@@ -579,6 +579,15 @@ void printHelpMessage() {
   Serial.println(F("  sd                         : Toggle sensor_detail_debug"));
   Serial.println(F("  rd                         : Toggle icm_raw_debug"));
   Serial.println(F("================================="));
+  Serial.println(F("  j - Toggle status summary"));
+  Serial.println(F("\nExtended commands:"));
+  Serial.println(F("  debug_all_off - Disable all debugging output"));
+  Serial.println(F("  calibrate - Manually calibrate barometer with GPS"));
+  Serial.println(F("  help - Show this help message"));
+  Serial.println(F("  arm - Arm the flight computer (transition to ARMED state)"));
+  Serial.println(F("  test_error - Simulate sensor error (for testing)"));
+  Serial.println(F("  test_watchdog - Simulate watchdog timeout (for testing)"));
+  Serial.println(F("  clear_errors - Reset all error flags and return to normal operation"));
 }
 
 // Function to print detailed SD Card status
@@ -802,6 +811,23 @@ void processCommand(String command) {
         printHelpMessage();
     } else if (command == "calibrate") {
         performCalibration();
+    } else if (command == "arm") {
+        if (currentFlightState == PAD_IDLE) {
+            currentFlightState = ARMED;
+            Serial.println(F("System ARMED. Ready for launch."));
+            if (!enableSerialCSV) {
+                Serial.println(F("Note: Serial CSV output is off. Web UI will not update until it is enabled ('0')."));
+            }
+        } else {
+            Serial.print(F("Cannot arm. System is not in PAD_IDLE state. Current state: "));
+            Serial.println(getStateName(currentFlightState));
+        }
+    } else if (command == "test_error") {
+        Serial.println(F("Simulating sensor error..."));
+        // Implement sensor error simulation logic
+    } else if (command == "test_watchdog") {
+        Serial.println(F("Simulating watchdog timeout..."));
+        // Implement watchdog timeout simulation logic
     } else if (command == "summary") { // Legacy "summary"
         toggleDebugFlag(enableStatusSummary, F("Status summary"), Serial);
     } else if (command == "status") { // Legacy "status"

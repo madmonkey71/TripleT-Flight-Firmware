@@ -394,3 +394,19 @@ bool detectLanding() {
     }
     return false;
 }
+
+// Placeholder/test implementation for guidance target updates
+void update_guidance_targets() {
+    static bool initial_target_set = false;
+    static float initial_yaw_target = 0.0f; // Store the initial yaw target in radians
+
+    if (!initial_target_set) {
+        float current_roll, current_pitch, current_yaw;
+        convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, current_roll, current_pitch, current_yaw);
+        initial_yaw_target = current_yaw;
+        guidance_set_target_orientation_euler(0.0f, 0.0f, initial_yaw_target);
+        initial_target_set = true;
+    }
+    // Note: The time-based target changing logic has been removed for simplification.
+    // The target is now set once at initialization and held.
+}

@@ -199,3 +199,14 @@ void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute,
   second = GPS_second;
 }
 
+// Safely get the GPS fix type
+uint8_t getFixType() {
+    return GPS_fixType;
+}
+
+// Safely get the GPS altitude in meters
+float getGPSAltitude() {
+    // The u-blox modules report altitude in millimeters. Convert to meters.
+    return (float)GPS_altitude / 1000.0f;
+}
+

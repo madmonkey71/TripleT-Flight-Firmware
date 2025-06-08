@@ -16,7 +16,6 @@ bool detectLanding();
 void detectBoostEnd();
 bool IsStable(); // Check if rocket is stable (related to landing) - Kept as it was existing
 void ProcessFlightState(); // Main state processing function
-
 void update_guidance_targets(); // Kept as it was existing
 
 #endif // FLIGHT_LOGIC_H

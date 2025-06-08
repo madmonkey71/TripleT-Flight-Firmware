@@ -71,10 +71,13 @@
 
 // Redundant Sensing Landing Detection
 #ifndef LANDING_ACCEL_MIN_G
-#define LANDING_ACCEL_MIN_G 0.95        // Minimum G for landing detection
+#define LANDING_ACCEL_MIN_G 0.9f    // Minimum acceleration for landing detection (g)
 #endif
 #ifndef LANDING_ACCEL_MAX_G
-#define LANDING_ACCEL_MAX_G 1.05        // Maximum G for landing detection
+#define LANDING_ACCEL_MAX_G 1.1f    // Maximum acceleration for landing detection (g)
+#endif
+#ifndef LANDING_CONFIRMATION_TIME_MS
+#define LANDING_CONFIRMATION_TIME_MS 2000 // Time in ms of stable conditions to confirm landing
 #endif
 #ifndef LANDING_ALTITUDE_STABLE_THRESHOLD
 #define LANDING_ALTITUDE_STABLE_THRESHOLD 1.0 // Meters altitude change for landing stability

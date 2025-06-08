@@ -1,80 +1,89 @@
-# TripleT Flight Firmware - Gap Analysis
+# TripleT Flight Firmware - Gap Analysis (Source Code Reviewed)
 
 ## 1. Introduction
 
-This document provides an analysis of the TripleT Flight Firmware project to identify gaps between the documented goals and the current state of implementation. The goal is to create a clear picture of what is missing and to propose a path toward a feature-complete and robust flight controller. The analysis is based on a review of the `README.md`, `State Machine.md`, and `guidance_plan.md` documents.
+This document provides an analysis of the TripleT Flight Firmware project to identify gaps between the documented goals and the **current implemented source code**. The goal is to create a clear, actionable picture of what is missing to achieve a feature-complete and robust flight controller. The analysis is based on a review of the source code in the `src/` directory as of 25/05/2025.
 
-## 2. Summary of Project Goals
+**Note:** Per user request, analysis of the Madgwick filter and related orientation data quality issues is omitted. The focus is on the state machine, guidance logic, and overall system architecture.
 
-The project aims to be a comprehensive flight control system for model and high-power rockets. Key objectives include:
-- Robust flight state detection from launch to recovery.
-- Accurate orientation estimation using a 9-axis MARG sensor fusion algorithm (Madgwick AHRS).
-- A PID-based control system for guidance via actuators (e.g., TVC servos).
-- A dynamic targeting system to guide the rocket during flight.
-- Comprehensive data logging to an SD card.
-- A user-friendly serial interface and a web-based real-time data visualizer.
-- Resilience against sensor failures, power loss, and other in-flight anomalies.
-- Planned live telemetry via radio.
+## 2. Summary of Project Goals vs. Implemented Reality
 
-## 3. Analysis of Core Systems
+The project aims to be a comprehensive flight control system. Here is a summary of the implemented state:
+- **Flight State Detection:** A full 14-state machine is implemented in `flight_logic.cpp` with logic for transitions from `STARTUP` to `RECOVERY`.
+- **Guidance & Control:** A full PID controller is implemented in `guidance_control.cpp`. A simple time-based target update function exists in `flight_logic.cpp`.
+- **State Persistence:** EEPROM saving and loading of the flight state is implemented in `state_management.cpp`, including power-loss recovery logic.
+- **Data Logging:** A sophisticated logging system is in place with a defined format.
+- **Hardware Abstraction:** Functions for all core sensors (GPS, Baro, IMUs) are present.
+
+## 3. Analysis of Core Systems (Based on Source Code)
 
 ### 3.1. Flight State Machine
 
-- **Status:** The `State Machine.md` provides an extremely detailed and robust design, including 14 states, error handling, and non-volatile storage for state recovery. The documentation appears to be more of a design specification than a reflection of a fully implemented and tested system.
-- **Gaps:**
-    - **Implementation Verification:** While the design is thorough, the `README.md` notes that flight state detection was "lost in a github mishap" and needs to be re-implemented. The core logic for transitioning between states (e.g., `BOOST` -> `COAST` -> `APOGEE`) based on sensor data needs to be written and validated.
-    - **Redundancy and Failsafes:** The design document mentions redundant apogee detection (e.g., backup timers), but it's unclear if this logic is implemented. The practical implementation of sensor failure detection and its integration into the state machine is a critical gap.
-    - **Recovery Logic:** The power-loss recovery logic outlined in `State Machine.md` is complex. For example, deciding to enter `DROGUE_DESCENT` after a power loss during `BOOST` is a critical safety feature that needs careful implementation and testing.
+- **Status:** The code in `flight_logic.cpp` and `state_management.cpp` provides a nearly complete implementation of the state machine designed in `State Machine.md`.
+    - All 14 states are defined and used.
+    - `ProcessFlightState()` contains logic for every state transition from `ARMED` to `LANDED`.
+    - Apogee detection is based on altitude decrease (`descendingCount`).
+    - Landing detection is based on altitude stability and a low acceleration magnitude (`IsStable`).
+    - Pyro channels are fired in the `DROGUE_DEPLOY` and `MAIN_DEPLOY` states.
+    - State is saved to EEPROM periodically and on critical events.
+    - Power-loss recovery logic exists and attempts to restore the flight to a safe state.
+
+- **Gaps & Discrepancies:**
+    - **Redundancy Not Implemented:** The design document (`State Machine.md`) mentions redundant apogee detection (e.g., backup timers like `BACKUP_APOGEE_TIME_MS`). The current `detectApogee()` in `flight_logic.cpp` **only** uses the barometer-based check (`currentAbsoluteBaroAlt < previousApogeeDetectAltitude`). The backup timer is not used, which is a critical gap in redundancy.
+    - **Sensor Failure Integration:** The `isSensorSuiteHealthy()` function exists in `utility_functions.cpp`, but it is **not called** within the main `ProcessFlightState()` loop. This means a sensor failure (e.g., barometer stops updating) will **not** trigger a transition to the `ERROR` state during flight. The state machine will continue to operate with potentially invalid data. This is a major gap in robustness.
+    - **"Magic Numbers" in Logic:** The apogee detection logic uses `APOGEE_CONFIRMATION_COUNT` (from `config.h`), but the landing detection uses a hard-coded `stability_counter >= 10`. This should be a configurable constant.
+    - **Post-Landing Logic:** After transitioning to `LANDED`, the system stays there until it is presumably powered off or reset. The documented transition from `LANDED` to `RECOVERY` is implemented, but the `RECOVERY` state itself does not have any explicit actions (like activating a GPS beacon or buzzer sequence), making it functionally similar to `LANDED`.
 
 ### 3.2. Guidance, Navigation, and Control (GNC)
 
-- **Status:** The system has a 3-axis PID controller and the ability to control servos. The `guidance_plan.md` focuses heavily on improving the quality and stability of the orientation data from the IMU, which is a critical prerequisite for any guidance system. Magnetometer calibration has been completed, and a plan to improve gyro data is laid out.
+- **Status:** `guidance_control.cpp` contains a complete PID controller implementation (`guidance_init`, `guidance_update`, `guidance_set_target_orientation_euler`). Servos are initialized and attached in `TripleT_Flight_Firmware.cpp`. A function `update_guidance_targets()` in `flight_logic.cpp` provides a very basic time-based yaw target adjustment. The main loop in `TripleT_Flight_Firmware.cpp` calls `guidance_update()` and `update_actuators()`.
 - **Gaps:**
-    - **Guidance Logic:** This is the most significant gap. The `README.md` states the "Dynamic Target Orientation System" is merely a "Time-based example framework." A true guidance system requires logic to determine the desired orientation in real-time based on the rocket's state (position, velocity) and mission objectives. There is currently no logic for:
-        - Pitch-over maneuvers after launch.
+    - **Simplistic Guidance Logic:** This remains the largest gap. The current `update_guidance_targets()` function is a placeholder. It sets a yaw target based on `millis()`, which is not a functional guidance system. There is no logic for:
         - Gravity turns.
-        - Targeting a specific direction or angle of attack.
-        - Maintaining a stable orientation during coast.
-    - **Integration with State Machine:** The guidance logic needs to be tightly integrated with the flight state. The PID controllers should likely be disabled in most states (`PAD_IDLE`, `DESCENT`, etc.) and activated only during the powered and coasting phases of flight, with different targets for each phase. This integration is not defined.
-    - **Actuator Mapping:** The `README.md` lists a "Potential Improvement" for configurable actuator axis mapping. It's unclear how the logical PID outputs (pitch, roll, yaw) are currently mapped to the physical servos. This is fundamental for the control system to function correctly.
-    - **Guidance Failsafes:** There is no mention of failsafes for the guidance system, such as what to do if the rocket deviates too far from its target orientation (e.g., disable motors, disable control).
-
-### 3.3. Sensor Integration & Data Processing
-
-- **Status:** Core sensors are integrated, and a Madgwick AHRS filter is in place. A detailed plan exists to address the primary issue of noisy orientation data.
-- **Gaps:**
-    - **Execution of `guidance_plan.md`:** The plan to improve gyro stability (static calibration, online bias tuning) needs to be executed. Until the RPY data is stable and reliable, the GNC system cannot be effectively developed or tested.
-    - **Persistent Calibration:** The `README.md` notes that magnetometer calibration values are hard-coded. They should be stored in non-volatile memory (EEPROM or SD card) so the device doesn't require new firmware every time it's recalibrated. This likely applies to the planned static gyro calibration as well.
-    - **`isStationary` Logic:** The logic to detect if the rocket is stationary is crucial for switching Madgwick filter parameters. The `README.md` lists refining this as a future task, indicating the current implementation may be suboptimal.
+        - Attitude hold/stabilization during coast.
+        - Following a flight plan or vector.
+    - **No Integration with State Machine:** The `guidance_update()` and `update_actuators()` functions are called in **every** iteration of the main `loop()`, regardless of the flight state. This means the PID controller is active and servos are attempting to correct errors even while the rocket is in `PAD_IDLE`, `DROGUE_DESCENT`, or `LANDED`. This is incorrect and potentially dangerous. The guidance system should be explicitly enabled/disabled based on the flight state (e.g., active only in `BOOST` and `COAST`).
+    - **Actuator Mapping Ambiguity:** The `guidance_control.cpp` code contains comments like `// Assuming actuator_output_y_g controls roll`. The `update_actuators` function in the main `.cpp` file maps these logical outputs directly to `servo_pitch`, `servo_roll`, and `servo_yaw`. While this mapping exists, the documentation correctly identifies that this needs to be more clearly defined and configurable, as the physical orientation of the flight controller relative to the actuators is critical.
+    - **No Guidance Failsafes:** There is no logic to handle a situation where the rocket's orientation deviates significantly from the target. The PID controller will simply continue to try to correct, potentially to maximum servo deflection, with no higher-level logic to intervene.
 
 ### 3.4. Data Logging & Telemetry
 
-- **Status:** SD card logging is implemented. A web interface exists for displaying data from the serial port.
+- **Status:** Logging is well-implemented. The `log_format_definition.cpp` and header define a clear structure, and the main file handles file creation and writing.
 - **Gaps:**
-    - **Live Telemetry:** This is a planned feature but is completely missing. Implementation would require selecting a radio module (e.g., LoRa, RFM95), writing a driver for it, defining a data packet structure, and creating a ground station receiver (which could be a separate project).
-    - **Completeness of Logged Data:** While many data points are logged, the `README.md` notes a goal to "Add all data to the logging." A review is needed to ensure that critical data for post-flight analysis is captured, including PID controller states (target, output, integral values) and the computed `gyroBias`.
+    - **Live Telemetry:** This remains a planned, but entirely unimplemented, feature.
+    - **Missing Critical Log Data:** The log data structure (`LogData`) is comprehensive but is missing key information for post-flight analysis of the GNC system. Specifically, it does not log:
+        - **PID Target Angles:** The `target_roll`, `target_pitch`, `target_yaw` are not logged.
+        - **PID Controller Internals:** The integral term values for each PID controller (`pid_x_integral`, etc.) are not logged.
+        - **Actuator Outputs:** The final, normalized servo commands are not logged. Without this data, it is impossible to debug or tune the performance of the control system.
 
-## 4. Summary of Key Missing Features
+## 4. Summary of Key Missing Features (Revised)
 
-1.  **Core Flight Logic:** The primary algorithms for detecting liftoff, motor burnout, apogee, and landing need to be re-implemented and tested.
-2.  **Functional Guidance System:** The current time-based example needs to be replaced with a mission-aware guidance engine that can execute flight plans (e.g., gravity turn, attitude hold).
-3.  **Live Radio Telemetry:** The entire subsystem for transmitting live flight data is absent.
-4.  **Persistent Sensor Calibration:** Storing magnetometer and gyroscope calibration data on the device to avoid recompiling firmware.
-5.  **GNC-State Machine Integration:** Clear logic defining how and when the PID controllers are activated/deactivated based on the flight state.
-6.  **Guidance Failsafes:** Safety logic to handle off-nominal guidance situations.
-7.  **Execution of Sensor Refinement Plan:** The steps outlined in `guidance_plan.md` to stabilize orientation data must be completed.
+1.  **Robust State Machine Failsafes:**
+    - Integration of sensor health checks (`isSensorSuiteHealthy()`) into the main flight loop to trigger the `ERROR` state.
+    - Implementation of the backup apogee timer logic in `detectApogee()`.
+2.  **Functional Guidance Engine:**
+    - Replacement of the placeholder `update_guidance_targets()` with mission-aware logic (e.g., attitude hold during coast as a first step).
+    - State-based activation/deactivation of the PID controllers and actuators.
+3.  **Complete GNC Data Logging:**
+    - Addition of PID target angles, integral values, and final actuator outputs to the `LogData` structure and log file.
+4.  **Live Radio Telemetry:** The entire subsystem for transmitting live flight data is absent.
+5.  **Refinement and Configuration:**
+    - Replace hard-coded values (like landing detection count) with constants in `config.h`.
+    - Implement meaningful actions in the `RECOVERY` state.
+    - Implement persistent storage for sensor calibration values (as noted in original analysis).
 
-## 5. Recommendations & Path to Completion
+## 5. Recommendations & Path to Completion (Revised)
 
-The following is a recommended order of operations to address the identified gaps:
+The recommended order of operations is adjusted based on the source code review:
 
-1.  **Stabilize Orientation Data:** Complete all phases of the `guidance_plan.md`. A reliable orientation estimate is the foundation for everything that follows. This includes implementing static gyro calibration and tuning the Madgwick filter.
-2.  **Implement Persistent Calibration:** As part of the previous step, build the infrastructure to save and load sensor calibration profiles (magnetometer, gyroscope) from EEPROM or the SD card.
-3.  **Re-implement Core Flight Logic:** Re-create and thoroughly test the state transition logic. Use the detailed `State Machine.md` as the blueprint. Focus on robust detection of liftoff, coast, apogee, and landing using real and simulated sensor data.
-4.  **Develop the Guidance Engine:**
-    - **Phase 1 (Attitude Hold):** Start with a simple guidance mode: "Attitude Hold." Once in `COAST` state, the PID controllers should be enabled to hold the orientation that existed at the moment of motor burnout. This is a crucial first step.
-    - **Phase 2 (Simple Maneuver):** Implement a basic pitch-over maneuver right after liftoff.
-    - **Phase 3 (Full Guidance):** Design and implement a more advanced guidance logic based on mission requirements.
-5.  **Integrate GNC with State Machine:** Formally connect the guidance engine to the state machine, ensuring PID controllers are only active when appropriate.
-6.  **Implement Live Telemetry:** Once the core flight computer is functional, add the hardware and software for radio telemetry. This should be treated as a separate module.
-7.  **Develop Failsafes and Refine Logic:** Continuously test and add failsafes for all systems, and refine logic like `isStationary` detection based on test results. 
+1.  **Fortify the State Machine:**
+    - **Priority 1:** Call `isSensorSuiteHealthy()` in `ProcessFlightState()` and transition to `ERROR` on failure. This is a critical safety feature.
+    - **Priority 2:** Implement the backup apogee timer logic in `detectApogee()`.
+    - **Priority 3:** Move hard-coded values to `config.h`.
+2.  **Log GNC Data:** Before developing the guidance engine, update the logging format to include PID targets, integrals, and outputs. This is essential for debugging the next steps.
+3.  **Implement State-Based GNC:** Modify the main `loop()` to only call `guidance_update()` and `update_actuators()` when `currentFlightState` is `BOOST` or `COAST`. In all other states, servos should be centered or detached.
+4.  **Develop the Guidance Engine (Iterative Approach):**
+    - **Phase 1 (Attitude Hold):** In the `COAST` state, set the target orientation to be the orientation captured at the moment of transition from `BOOST` to `COAST`. The PID controller should then work to maintain this orientation.
+    - **Phase 2 (Simple Maneuver):** Implement a basic pitch-over maneuver that sets a non-zero pitch target for a few seconds after liftoff.
+5.  **Implement Live Telemetry:** Treat this as a separate, parallel task once the core flight computer is reliably flying.
+6.  **Flesh out Final States:** Implement meaningful actions for the `RECOVERY` state (e.g., buzzer sequence). 

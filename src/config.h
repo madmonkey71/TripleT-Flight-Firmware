@@ -50,11 +50,13 @@
 // --- Flight Logic Parameters ---
 // #define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground - Now dynamic, see g_main_deploy_altitude_m_agl
 #define MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M 100.0f // Main parachute deployment height above ground level (meters)
-#define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
-#define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
-#define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 10  // Number of consecutive readings to confirm landing
-#define BACKUP_APOGEE_TIME_MS 20000      // Backup time-based apogee detection (ms after boost)
+#define BOOST_ACCEL_THRESHOLD 2.0f  // Acceleration threshold (in g) to detect liftoff.
+#define COAST_ACCEL_THRESHOLD 0.5f  // Acceleration threshold (in g) to detect the end of the boost phase (motor burnout).
+#define APOGEE_CONFIRMATION_COUNT 5   // Number of consecutive barometer readings required to confirm apogee.
+#define LANDING_CONFIRMATION_COUNT 10 // Number of consecutive readings required to confirm landing.
+#define BACKUP_APOGEE_TIME_MS 20000     // Failsafe time in ms after motor burnout to trigger apogee.
+#define APOGEE_ACCEL_CONFIRMATION_COUNT 5 // Number of consecutive readings of negative Z-axis acceleration to confirm apogee.
+#define APOGEE_GPS_CONFIRMATION_COUNT 3   // Number of consecutive GPS altitude readings showing descent to confirm apogee.
 
 // Redundant Sensing Apogee Detection
 #ifndef APOGEE_BARO_DESCENT_THRESHOLD

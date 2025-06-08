@@ -14,7 +14,6 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
 - ✅ **Interactive Serial Interface**: A rich command-driven interface for diagnostics and control is implemented.
 - ✅ **Flight State Machine**: A full 14-state flight state machine is implemented, managing the rocket from startup to recovery.
 - ✅ **State Persistence**: The current flight state and key altitude data are saved to EEPROM, allowing for recovery after a power loss.
-- ✅ **Apogee Detection**: Primary apogee detection is implemented based on barometric altitude readings.
 - ✅ **Parachute Deployment**: Pyro channels for drogue and main parachutes are controlled based on the flight state.
 - ✅ **Actuator Control**: A 3-axis PID controller is implemented and connected to PWM servos.
 - 🚧 **Guidance System**: A basic framework for guidance exists, but the current implementation is a placeholder (time-based yaw target). It is not yet integrated with the flight state machine.
@@ -23,6 +22,30 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
     - Sensor health checks exist but are not yet integrated into the flight state machine to trigger error states.
     - Redundant apogee detection (e.g., backup timer) is designed but not implemented in the flight logic.
 - 🚧 **Enhanced Telemetry**: Live data transmission via radio is planned but not yet implemented.
+
+### Redundant Apogee Detection
+To ensure the highest reliability for parachute deployment, the firmware now employs a multi-method apogee detection strategy. This system is designed to detect apogee accurately and within two seconds of the event, even in the case of a single sensor malfunction. Apogee is triggered if any of the following conditions are met:
+
+1.  **Primary: Barometric Pressure:**
+    *   **Method:** The primary and most sensitive method tracks the altitude from the MS5611 barometer. It records the maximum altitude reached during the flight.
+    *   **Trigger:** Apogee is confirmed if the barometer registers a specific number of consecutive readings (`APOGEE_CONFIRMATION_COUNT`) that are lower than the maximum recorded altitude. This indicates the rocket has started its descent.
+
+2.  **Secondary: Accelerometer Freefall:**
+    *   **Method:** A secondary check uses the Z-axis of the ICM-20948 accelerometer. At apogee, the rocket experiences a brief period of near-zero gravity (freefall) as it transitions from upward to downward motion.
+    *   **Trigger:** Apogee is confirmed if the accelerometer measures negative g-force on its vertical axis for a specific number of consecutive readings (`APOGEE_ACCEL_CONFIRMATION_COUNT`), indicating that the rocket is no longer accelerating upwards.
+
+3.  **Tertiary: GPS Altitude:**
+    *   **Method:** As a third layer of redundancy, the GPS module's altitude data is monitored. While typically having a slower update rate than the barometer, it provides an independent source of altitude information.
+    *   **Trigger:** Similar to the barometer, if the GPS reports a number of consecutive altitude readings (`APOGEE_GPS_CONFIRMATION_COUNT`) lower than its previously recorded maximum, apogee is signaled. A 5-meter hysteresis is used to prevent triggering from GPS noise.
+
+4.  **Failsafe: Backup Timer:**
+    *   **Method:** A final, time-based failsafe ensures parachute deployment even if all other sensors fail to detect apogee. This timer starts at motor burnout (end of the `BOOST` phase).
+    *   **Trigger:** If a pre-configured amount of time (`BACKUP_APOGEE_TIME_MS`, typically ~20 seconds) passes after motor burnout without any other method detecting apogee, the system will force an apogee event. This is a critical safety feature to prevent a total loss of the vehicle.
+
+This layered approach ensures that the flight computer can reliably detect the peak of its flight and initiate recovery procedures under a wide range of conditions.
+
+## State Machine
+The firmware operates on a state machine that dictates the rocket's behavior throughout its flight, from startup to recovery.
 
 ### AI Assistance
 This project utilizes AI assistance for:

@@ -425,21 +425,12 @@ void ICM_20948_read() {
     // --- End Motion Detection & Dynamic Beta ---
 
     // --- Madgwick AHRS MARG Update ---
-    float ax = icm_accel[0], ay = icm_accel[1], az = icm_accel[2];
-    float gx_corrected = icm_gyro[0] - gyroBias[0];
-    float gy_corrected = icm_gyro[1] - gyroBias[1];
-    float gz_corrected = icm_gyro[2] - gyroBias[2];
-    float mx_cal = icm_mag[0]; // Already calibrated
-    float my_cal = icm_mag[1]; // Already calibrated
-    float mz_cal = icm_mag[2]; // Already calibrated
-
-    /* // Temporarily disabling Madgwick AHRS update
-    // Call the 9-axis Madgwick update function
-    MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
-                           ax, ay, az,
-                           mx_cal, my_cal, mz_cal,
-                           deltat, beta);
-    */ // End of temporarily disabling Madgwick AHRS update
+    // The Madgwick filter update is temporarily disabled for testing.
+    // This will result in no orientation updates.
+    // MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
+    //                        ax, ay, az,
+    //                        mx_cal, my_cal, mz_cal,
+    //                        deltat, beta);
     // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
 
     // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)

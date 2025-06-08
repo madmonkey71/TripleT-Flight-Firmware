@@ -22,10 +22,11 @@ extern bool baroCalibrated;
 extern MS5611 ms5611Sensor;
 extern float kx134_accel[3];
 extern float icm_accel[3];
+extern bool icm20948_ready;
+extern bool useKalmanFilter;
 extern bool enableSystemDebug;
 
 // Externs from TripleT_Flight_Firmware.cpp for attitude hold logic
-extern bool useKalmanFilter; // To check which orientation source is active
 extern float kalmanRoll;     // Kalman filter output for roll (radians)
 extern float kalmanPitch;    // Kalman filter output for pitch (radians)
 extern float kalmanYaw;      // Kalman filter output for yaw (radians)
@@ -82,6 +83,20 @@ void ProcessFlightState() {
 
     // Save state periodically or on critical events (handled by saveStateToEEPROM's internal logic)
     saveStateToEEPROM();
+
+    // --- Pre-State-Processing Health Check ---
+    // Sensor health check for recoverable states
+    if (currentFlightState != LANDED && currentFlightState != RECOVERY && currentFlightState != ERROR) {
+        if (!isSensorSuiteHealthy(currentFlightState)) {
+            currentFlightState = ERROR;
+            if (enableSystemDebug) {
+                Serial.println(F("Sensor suite unhealthy, transitioning to ERROR state."));
+            }
+            // The next loop iteration will handle the ERROR state transition actions.
+            // We return here to prevent processing the current state with bad data.
+            return;
+        }
+    }
 
     // --- State Change Detection and Logging ---
     if (currentFlightState != previousFlightState) {
@@ -140,6 +155,13 @@ void ProcessFlightState() {
                 // tone(BUZZER_PIN, 3000, 100); delay(150); tone(BUZZER_PIN, 3000, 100);
                 break;
             case BOOST:
+                // If Kalman filter is active and IMU is not ready, we can't detect liftoff, so transition to error
+                if (useKalmanFilter) {
+                    if (!icm20948_ready) {
+                        currentFlightState = ERROR;
+                        if (enableSystemDebug) Serial.println(F("ERROR: Cannot detect liftoff; ICM20948 not ready."));
+                    }
+                }
                 if (enableSystemDebug) Serial.println(F("BOOST: Liftoff detected!"));
                 maxAltitudeReached = currentAglAlt > 0 ? currentAglAlt : 0; // Reset max AGL altitude at liftoff
                 descendingCount = 0;
@@ -193,26 +215,6 @@ void ProcessFlightState() {
         }
     }
 
-    // Sensor health check for recoverable states
-    if (currentFlightState != LANDED && currentFlightState != RECOVERY && currentFlightState != ERROR) {
-        if (!isSensorSuiteHealthy()) {
-            currentFlightState = ERROR;
-            if (enableSystemDebug) {
-                Serial.println(F("Sensor suite unhealthy! Transitioning to ERROR state."));
-            }
-            // Force state change processing for ERROR state entry actions
-            // This ensures that any entry actions defined for the ERROR state (like setting LEDs, logging) are executed.
-            if (currentFlightState != previousFlightState) { // Check if it's a new error state occurrence
-                previousFlightState = currentFlightState;
-                stateEntryTime = millis();
-                setFlightStateLED(currentFlightState);
-                saveStateToEEPROM();
-                // if (WriteLogData) WriteLogData(true); // Assuming WriteLogData is available and should be called
-            }
-            return; // Exit ProcessFlightState immediately
-        }
-    }
-
     // --- Continuous State Processing Logic ---
     switch (currentFlightState) {
         case PAD_IDLE:
@@ -222,8 +224,6 @@ void ProcessFlightState() {
 
         case ARMED:
             // Check for liftoff based on accelerometer
-            // bool accelOk = useKX134 ? kx134_initialized_ok : icm20948_ready; // Placeholder for accelerometerStatus.isWorking
-            // Simplified direct check for now, assuming utility_functions `get_accel_magnitude` handles sensor choice.
             if (get_accel_magnitude() > BOOST_ACCEL_THRESHOLD) {
                 currentFlightState = BOOST;
             } else if (millis() - stateEntryTime > 600000 && enableSystemDebug) { // Example: Disarm after 10 mins if no launch

@@ -353,17 +353,17 @@ void WriteLogData(bool forceLog) {
   // Assuming the guidance functions can correctly populate these new fields.
   // Note: The task specifies actuator_output_roll, then pitch, then yaw for the call.
   // We map actuator_x to roll, actuator_y to pitch, actuator_z to yaw based on common conventions.
-  guidance_get_target_euler_angles(&logEntry.target_roll,       // New field
-                                   &logEntry.target_pitch,      // New field
-                                   &logEntry.target_yaw);       // New field
+  guidance_get_target_euler_angles(logEntry.target_roll,       // New field
+                                   logEntry.target_pitch,      // New field
+                                   logEntry.target_yaw);       // New field
 
-  guidance_get_pid_integrals(&logEntry.pid_roll_integral,  // New field
-                             &logEntry.pid_pitch_integral, // New field
-                             &logEntry.pid_yaw_integral);  // New field
+  guidance_get_pid_integrals(logEntry.pid_roll_integral,  // New field
+                             logEntry.pid_pitch_integral, // New field
+                             logEntry.pid_yaw_integral);  // New field
 
-  guidance_get_actuator_outputs(&logEntry.actuator_output_roll,  // New field (Order: Roll, Pitch, Yaw)
-                                &logEntry.actuator_output_pitch, // New field
-                                &logEntry.actuator_output_yaw);  // New field
+  guidance_get_actuator_outputs(logEntry.actuator_output_roll,  // New field (Order: Roll, Pitch, Yaw)
+                                logEntry.actuator_output_pitch, // New field
+                                logEntry.actuator_output_yaw);  // New field
 
   // Output to serial if enabled
   if (enableSerialCSV) {

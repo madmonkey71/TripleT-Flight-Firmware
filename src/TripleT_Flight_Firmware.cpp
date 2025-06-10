@@ -1262,6 +1262,9 @@ void setup() {
   else if (currentFlightState == CALIBRATION) pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow
   // Other states will be handled by ProcessFlightState's display logic in the main loop.
   pixels.show();
+
+  // Force a data write at the end of setup to ensure the UI is synced
+  WriteLogData(true);
 }
 
 void loop() {

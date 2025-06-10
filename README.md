@@ -20,7 +20,7 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
 - 🚧 **Guidance System**: A basic framework for guidance exists, but the current implementation is a placeholder (time-based yaw target). It is not yet integrated with the flight state machine.
 - 🚧 **Sensor Fusion**: An orientation filter is in place, but development on it is currently paused.
 - ✅ **System Robustness**:
-    - Sensor health checks exist but are not yet integrated into the flight state machine to trigger error states.
+    - **In-Flight Sensor Health Monitoring**: The firmware continuously monitors the connection and status of critical sensors (IMU, Barometer) during all active flight phases. If a sensor fails, the system transitions to a safe `ERROR` state and logs the specific failure.
     - Redundant apogee detection (e.g., backup timer) is designed but not implemented in the flight logic.
     - **SD Card Handling**: The system now gracefully handles a missing SD card at startup by disabling logging and issuing a warning, preventing a boot failure.
 - 🚧 **Enhanced Telemetry**: Live data transmission via radio is planned but not yet implemented.
@@ -84,7 +84,7 @@ TripleT Flight Firmware is an open-source flight controller software built for t
 - **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place, ready for a functional guidance engine to provide it with targets.
 - **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps. If the SD card is not present at startup, logging is automatically disabled, and the system proceeds without entering an error state.
 - **GPS/Barometer Calibration**: Calibrates the barometric altimeter using GPS data for accurate altitude-above-ground-level (AGL) readings.
-- **Error Handling**: Includes watchdog timers and sensor initialization checks. If the system enters an `ERROR` state (e.g., due to a sensor failure), the `clear_errors` command can be used to attempt a return to the `PAD_IDLE` state if the underlying issue is resolved. If power is cycled while the device is in an `ERROR` state, it will reboot into `STARTUP` to ensure a clean start.
+- **Error Handling & Sensor Health**: Includes watchdog timers and sensor initialization checks. The system now performs continuous health checks on critical sensors (IMU, Barometer) during operation. If a sensor disconnects or fails, the system will transition to the `ERROR` state, and a descriptive message will be logged. The `clear_errors` command can be used to attempt a return to the `PAD_IDLE` state if the underlying issue is resolved. If power is cycled while the device is in an `ERROR` state, it will reboot into `STARTUP` to ensure a clean start.
 - **Interactive Serial Interface**: A command-driven system for real-time data monitoring, configuration, and diagnostics.
 - **Vehicle Orientation Detection (PAD_IDLE)**: Upon entering the `PAD_IDLE` state, the firmware attempts to determine the vehicle's vertical axis using accelerometer data (primarily from the ICM-20948). The axis (X, Y, or Z) that measures approximately +/-1g is identified as the vehicle's vertical orientation. This information, including the identified axis index (`verticalAxisIndex`) and the measured gravitational force (`verticalAxisMagnitudeG`), is logged for analysis and can aid in understanding pre-launch setup.
 
@@ -149,7 +149,7 @@ For more detailed design information, please refer to:
 - [ ] **Implement Functional Guidance:** Replace the placeholder guidance logic with a meaningful system, starting with a "Attitude Hold" mode during the coast phase.
 - [ ] **Integrate Guidance with State Machine:** The PID control system should be active only during appropriate flight states (e.g., `BOOST`, `COAST`). In other states, actuators should be disabled or centered.
 - [ ] **Fortify the State Machine:**
-    - [ ] Integrate the existing sensor health checks into the main flight loop to trigger the `ERROR` state upon sensor failure.
+    - [x] Integrate sensor health checks into the main flight loop to trigger the `ERROR` state upon sensor failure.
     - [ ] Implement the designed backup apogee detection timer for redundancy.
 - [x] **Enhance Data Logging:** Add PID controller data (target orientation, integral values, actuator outputs) to the SD card log for post-flight tuning and analysis.
 - [ ] **Live Telemetry:** Implement the planned live data transmission system using a radio module.

@@ -49,29 +49,16 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"GyroBiasY_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_y)},
     {"GyroBiasZ_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_z)},
 
-    // Guidance Control Data (subset)
-    {"ActuatorX", TYPE_FLOAT_P3, offsetof(LogData, actuator_x)},
-    {"ActuatorY", TYPE_FLOAT_P3, offsetof(LogData, actuator_y)},
-    {"ActuatorZ", TYPE_FLOAT_P3, offsetof(LogData, actuator_z)},
-
-    // Remaining Guidance Control Data
-    {"TargetRoll_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_roll)},
-    {"TargetPitch_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_pitch)},
-    {"TargetYaw_rad", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_euler_yaw)},
-    {"PIDIntRoll", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_roll)},
-    {"PIDIntPitch", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_pitch)},
-    {"PIDIntYaw", TYPE_FLOAT_P4, offsetof(LogData, pid_integral_yaw)},
-
-    // Added GNC fields as per Task 2.1
-    {"target_roll", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_roll)},
-    {"target_pitch", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_pitch)},
-    {"target_yaw", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_yaw)},
-    {"pid_roll_integral", TYPE_FLOAT_P4, offsetof(LogData, pid_roll_integral)},
-    {"pid_pitch_integral", TYPE_FLOAT_P4, offsetof(LogData, pid_pitch_integral)},
-    {"pid_yaw_integral", TYPE_FLOAT_P4, offsetof(LogData, pid_yaw_integral)},
-    {"actuator_output_pitch", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_pitch)},
-    {"actuator_output_roll", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_roll)},
-    {"actuator_output_yaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)}
+    // Guidance and Control - Target, Integral, and Actuator Outputs
+    {"TgtRoll", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_roll)},
+    {"TgtPitch", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_pitch)},
+    {"TgtYaw", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_yaw)},
+    {"PIDIntRoll", TYPE_FLOAT_P4, offsetof(LogData, pid_roll_integral)},
+    {"PIDIntPitch", TYPE_FLOAT_P4, offsetof(LogData, pid_pitch_integral)},
+    {"PIDIntYaw", TYPE_FLOAT_P4, offsetof(LogData, pid_yaw_integral)},
+    {"ActuatorOutRoll", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_roll)},
+    {"ActuatorOutPitch", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_pitch)},
+    {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)}
 };
 
 // Definition of the log column count

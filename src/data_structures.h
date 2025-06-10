@@ -53,26 +53,19 @@ typedef struct {
   // AHRS Data
   float q0, q1, q2, q3;              // Orientation quaternions (w,x,y,z)
   float euler_roll, euler_pitch, euler_yaw; // Calculated Euler angles (radians)
-  float gyro_bias_x, gyro_bias_y, gyro_bias_z; // Estimated gyroscope biases (rad/s)
+  float gyro_bias_x;
+  float gyro_bias_y;
+  float gyro_bias_z;
 
-  // Guidance Control Data (subset for now)
-  float target_euler_roll;  // Target Euler roll (radians)
-  float target_euler_pitch; // Target Euler pitch (radians)
-  float target_euler_yaw;   // Target Euler yaw (radians)
-  float pid_integral_roll;  // PID integral for roll
-  float pid_integral_pitch; // PID integral for pitch
-  float pid_integral_yaw;   // PID integral for yaw
-  float actuator_x, actuator_y, actuator_z; // Actuator output commands (-1.0 to 1.0)
-
-  // Added GNC fields as per Task 2.1
+  // Guidance Control Data
   float target_roll;
   float target_pitch;
   float target_yaw;
   float pid_roll_integral;
   float pid_pitch_integral;
   float pid_yaw_integral;
-  float actuator_output_pitch;
   float actuator_output_roll;
+  float actuator_output_pitch;
   float actuator_output_yaw;
 } LogData;
 

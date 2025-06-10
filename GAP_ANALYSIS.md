@@ -29,10 +29,10 @@ The project aims to be a comprehensive flight control system. Here is a summary 
     - Power-loss recovery logic exists and attempts to restore the flight to a safe state.
 
 - **Gaps & Discrepancies:**
-    - **Redundancy Not Implemented:** The design document (`State Machine.md`) mentions redundant apogee detection (e.g., backup timers like `BACKUP_APOGEE_TIME_MS`). The current `detectApogee()` in `flight_logic.cpp` **only** uses the barometer-based check (`currentAbsoluteBaroAlt < previousApogeeDetectAltitude`). The backup timer is not used, which is a critical gap in redundancy.
-    - **Sensor Failure Integration:** The `isSensorSuiteHealthy()` function exists in `utility_functions.cpp`, but it is **not called** within the main `ProcessFlightState()` loop. This means a sensor failure (e.g., barometer stops updating) will **not** trigger a transition to the `ERROR` state during flight. The state machine will continue to operate with potentially invalid data. This is a major gap in robustness.
-    - **"Magic Numbers" in Logic:** The apogee detection logic uses `APOGEE_CONFIRMATION_COUNT` (from `config.h`), but the landing detection uses a hard-coded `stability_counter >= 10`. This should be a configurable constant.
-    - **Post-Landing Logic:** After transitioning to `LANDED`, the system stays there until it is presumably powered off or reset. The documented transition from `LANDED` to `RECOVERY` is implemented, but the `RECOVERY` state itself does not have any explicit actions (like activating a GPS beacon or buzzer sequence), making it functionally similar to `LANDED`.
+    - **[COMPLETE] Redundancy Implemented:** The `detectApogee()` function in `flight_logic.cpp` successfully implements a multi-method detection strategy. It uses barometric pressure, accelerometer data, GPS altitude, and a failsafe backup timer (`BACKUP_APOGEE_TIME_MS`) to ensure redundant and reliable apogee detection.
+    - **[COMPLETE] Sensor Failure Integration:** The `isSensorSuiteHealthy()` function in `utility_functions.cpp` is now called from the main `ProcessFlightState()` loop. A critical sensor failure during flight will correctly trigger a transition to the `ERROR` state, significantly improving system robustness.
+    - **[COMPLETE] Configurable Logic Constants:** The logic for apogee and landing detection uses constants defined in `config.h` (e.g., `APOGEE_CONFIRMATION_COUNT`, `LANDING_CONFIRMATION_TIME_MS`, `LANDING_ALTITUDE_THRESHOLD_M`). Hard-coded "magic numbers" have been eliminated from the core flight logic.
+    - **[COMPLETE] Post-Landing Logic:** The `RECOVERY` state implements a periodic beeping sequence using the buzzer, providing an audible beacon for locating the vehicle after landing.
 
 ### 3.2. Guidance, Navigation, and Control (GNC)
 
@@ -42,7 +42,7 @@ The project aims to be a comprehensive flight control system. Here is a summary 
         - Gravity turns.
         - Attitude hold/stabilization during coast.
         - Following a flight plan or vector.
-    - **No Integration with State Machine:** The `guidance_update()` and `update_actuators()` functions are called in **every** iteration of the main `loop()`, regardless of the flight state. This means the PID controller is active and servos are attempting to correct errors even while the rocket is in `PAD_IDLE`, `DROGUE_DESCENT`, or `LANDED`. This is incorrect and potentially dangerous. The guidance system should be explicitly enabled/disabled based on the flight state (e.g., active only in `BOOST` and `COAST`).
+    - **[COMPLETE] Integration with State Machine:** The main loop in `TripleT_Flight_Firmware.cpp` now correctly calls `guidance_update()` and `update_actuators()` only when the `currentFlightState` is `BOOST` or `COAST`. In all other states, the servos are commanded to their default neutral position.
     - **Actuator Mapping Ambiguity:** The `guidance_control.cpp` code contains comments like `// Assuming actuator_output_y_g controls roll`. The `update_actuators` function in the main `.cpp` file maps these logical outputs directly to `servo_pitch`, `servo_roll`, and `servo_yaw`. While this mapping exists, the documentation correctly identifies that this needs to be more clearly defined and configurable, as the physical orientation of the flight controller relative to the actuators is critical.
     - **No Guidance Failsafes:** There is no logic to handle a situation where the rocket's orientation deviates significantly from the target. The PID controller will simply continue to try to correct, potentially to maximum servo deflection, with no higher-level logic to intervene.
 
@@ -51,39 +51,33 @@ The project aims to be a comprehensive flight control system. Here is a summary 
 - **Status:** Logging is well-implemented. The `log_format_definition.cpp` and header define a clear structure, and the main file handles file creation and writing.
 - **Gaps:**
     - **Live Telemetry:** This remains a planned, but entirely unimplemented, feature.
-    - **Missing Critical Log Data:** The log data structure (`LogData`) is comprehensive but is missing key information for post-flight analysis of the GNC system. Specifically, it does not log:
-        - **PID Target Angles:** The `target_roll`, `target_pitch`, `target_yaw` are not logged.
-        - **PID Controller Internals:** The integral term values for each PID controller (`pid_x_integral`, etc.) are not logged.
-        - **Actuator Outputs:** The final, normalized servo commands are not logged. Without this data, it is impossible to debug or tune the performance of the control system.
+    - **[COMPLETE] GNC Data Logging:** The `LogData` structure is comprehensive and already includes all necessary fields for GNC analysis, including PID target angles, integral values, and final actuator outputs.
 
 ## 4. Summary of Key Missing Features (Revised)
 
-1.  **Robust State Machine Failsafes:**
-    - Integration of sensor health checks (`isSensorSuiteHealthy()`) into the main flight loop to trigger the `ERROR` state.
-    - Implementation of the backup apogee timer logic in `detectApogee()`.
+1.  **[COMPLETE] Robust State Machine Failsafes:**
+    - Integration of sensor health checks (`isSensorSuiteHealthy()`) into the main flight loop is complete.
+    - Implementation of redundant apogee detection, including a backup timer, is complete.
 2.  **Functional Guidance Engine:**
     - Replacement of the placeholder `update_guidance_targets()` with mission-aware logic (e.g., attitude hold during coast as a first step).
-    - State-based activation/deactivation of the PID controllers and actuators.
-3.  **Complete GNC Data Logging:**
-    - Addition of PID target angles, integral values, and final actuator outputs to the `LogData` structure and log file.
+    - **[COMPLETE]** State-based activation/deactivation of the PID controllers and actuators is complete.
+3.  **[COMPLETE] Complete GNC Data Logging:**
+    - The `LogData` structure and log file already include PID target angles, integral values, and actuator outputs.
 4.  **Live Radio Telemetry:** The entire subsystem for transmitting live flight data is absent.
-5.  **Refinement and Configuration:**
-    - Replace hard-coded values (like landing detection count) with constants in `config.h`.
-    - Implement meaningful actions in the `RECOVERY` state.
-    - Implement persistent storage for sensor calibration values (as noted in original analysis).
+5.  **[COMPLETE] Refinement and Configuration:**
+    - Hard-coded values have been replaced with constants in `config.h`.
+    - The `RECOVERY` state now has a meaningful buzzer sequence.
+    - **[PARTIAL]** Persistent storage for sensor calibration values is noted as a future improvement, but magnetometer calibration is not yet persistent.
 
 ## 5. Recommendations & Path to Completion (Revised)
 
 The recommended order of operations is adjusted based on the source code review:
 
-1.  **Fortify the State Machine:**
-    - **Priority 1:** Call `isSensorSuiteHealthy()` in `ProcessFlightState()` and transition to `ERROR` on failure. This is a critical safety feature.
-    - **Priority 2:** Implement the backup apogee timer logic in `detectApogee()`.
-    - **Priority 3:** Move hard-coded values to `config.h`.
-2.  **Log GNC Data:** Before developing the guidance engine, update the logging format to include PID targets, integrals, and outputs. This is essential for debugging the next steps.
-3.  **Implement State-Based GNC:** Modify the main `loop()` to only call `guidance_update()` and `update_actuators()` when `currentFlightState` is `BOOST` or `COAST`. In all other states, servos should be centered or detached.
-4.  **Develop the Guidance Engine (Iterative Approach):**
+1.  **[COMPLETE] Fortify the State Machine:** All critical safety features, including sensor health checks and redundant apogee detection, are now implemented.
+2.  **[COMPLETE] Log GNC Data:** The logging format is already sufficient for GNC debugging.
+3.  **[COMPLETE] Implement State-Based GNC:** The main loop now correctly enables/disables the GNC system based on the flight state.
+4.  **Develop the Guidance Engine (Iterative Approach):** This is the primary remaining task.
     - **Phase 1 (Attitude Hold):** In the `COAST` state, set the target orientation to be the orientation captured at the moment of transition from `BOOST` to `COAST`. The PID controller should then work to maintain this orientation.
     - **Phase 2 (Simple Maneuver):** Implement a basic pitch-over maneuver that sets a non-zero pitch target for a few seconds after liftoff.
 5.  **Implement Live Telemetry:** Treat this as a separate, parallel task once the core flight computer is reliably flying.
-6.  **Flesh out Final States:** Implement meaningful actions for the `RECOVERY` state (e.g., buzzer sequence). 
+6.  **[COMPLETE] Flesh out Final States:** The `RECOVERY` state now has a meaningful buzzer sequence. 

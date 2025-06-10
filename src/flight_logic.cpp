@@ -409,7 +409,7 @@ bool detectLanding() {
         float accelMag = get_accel_magnitude();
 
         // Check if we're close to ground with low, stable acceleration
-        if (currentAgl < 50.0f && accelMag > LANDING_ACCEL_MIN_G && accelMag < LANDING_ACCEL_MAX_G) {
+        if (currentAgl < LANDING_ALTITUDE_THRESHOLD_M && accelMag > LANDING_ACCEL_MIN_G && accelMag < LANDING_ACCEL_MAX_G) {
             if (firstStableTime == 0) {
                 firstStableTime = millis();
             }

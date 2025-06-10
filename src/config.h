@@ -80,6 +80,9 @@
 #ifndef LANDING_CONFIRMATION_TIME_MS
 #define LANDING_CONFIRMATION_TIME_MS 2000 // Time in ms of stable conditions to confirm landing
 #endif
+#ifndef LANDING_ALTITUDE_THRESHOLD_M
+#define LANDING_ALTITUDE_THRESHOLD_M 50.0f // Altitude threshold in meters for landing detection
+#endif
 #ifndef LANDING_ALTITUDE_STABLE_THRESHOLD
 #define LANDING_ALTITUDE_STABLE_THRESHOLD 1.0 // Meters altitude change for landing stability
 #endif

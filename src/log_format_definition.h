@@ -15,7 +15,8 @@ typedef enum {
     TYPE_FLOAT_P2,                          // float, format with 2 decimal places
     TYPE_FLOAT_P3,                          // float, format with 3 decimal places (e.g., for actuator outputs)
     TYPE_FLOAT_P4,                          // float, format with 4 decimal places
-    TYPE_FLOAT_P6_RAD                       // float (radians), format with 6 decimal places
+    TYPE_FLOAT_P6_RAD,                      // float (radians), format with 6 decimal places
+    TYPE_INT32                              // int32_t, format as %d or %ld
 } LogFieldType_e;
 
 // Struct to describe each column in the log file

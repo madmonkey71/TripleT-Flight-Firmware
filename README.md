@@ -43,7 +43,7 @@ To ensure the highest reliability for parachute deployment, the firmware now emp
     *   **Method:** A final, time-based failsafe ensures parachute deployment even if all other sensors fail to detect apogee. This timer starts at motor burnout (end of the `BOOST` phase).
     *   **Trigger:** If a pre-configured amount of time (`BACKUP_APOGEE_TIME_MS`, typically ~20 seconds) passes after motor burnout without any other method detecting apogee, the system will force an apogee event. This is a critical safety feature to prevent a total loss of the vehicle.
 
-This layered approach ensures that the flight computer can reliably detect the peak of its flight and initiate recovery procedures under a wide range of conditions.
+This layered approach ensures that the flight computer can reliably detect the peak of its flight. Once apogee is confirmed by any of these methods, the system proceeds to activate the appropriate parachute deployment sequences (drogue and/or main) based on the flight configuration. This ensures timely recovery procedures under a wide range of conditions.
 
 ## State Machine
 The firmware operates on a state machine that dictates the rocket's behavior throughout its flight, from startup to recovery.
@@ -75,13 +75,17 @@ TripleT Flight Firmware is an open-source flight controller software built for t
 ## Features
 
 - **Multi-sensor Integration**: Fuses data from GPS, barometer, accelerometer, and 9-DOF IMU.
-- **Flight State Machine**: A sophisticated 14-state machine manages the entire flight profile, from `PAD_IDLE` through `BOOST`, `COAST`, `APOGEE`, multiple `DESCENT` phases, and finally to `RECOVERY`. State transitions are handled automatically based on sensor data.
+- **Flight State Machine**: A sophisticated 14-state machine manages the entire flight profile. State transitions are handled automatically based on sensor data and pre-configured thresholds:
+    - **Liftoff (ARMED to BOOST)**: Transition occurs when the overall acceleration magnitude exceeds the configurable `BOOST_ACCEL_THRESHOLD` (default: 2.0g), indicating launch.
+    - **Motor Burnout (BOOST to COAST)**: Transition occurs when the overall acceleration magnitude drops below the configurable `BOOST_TO_COAST_ACCEL_DROP_THRESHOLD` (default: 1.0g), signaling that the motor has ceased thrusting and the vehicle is entering the coast phase.
+    - **Apogee Detection & Recovery**: The system detects apogee when altitude stops increasing and begins to decrease (see "Redundant Apogee Detection" below). Upon apogee, parachute deployment sequences are initiated to ensure safe recovery.
 - **State Persistence & Recovery**: Automatically saves the flight state and critical data (max altitude, launch altitude) to EEPROM. In case of power loss, the firmware attempts to resume the flight in a safe state (e.g., resuming in `DROGUE_DESCENT` if power was lost during ascent).
 - **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place, ready for a functional guidance engine to provide it with targets.
 - **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps.
 - **GPS/Barometer Calibration**: Calibrates the barometric altimeter using GPS data for accurate altitude-above-ground-level (AGL) readings.
 - **Error Handling**: Includes watchdog timers and sensor initialization checks. (Note: In-flight sensor health monitoring is not yet fully integrated with the state machine).
 - **Interactive Serial Interface**: A command-driven system for real-time data monitoring, configuration, and diagnostics.
+- **Vehicle Orientation Detection (PAD_IDLE)**: Upon entering the `PAD_IDLE` state, the firmware attempts to determine the vehicle's vertical axis using accelerometer data (primarily from the ICM-20948). The axis (X, Y, or Z) that measures approximately +/-1g is identified as the vehicle's vertical orientation. This information, including the identified axis index (`verticalAxisIndex`) and the measured gravitational force (`verticalAxisMagnitudeG`), is logged for analysis and can aid in understanding pre-launch setup.
 
 ## Installation
 
@@ -120,7 +124,12 @@ Data is logged to the SD card in CSV format. The log includes:
 ### Configuration
 
 Key parameters are configured via `#define` statements in `src/config.h`:
-- **Flight Logic**: `MAIN_DEPLOY_ALTITUDE`, `BOOST_ACCEL_THRESHOLD`, `COAST_ACCEL_THRESHOLD`, `APOGEE_CONFIRMATION_COUNT`.
+- **Flight Logic**:
+    - `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M`: Target altitude (AGL) for main parachute deployment.
+    - `BOOST_ACCEL_THRESHOLD`: Minimum acceleration (in g) to detect liftoff (default: `2.0f`). This triggers the transition from `ARMED` to `BOOST`.
+    - `BOOST_TO_COAST_ACCEL_DROP_THRESHOLD`: Acceleration (in g) below which motor burnout is assumed (default: `1.0f`). This triggers the transition from `BOOST` to `COAST`.
+    - `COAST_ACCEL_THRESHOLD`: An older threshold related to motor burnout detection (default: `0.5f`). The primary logic for BOOST to COAST now uses `BOOST_TO_COAST_ACCEL_DROP_THRESHOLD`.
+    - `APOGEE_CONFIRMATION_COUNT`: Number of consecutive sensor readings required to confirm apogee by various methods.
 - **Hardware Presence**: `DROGUE_PRESENT`, `MAIN_PRESENT`, `USE_KX134`.
 - **PID Gains**: `PID_ROLL_KP`, `PID_ROLL_KI`, `PID_ROLL_KD` (and for Pitch/Yaw).
 - **Actuator Pins**: `ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`.

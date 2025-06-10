@@ -355,6 +355,10 @@ String logDataToString(const LogData& data) {
                 written_chars = snprintf(buffer + offset, sizeof(buffer) - offset,
                                          "%u", *static_cast<const uint8_t*>(field_ptr));
                 break;
+            case TYPE_INT32: // For general int32_t values
+                written_chars = snprintf(buffer + offset, sizeof(buffer) - offset,
+                                         "%d", *static_cast<const int32_t*>(field_ptr)); // %d is fine for int32_t on Teensy
+                break;
             case TYPE_INT32_AS_FLOAT_SCALED_1E7_P6: // For Latitude/Longitude
                 dtostrf(*static_cast<const int32_t*>(field_ptr) / 10000000.0, 1, 6, tempFloatBuffer);
                 written_chars = snprintf(buffer + offset, sizeof(buffer) - offset, "%s", tempFloatBuffer);

@@ -13,6 +13,8 @@
 #include <MS5611.h>
 
 // Externs for variables globally defined in TripleT_Flight_Firmware.cpp
+extern int verticalAxisIndex;          // Index of the dominant vertical axis
+extern float verticalAxisMagnitudeG;   // Magnitude of acceleration on the determined vertical axis
 extern FlightState currentFlightState;
 extern FlightState previousFlightState;
 extern unsigned long stateEntryTime;
@@ -114,7 +116,36 @@ void ProcessFlightState() {
                 landingDetectedFlag = false;
                 descendingCount = 0; // Reset for apogee detection
                 previousApogeeDetectAltitude = launchAltitude; // Initialize for apogee detection
-                if (enableSystemDebug) Serial.println(F("PAD_IDLE: System initialized. Launch altitude set."));
+
+                // Determine vertical axis based on ICM accelerometer
+                // Assumes icm_accel is populated from a recent ICM_20948_read() in the main loop
+                verticalAxisIndex = -1; // Reset before detection
+                verticalAxisMagnitudeG = 0.0f;
+                bool axisFound = false;
+                for (int i = 0; i < 3; ++i) {
+                    // Check if the axis is close to +1g or -1g
+                    if ((fabsf(icm_accel[i] - 1.0f) < 0.1f) || (fabsf(icm_accel[i] + 1.0f) < 0.1f)) {
+                        verticalAxisIndex = i; // 0 for X, 1 for Y, 2 for Z (from ICM)
+                        verticalAxisMagnitudeG = icm_accel[i];
+                        axisFound = true;
+                        break; // Found the first dominant axis
+                    }
+                }
+
+                if (enableSystemDebug) {
+                    Serial.println(F("PAD_IDLE: System initialized. Launch altitude set."));
+                    if (axisFound) {
+                        char axisChar = (verticalAxisIndex == 0) ? 'X' : (verticalAxisIndex == 1) ? 'Y' : 'Z';
+                        Serial.print(F("PAD_IDLE: Vertical axis detected: "));
+                        Serial.print(axisChar);
+                        Serial.print(F(" with magnitude "));
+                        Serial.print(verticalAxisMagnitudeG, 2);
+                        Serial.println(F("g"));
+                    } else {
+                        Serial.println(F("PAD_IDLE: No clear vertical axis detected on ICM20948."));
+                    }
+                }
+
                 pinMode(PYRO_CHANNEL_1, OUTPUT); digitalWrite(PYRO_CHANNEL_1, LOW);
                 pinMode(PYRO_CHANNEL_2, OUTPUT); digitalWrite(PYRO_CHANNEL_2, LOW);
                 break;
@@ -298,9 +329,9 @@ void ProcessFlightState() {
 }
 
 void detectBoostEnd() {
-    if (get_accel_magnitude() < COAST_ACCEL_THRESHOLD) {
+    if (get_accel_magnitude() < BOOST_TO_COAST_ACCEL_DROP_THRESHOLD) {
         boostEndTime = millis();
-        if (enableSystemDebug) Serial.println(F("BOOST_END detected by accelerometer."));
+        if (enableSystemDebug) Serial.println(F("BOOST_END detected by accelerometer (acceleration drop below threshold)."));
     }
 }
 

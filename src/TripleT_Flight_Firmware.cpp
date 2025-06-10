@@ -70,6 +70,10 @@ bool icm20948_ready = false;
 // Global variable for dynamic main deployment altitude (Task Step 2)
 float g_main_deploy_altitude_m_agl = 0.0f;
 
+// Global variables for vertical axis determination
+int verticalAxisIndex = -1;          // Index of the dominant vertical axis (0=X, 1=Y, 2=Z for KX134; 3=X, 4=Y, 5=Z for ICM)
+float verticalAxisMagnitudeG = 0.0f; // Magnitude of acceleration on the determined vertical axis (in G)
+
 const char* BOARD_NAME = "Teensy 4.1";
 
 // Orientation Filter Selection
@@ -334,6 +338,10 @@ void WriteLogData(bool forceLog) {
   logEntry.gyro_bias_x = gyroBias[0]; // Keep logging gyro bias from Madgwick/ICM
   logEntry.gyro_bias_y = gyroBias[1];
   logEntry.gyro_bias_z = gyroBias[2];
+
+  // Populate Vertical Axis Data
+  logEntry.verticalAxisIndex = verticalAxisIndex;
+  logEntry.verticalAxisMagnitudeG = verticalAxisMagnitudeG;
 
   // Populate Guidance Control Data
   // Target Euler angles and PID integrals are static in guidance_control.cpp.

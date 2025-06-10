@@ -51,6 +51,7 @@
 // #define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground - Now dynamic, see g_main_deploy_altitude_m_agl
 #define MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M 100.0f // Main parachute deployment height above ground level (meters)
 #define BOOST_ACCEL_THRESHOLD 2.0f  // Acceleration threshold (in g) to detect liftoff.
+#define BOOST_TO_COAST_ACCEL_DROP_THRESHOLD 1.0f // Acceleration drop threshold (in g) to detect motor burnout / transition to coast.
 #define COAST_ACCEL_THRESHOLD 0.5f  // Acceleration threshold (in g) to detect the end of the boost phase (motor burnout).
 #define APOGEE_CONFIRMATION_COUNT 5   // Number of consecutive barometer readings required to confirm apogee.
 #define LANDING_CONFIRMATION_COUNT 10 // Number of consecutive readings required to confirm landing.

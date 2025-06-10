@@ -49,6 +49,10 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"GyroBiasY_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_y)},
     {"GyroBiasZ_rps", TYPE_FLOAT_P6_RAD, offsetof(LogData, gyro_bias_z)},
 
+    // Vertical Axis Data
+    {"VerticalAxisIndex", TYPE_INT, offsetof(LogData, verticalAxisIndex)},
+    {"VerticalAxisMagnitudeG", TYPE_FLOAT_P2, offsetof(LogData, verticalAxisMagnitudeG)},
+
     // Guidance and Control - Target, Integral, and Actuator Outputs
     {"TgtRoll", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_roll)},
     {"TgtPitch", TYPE_FLOAT_P6_RAD, offsetof(LogData, target_pitch)},

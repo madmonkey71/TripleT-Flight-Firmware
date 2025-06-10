@@ -756,7 +756,7 @@ void processCommand(String command) {
             return;
         }
         
-        if (cmd >= 'a' && cmd <= 'k') { // Adjusted range if needed, 'k' seems to be the last one.
+        if (cmd >= 'a' && cmd <= 'j') { // Adjusted range if needed, 'k' seems to be the last one.
             switch (cmd) {
                 case 'a': printHelpMessage(); break;
                 case 'b': printSystemStatus(); break;
@@ -807,6 +807,21 @@ void processCommand(String command) {
         } else {
             Serial.print(F("Cannot arm. System is not in PAD_IDLE state. Current state: "));
             Serial.println(getStateName(currentFlightState));
+        }
+    } else if (command == "clear_errors") {
+        if (currentFlightState == ERROR) {
+            Serial.println(F("Attempting to clear errors..."));
+            // Check if the system is healthy enough to return to idle
+            if (isSensorSuiteHealthy(PAD_IDLE)) {
+                currentFlightState = PAD_IDLE;
+                stateEntryTime = millis();
+                Serial.println(F("Errors cleared. System is now in PAD_IDLE state."));
+                setFlightStateLED(PAD_IDLE); // Update LED to green
+            } else {
+                Serial.println(F("Cannot clear errors. System sensor suite is still unhealthy."));
+            }
+        } else {
+            Serial.println(F("System is not in an error state."));
         }
     } else if (command == "test_error") {
         Serial.println(F("Simulating sensor error..."));
@@ -1205,13 +1220,12 @@ void setup() {
                             // This function should check GPS, IMU, Baro, SD card status.
   
   if (!sdCardAvailable && loggingEnabled) { // Example check: if logging is on but SD fails, system is not healthy.
-      Serial.println(F("ERROR: Logging enabled but SD card not available. System unhealthy."));
-      systemHealthy = false;
+      Serial.println(F("WARNING: Logging enabled but SD card not available. Disabling logging."));
+      loggingEnabled = false;
   }
   // Add more checks for critical sensors to set systemHealthy = false if they fail init.
   // For example:
   // if (!ms5611Sensor.isConnected()) systemHealthy = false; // Assuming ms5611_init updates this
-  // if (!kx134_initialized_ok && !icm20948_ready) systemHealthy = false; // If no IMU is good. (Need to define these flags based on init funcs)
 
 
   if (currentFlightState == CALIBRATION) { 
@@ -1276,7 +1290,7 @@ void loop() {
     lastGPSReadTime = millis();
     gps_read(); // Existing GPS read function
     sensorsUpdatedThisCycle = true;
-    // NOTE: Old automatic barometer calibration logic based on pDOP < 300 from loop() should be REMOVED.
+    // NOTE: Old automatic barometric calibration logic based on pDOP < 300 from loop() should be REMOVED.
     // Calibration is now handled by setup() and the CALIBRATION state in ProcessFlightState.
   }
   if (millis() - lastBaroReadTime >= BARO_POLL_INTERVAL) {

@@ -109,7 +109,7 @@ The firmware supports a rich set of serial commands for interaction:
 |---|---|
 | `arm` | Arms the flight computer, transitioning to the ARMED state to listen for liftoff. |
 | `calibrate` / `h` | Manually triggers barometer calibration using GPS data. |
-| `clear_errors` | Attempts to clear an `ERROR` state and return to `PAD_IDLE`. This will only succeed if the underlying fault has been resolved. |
+| `clear_errors` | Attempts to clear an `ERROR` state and return to `PAD_IDLE`. This will only succeed if the underlying fault has been resolved. The new state is immediately pushed to the web interface. |
 | `status_sensors` | Displays detailed status information for all connected sensors. |
 | `b` | Shows a brief system status summary. |
 | `f` | Shows SD card storage statistics. |

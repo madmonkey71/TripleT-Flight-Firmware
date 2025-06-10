@@ -120,7 +120,6 @@ void recoverFromPowerLoss() {
       currentFlightState = PAD_IDLE;
       if (enableSystemDebug) Serial.println(F("Recovery: Was ARMED, reverting to PAD_IDLE."));
       break;
-
     case BOOST:
     case COAST:
       // Power loss during ascent. This is a tricky state.

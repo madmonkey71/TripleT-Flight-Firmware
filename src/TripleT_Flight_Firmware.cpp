@@ -289,6 +289,8 @@ void WriteLogData(bool forceLog) {
   logEntry.seqNum = logSequenceNumber++; // Increment and assign sequence number
   logEntry.timestamp = millis(); // Use current millis() for timestamp
   logEntry.flightState = static_cast<uint8_t>(currentFlightState); // Add current flight state
+  logEntry.verticalAxisIndex = verticalAxisIndex;
+  logEntry.verticalAxisMagnitudeG = verticalAxisMagnitudeG;
   logEntry.fixType = GPS_fixType;
   logEntry.sats = SIV;
   logEntry.latitude = GPS_latitude;
@@ -339,15 +341,7 @@ void WriteLogData(bool forceLog) {
   logEntry.gyro_bias_y = gyroBias[1];
   logEntry.gyro_bias_z = gyroBias[2];
 
-  // Populate Vertical Axis Data
-  logEntry.verticalAxisIndex = verticalAxisIndex;
-  logEntry.verticalAxisMagnitudeG = verticalAxisMagnitudeG;
-
   // Populate Guidance Control Data
-  // Target Euler angles and PID integrals are static in guidance_control.cpp.
-  // Without dedicated getter functions, we log placeholders or last known values if available.
-  // For now, logging placeholders (0.0f).
-  // A more complete solution would involve adding getters to guidance_control.cpp.
   guidance_get_target_euler_angles(logEntry.target_euler_roll,
                                    logEntry.target_euler_pitch,
                                    logEntry.target_euler_yaw);
@@ -356,22 +350,6 @@ void WriteLogData(bool forceLog) {
                              logEntry.pid_integral_yaw);
   
   guidance_get_actuator_outputs(logEntry.actuator_x, logEntry.actuator_y, logEntry.actuator_z);
-
-  // Populate the new GNC fields (Task 2.2)
-  // Assuming the guidance functions can correctly populate these new fields.
-  // Note: The task specifies actuator_output_roll, then pitch, then yaw for the call.
-  // We map actuator_x to roll, actuator_y to pitch, actuator_z to yaw based on common conventions.
-  guidance_get_target_euler_angles(logEntry.target_roll,       // New field
-                                   logEntry.target_pitch,      // New field
-                                   logEntry.target_yaw);       // New field
-
-  guidance_get_pid_integrals(logEntry.pid_roll_integral,  // New field
-                             logEntry.pid_pitch_integral, // New field
-                             logEntry.pid_yaw_integral);  // New field
-
-  guidance_get_actuator_outputs(logEntry.actuator_output_roll,  // New field (Order: Roll, Pitch, Yaw)
-                                logEntry.actuator_output_pitch, // New field
-                                logEntry.actuator_output_yaw);  // New field
 
   // Output to serial if enabled
   if (enableSerialCSV) {

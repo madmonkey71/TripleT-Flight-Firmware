@@ -110,6 +110,7 @@ void ProcessFlightState() {
     if (newStateSignal) {
         switch (currentFlightState) {
             case PAD_IDLE:
+            {
                 launchAltitude = ms5611Sensor.isConnected() && baroCalibrated ? ms5611_get_altitude() : 0.0f;
                 maxAltitudeReached = 0.0f;
                 boostEndTime = 0;
@@ -149,6 +150,7 @@ void ProcessFlightState() {
                 pinMode(PYRO_CHANNEL_1, OUTPUT); digitalWrite(PYRO_CHANNEL_1, LOW);
                 pinMode(PYRO_CHANNEL_2, OUTPUT); digitalWrite(PYRO_CHANNEL_2, LOW);
                 break;
+            }
             case ARMED:
                 if (enableSystemDebug) Serial.println(F("ARMED: System armed and ready for launch."));
                 if (baroCalibrated && ms5611Sensor.isConnected()) {

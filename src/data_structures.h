@@ -30,6 +30,8 @@ typedef struct {
   uint32_t seqNum;         // Log sequence number
   uint32_t timestamp;      // Milliseconds since boot
   uint8_t flightState;    // Current flight state (as uint8_t)
+  int8_t verticalAxisIndex;      // 0=X, 1=Y, 2=Z, -1=unknown
+  float verticalAxisMagnitudeG; // Magnitude of G-force on vertical axis
   uint8_t fixType;        // GPS fix type
   uint8_t sats;           // Number of satellites in view (from global SIV)
   int32_t latitude;       // Degrees * 1e7
@@ -58,15 +60,15 @@ typedef struct {
   float gyro_bias_z;
 
   // Guidance Control Data
-  float target_roll;
-  float target_pitch;
-  float target_yaw;
-  float pid_roll_integral;
-  float pid_pitch_integral;
-  float pid_yaw_integral;
-  float actuator_output_roll;
-  float actuator_output_pitch;
-  float actuator_output_yaw;
+  float target_euler_roll;
+  float target_euler_pitch;
+  float target_euler_yaw;
+  float pid_integral_roll;
+  float pid_integral_pitch;
+  float pid_integral_yaw;
+  float actuator_x;
+  float actuator_y;
+  float actuator_z;
 } LogData;
 
 #include <Arduino.h> // For FlightState enum if not already included, though it's defined in TripleT_Flight_Firmware.cpp

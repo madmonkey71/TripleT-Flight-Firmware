@@ -108,6 +108,7 @@ void recoverFromPowerLoss() {
     case STARTUP:
     case CALIBRATION:
     case PAD_IDLE:
+    case ERROR:
       // For these early states, it's safest to restart the sequence from STARTUP.
       // The main setup() will proceed to CALIBRATION and then PAD_IDLE if all checks pass.
       currentFlightState = STARTUP;
@@ -157,12 +158,6 @@ void recoverFromPowerLoss() {
       // For later flight stages, or if already landed/in recovery, proceed to RECOVERY state.
       currentFlightState = RECOVERY;
       if (enableSystemDebug) Serial.println(F("Recovery: Was MAIN_DESCENT/LANDED/RECOVERY, transitioning to RECOVERY."));
-      break;
-
-    case ERROR:
-      // If an error state was saved, remain in ERROR state.
-      currentFlightState = ERROR;
-      if (enableSystemDebug) Serial.println(F("Recovery: Resuming in ERROR state."));
       break;
 
     default:

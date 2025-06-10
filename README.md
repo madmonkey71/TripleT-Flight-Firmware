@@ -19,9 +19,10 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
 - ✅ **Web Interface**: A web-based interface for live data visualization is available and aligned with the current data logging format.
 - 🚧 **Guidance System**: A basic framework for guidance exists, but the current implementation is a placeholder (time-based yaw target). It is not yet integrated with the flight state machine.
 - 🚧 **Sensor Fusion**: An orientation filter is in place, but development on it is currently paused.
-- 🚧 **System Robustness**:
+- ✅ **System Robustness**:
     - Sensor health checks exist but are not yet integrated into the flight state machine to trigger error states.
     - Redundant apogee detection (e.g., backup timer) is designed but not implemented in the flight logic.
+    - **SD Card Handling**: The system now gracefully handles a missing SD card at startup by disabling logging and issuing a warning, preventing a boot failure.
 - 🚧 **Enhanced Telemetry**: Live data transmission via radio is planned but not yet implemented.
 
 ### Redundant Apogee Detection
@@ -77,13 +78,13 @@ TripleT Flight Firmware is an open-source flight controller software built for t
 - **Multi-sensor Integration**: Fuses data from GPS, barometer, accelerometer, and 9-DOF IMU.
 - **Flight State Machine**: A sophisticated 14-state machine manages the entire flight profile. State transitions are handled automatically based on sensor data and pre-configured thresholds:
     - **Liftoff (ARMED to BOOST)**: Transition occurs when the overall acceleration magnitude exceeds the configurable `BOOST_ACCEL_THRESHOLD` (default: 2.0g), indicating launch.
-    - **Motor Burnout (BOOST to COAST)**: Transition occurs when the overall acceleration magnitude drops below the configurable `BOOST_TO_COAST_ACCEL_DROP_THRESHOLD` (default: 1.0g), signaling that the motor has ceased thrusting and the vehicle is entering the coast phase.
+    - **Motor Burnout (BOOST to COAST)**: Transition occurs when the overall acceleration magnitude drops below the `BOOST_TO_COAST_ACCEL_DROP_THRESHOLD` (default: 1.0g), signaling that the motor has ceased thrusting and the vehicle is entering the coast phase.
     - **Apogee Detection & Recovery**: The system detects apogee when altitude stops increasing and begins to decrease (see "Redundant Apogee Detection" below). Upon apogee, parachute deployment sequences are initiated to ensure safe recovery.
 - **State Persistence & Recovery**: Automatically saves the flight state and critical data (max altitude, launch altitude) to EEPROM. In case of power loss, the firmware attempts to resume the flight in a safe state (e.g., resuming in `DROGUE_DESCENT` if power was lost during ascent).
 - **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place, ready for a functional guidance engine to provide it with targets.
-- **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps.
+- **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps. If the SD card is not present at startup, logging is automatically disabled, and the system proceeds without entering an error state.
 - **GPS/Barometer Calibration**: Calibrates the barometric altimeter using GPS data for accurate altitude-above-ground-level (AGL) readings.
-- **Error Handling**: Includes watchdog timers and sensor initialization checks. (Note: In-flight sensor health monitoring is not yet fully integrated with the state machine).
+- **Error Handling**: Includes watchdog timers and sensor initialization checks. If the system enters an `ERROR` state (e.g., due to a sensor failure), the `clear_errors` command can be used to attempt a return to the `PAD_IDLE` state if the underlying issue is resolved.
 - **Interactive Serial Interface**: A command-driven system for real-time data monitoring, configuration, and diagnostics.
 - **Vehicle Orientation Detection (PAD_IDLE)**: Upon entering the `PAD_IDLE` state, the firmware attempts to determine the vehicle's vertical axis using accelerometer data (primarily from the ICM-20948). The axis (X, Y, or Z) that measures approximately +/-1g is identified as the vehicle's vertical orientation. This information, including the identified axis index (`verticalAxisIndex`) and the measured gravitational force (`verticalAxisMagnitudeG`), is logged for analysis and can aid in understanding pre-launch setup.
 
@@ -98,7 +99,7 @@ TripleT Flight Firmware is an open-source flight controller software built for t
 
 ### Basic Operation
 
-On startup, the firmware initializes all hardware, performs calibrations, creates a new log file, and enters the `PAD_IDLE` state, ready for the `arm` command.
+On startup, the firmware initializes all hardware, performs calibrations, creates a new log file if an SD card is present, and enters the `PAD_IDLE` state, ready for the `arm` command.
 
 ### Serial Commands
 
@@ -108,6 +109,7 @@ The firmware supports a rich set of serial commands for interaction:
 |---|---|
 | `arm` | Arms the flight computer, transitioning to the ARMED state to listen for liftoff. |
 | `calibrate` / `h` | Manually triggers barometer calibration using GPS data. |
+| `clear_errors` | Attempts to clear an `ERROR` state and return to `PAD_IDLE`. This will only succeed if the underlying fault has been resolved. |
 | `status_sensors` | Displays detailed status information for all connected sensors. |
 | `b` | Shows a brief system status summary. |
 | `f` | Shows SD card storage statistics. |

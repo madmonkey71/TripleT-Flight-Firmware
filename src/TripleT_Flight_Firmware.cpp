@@ -1,5 +1,5 @@
 // TripleT Flight Firmware
-// Current Version: v0.41
+// Current Version: v0.47
 // Current State: Alpha
 // Last Updated: 25/05/2025
 // **Notes**
@@ -31,7 +31,7 @@
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.41
+#define TRIPLET_FLIGHT_VERSION 0.47
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41

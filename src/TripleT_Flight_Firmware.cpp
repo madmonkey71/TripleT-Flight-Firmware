@@ -817,6 +817,7 @@ void processCommand(String command) {
                 stateEntryTime = millis();
                 Serial.println(F("Errors cleared. System is now in PAD_IDLE state."));
                 setFlightStateLED(PAD_IDLE); // Update LED to green
+                WriteLogData(true); // Force a log write to update web UI immediately
             } else {
                 Serial.println(F("Cannot clear errors. System sensor suite is still unhealthy."));
             }

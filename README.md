@@ -5,17 +5,18 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
 
-## Project Status - Alpha
-**Current Version**: v0.41
+## Project Status - Beta
+**Current Version**: v0.47
 
 ### Development Status (Reflecting Implemented Code)
 - ✅ **Core Sensor Integration**: GPS, Barometer, ICM-20948 (9-DOF IMU), and KX134 (High-G Accelerometer) are integrated.
-- ✅ **SD Card Data Logging**: Comprehensive CSV data logging to SD card is operational.
+- ✅ **SD Card Data Logging**: Comprehensive CSV data logging to SD card is operational. This now includes GNC data (PID targets, integrals, and outputs).
 - ✅ **Interactive Serial Interface**: A rich command-driven interface for diagnostics and control is implemented.
 - ✅ **Flight State Machine**: A full 14-state flight state machine is implemented, managing the rocket from startup to recovery.
 - ✅ **State Persistence**: The current flight state and key altitude data are saved to EEPROM, allowing for recovery after a power loss.
 - ✅ **Parachute Deployment**: Pyro channels for drogue and main parachutes are controlled based on the flight state.
 - ✅ **Actuator Control**: A 3-axis PID controller is implemented and connected to PWM servos.
+- ✅ **Web Interface**: A web-based interface for live data visualization is available and aligned with the current data logging format.
 - 🚧 **Guidance System**: A basic framework for guidance exists, but the current implementation is a placeholder (time-based yaw target). It is not yet integrated with the flight state machine.
 - 🚧 **Sensor Fusion**: An orientation filter is in place, but development on it is currently paused.
 - 🚧 **System Robustness**:
@@ -134,12 +135,12 @@ For more detailed design information, please refer to:
 
 ## Potential Improvements and Future Work (Based on Gap Analysis)
 
-- [ ] **Implement Functional Guidance:** Replace the placeholder guidance logic with a meaningful system, starting with a simple "Attitude Hold" mode during the coast phase.
+- [ ] **Implement Functional Guidance:** Replace the placeholder guidance logic with a meaningful system, starting with a "Attitude Hold" mode during the coast phase.
 - [ ] **Integrate Guidance with State Machine:** The PID control system should be active only during appropriate flight states (e.g., `BOOST`, `COAST`). In other states, actuators should be disabled or centered.
 - [ ] **Fortify the State Machine:**
     - [ ] Integrate the existing sensor health checks into the main flight loop to trigger the `ERROR` state upon sensor failure.
     - [ ] Implement the designed backup apogee detection timer for redundancy.
-- [ ] **Enhance Data Logging:** Add PID controller data (target orientation, integral values, actuator outputs) to the SD card log for post-flight tuning and analysis.
+- [x] **Enhance Data Logging:** Add PID controller data (target orientation, integral values, actuator outputs) to the SD card log for post-flight tuning and analysis.
 - [ ] **Live Telemetry:** Implement the planned live data transmission system using a radio module.
 - [ ] **Persistent Magnetometer Calibration:** Save and load magnetometer calibration values to/from EEPROM or the SD card to avoid the need for recalibration or manual code changes.
 - [ ] **Refine `isStationary` Detection:** The thresholds for detecting a stationary state may need tuning for different physical systems and environments.

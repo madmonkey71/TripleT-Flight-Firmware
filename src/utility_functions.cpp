@@ -2,6 +2,7 @@
 #include "config.h" // Ensure config.h is included for SD_CONFIG and other hardware defs
 #include "data_structures.h" // Include LogData definition
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
+#include <MS5611.h>          // For MS5611 sensor object
 #include <cmath> // Include for sqrt()
 #include <stdio.h> // For snprintf
 // Required for dtostrf typically, though often included by Arduino.h
@@ -14,6 +15,10 @@
 // #include <avr/dtostrf.h> // Fallback for some AVR toolchains
 #endif
 
+// Extern declarations for sensor objects/status flags defined elsewhere
+extern MS5611 ms5611Sensor;
+extern bool icm20948_ready;
+extern bool enableSystemDebug;
 
 // Define the pixels variable
 Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -465,16 +470,31 @@ void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& rol
 // ... other functions ...
 
 bool isSensorSuiteHealthy(FlightState currentState) {
-  // Placeholder implementation - customize with actual sensor checks
-  if (enableSystemDebug && (millis() % 5000 < 20)) { // Print periodically if debug enabled
-    Serial.print(F("Placeholder: isSensorSuiteHealthy() called for state "));
-    Serial.print(getStateName(currentState)); // Assuming getStateName is available via this file or its includes
-    Serial.println(F(", returning true."));
-  }
-  // Example check (actual checks would be more comprehensive)
-  // if (!barometerStatus.isWorking && currentState > CALIBRATION && currentState < LANDED) return false;
-  // if (!accelerometerStatus.isWorking && currentState > ARMED && currentState < LANDED) return false;
-  return true;
+    bool isHealthy = true;
+
+    // Barometer check: Critical for all states except STARTUP and RECOVERY
+    if (currentState >= CALIBRATION && currentState < LANDED) {
+        if (!ms5611Sensor.isConnected()) {
+            if (enableSystemDebug) {
+                Serial.println(F("HEALTH CHECK: Barometer disconnected!"));
+            }
+            isHealthy = false;
+        }
+    }
+
+    // IMU check: Critical for states from ARMED onwards
+    if (currentState >= ARMED && currentState < LANDED) {
+        if (!icm20948_ready) {
+            if (enableSystemDebug) {
+                Serial.println(F("HEALTH CHECK: ICM20948 (IMU) not ready!"));
+            }
+            isHealthy = false;
+        }
+    }
+
+    // Add checks for other sensors as needed (e.g., GPS, KX134)
+
+    return isHealthy;
 }
 
 const char* getStateName(FlightState state) {

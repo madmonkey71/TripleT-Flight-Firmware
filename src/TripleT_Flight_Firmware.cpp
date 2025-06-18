@@ -1362,10 +1362,15 @@ void loop() {
     }
   }
 
+  // --- Data Logging ---
+  // Call WriteLogData when sensors have been updated
+  if (sensorsUpdatedThisCycle) {
+    WriteLogData(false); // false = don't force, use normal timing interval
+  }
+
   // TODO: Add other periodic tasks here as needed
-  // - Flight state processing
+  // - Flight state processing (ProcessFlightState)
   // - Actuator updates 
-  // - Data logging
   // - Status monitoring
   
   // Note: The rest of the loop function implementation should be added here

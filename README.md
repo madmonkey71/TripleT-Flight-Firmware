@@ -176,7 +176,13 @@ Fixed several critical compilation errors that were preventing the firmware from
    - **State Persistence**: Both manual and automatic error clearing now save the cleared state to EEPROM
    - **Web Interface Sync**: Fixed issue where recovered ERROR state wasn't properly reflected in web interface state display
 
-These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, and properly manage error state recovery and clearing.
+7. **CRITICAL: Serial CSV Output Fix**: 
+   - **Root Cause**: The `loop()` function was never calling `WriteLogData()`, so no CSV data was being output even when `enableSerialCSV` was true
+   - **Solution**: Added call to `WriteLogData()` when sensors are updated in the main loop
+   - **Additional Fix**: Added call to `ProcessFlightState()` for proper flight state machine operation
+   - **Impact**: Serial CSV output now works correctly and can be used with the web interface
+
+These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, properly manage error state recovery and clearing, and most critically, the data logging/CSV output functionality now works properly.
 
 ## Development Roadmap (Priority-Based)
 

@@ -1368,8 +1368,10 @@ void loop() {
     WriteLogData(false); // false = don't force, use normal timing interval
   }
 
+  // --- Flight State Processing ---
+  ProcessFlightState(); // Handle flight state machine logic
+
   // TODO: Add other periodic tasks here as needed
-  // - Flight state processing (ProcessFlightState)
   // - Actuator updates 
   // - Status monitoring
   

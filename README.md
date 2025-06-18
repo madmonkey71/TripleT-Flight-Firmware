@@ -225,6 +225,14 @@ Fixed critical issues with KX134 high-G accelerometer data logging and 3D visual
    - **Orientation Data**: Both Kalman filter quaternions and Euler angles are now properly generated and logged
    - **Web Interface**: 3D visualizer now receives valid orientation data for real-time rocket attitude display
 
+6. **Firmware Stuck in ERROR State on Boot**:
+   - **Root Cause**: A bug in the `setup()` function's health check for recovering from an `ERROR` state was causing the check to always fail. It was incorrectly calling `baro.begin()` on a non-existent object instead of checking a valid initialization flag.
+   - **Solution**:
+     - Introduced a new global flag, `ms5611_initialized_ok`.
+     - Modified the `ms5611_init()` function to set this flag to `true` on successful initialization and `false` on failure.
+     - Updated the health check in `setup()` to use the new `ms5611_initialized_ok` flag instead of the erroneous `baro.begin()` call.
+   - **Impact**: The firmware can now correctly assess sensor health upon booting into an `ERROR` state. If all systems are nominal, it will automatically transition to `PAD_IDLE`, allowing the system to recover from transient errors without user intervention.
+
 These fixes ensure that all sensor data is properly read, logged, and visualized, providing complete situational awareness for flight operations.
 
 ## Development Roadmap (Priority-Based)

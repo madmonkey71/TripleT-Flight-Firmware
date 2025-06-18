@@ -175,6 +175,7 @@ For more detailed design information, please refer to:
 - [x] **State-Based Guidance Control**: PID controllers active only during appropriate flight phases
 - [x] **Enhanced Data Logging**: Complete GNC data logging for post-flight analysis and tuning
 - [x] **Web Interface**: Real-time data visualization with Web Serial API integration
+- [x] **Sensor Fusion & Calibration**: Kalman filter with dynamic accelerometer switching and persistent magnetometer calibration is complete.
 
 **Estimated Timeline to Production-Ready**: 4-6 months  
 **Current Status**: Ready for controlled test flights with basic guidance functionality

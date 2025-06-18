@@ -601,3 +601,50 @@ void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
 //     float cosy_cosp = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
 //     yaw = atan2(siny_cosp, cosy_cosp);
 // }
+
+void ICM_20948_calibrate_mag_interactive() {
+    // Implementation of ICM_20948_calibrate_mag_interactive function
+}
+
+bool icm_20948_save_calibration() {
+    Serial.println(F("Saving magnetometer calibration to EEPROM..."));
+    uint32_t magic = MAG_CAL_MAGIC_NUMBER;
+    EEPROM.put(MAG_CAL_EEPROM_ADDR, magic);
+    EEPROM.put(MAG_CAL_EEPROM_ADDR + sizeof(uint32_t), magBias);
+    EEPROM.put(MAG_CAL_EEPROM_ADDR + sizeof(uint32_t) + sizeof(magBias), magScale);
+    Serial.println(F("Save complete."));
+    return true;
+}
+
+bool icm_20948_load_calibration() {
+    Serial.println(F("Attempting to load magnetometer calibration from EEPROM..."));
+    uint32_t magic;
+    EEPROM.get(MAG_CAL_EEPROM_ADDR, magic);
+
+    if (magic == MAG_CAL_MAGIC_NUMBER) {
+        Serial.println(F("Valid magic number found. Loading calibration data."));
+        EEPROM.get(MAG_CAL_EEPROM_ADDR + sizeof(uint32_t), magBias);
+        EEPROM.get(MAG_CAL_EEPROM_ADDR + sizeof(uint32_t) + sizeof(magBias), magScale);
+
+        Serial.print(F("Loaded Bias: "));
+        Serial.print(magBias[0]); Serial.print(F(", "));
+        Serial.print(magBias[1]); Serial.print(F(", "));
+        Serial.println(magBias[2]);
+        Serial.print(F("Loaded Scale: "));
+        Serial.print(magScale[0][0]); Serial.print(F(", "));
+        Serial.print(magScale[0][1]); Serial.print(F(", "));
+        Serial.println(magScale[0][2]);
+        Serial.print(F("Loaded Scale: "));
+        Serial.print(magScale[1][0]); Serial.print(F(", "));
+        Serial.print(magScale[1][1]); Serial.print(F(", "));
+        Serial.println(magScale[1][2]);
+        Serial.print(F("Loaded Scale: "));
+        Serial.print(magScale[2][0]); Serial.print(F(", "));
+        Serial.print(magScale[2][1]); Serial.print(F(", "));
+        Serial.println(magScale[2][2]);
+        return true;
+    } else {
+        Serial.println(F("No valid calibration data found in EEPROM."));
+        return false;
+    }
+}

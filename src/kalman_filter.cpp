@@ -24,6 +24,11 @@ static float Q_angle[3] = {0.001f, 0.001f, 0.001f}; // Roll, Pitch, Yaw process 
 // R_accel = [[R_accel_roll, 0], [0, R_accel_pitch]]
 static float R_accel[2] = {0.03f, 0.03f}; // Measurement noise for roll and pitch from accelerometer
 
+// Measurement noise covariance matrix R (2x2 for magnetometer-based yaw).
+// Represents the uncertainty of the measurements. Higher values mean the filter trusts the magnetometer less.
+// R_mag = [[R_mag_x, 0], [0, R_mag_y]]
+static float R_mag = 0.03f; // Measurement noise for magnetometer-based yaw
+
 // --- Kalman Filter Functions ---
 
 void kalman_init(float initial_roll, float initial_pitch, float initial_yaw) {
@@ -74,7 +79,7 @@ void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt) {
     P_diag[2] += Q_angle[2] * dt; // Yaw uncertainty also grows
 }
 
-void kalman_update(float accel_x, float accel_y, float accel_z) {
+void kalman_update_accel(float accel_x, float accel_y, float accel_z) {
     // --- Calculate Roll and Pitch from Accelerometer ---
     // These are the "measurements" for the Kalman filter.
     // atan2 is generally preferred over atan for robustness.
@@ -107,6 +112,28 @@ void kalman_update(float accel_x, float accel_y, float accel_z) {
     P_diag[0] = (1 - K_roll) * P_diag[0];
     P_diag[1] = (1 - K_pitch) * P_diag[1];
     // P_diag[2] for yaw remains unchanged as yaw is not updated by accelerometer.
+}
+
+/**
+ * @brief Updates the Yaw estimate using magnetometer data.
+ * This function corrects for gyro drift around the Z-axis.
+ */
+void kalman_update_mag(float mag_x, float mag_y, float mag_z) {
+    // Tilt-compensate the magnetometer readings
+    float mag_x_comp = mag_x * cos(kf_pitch) + mag_y * sin(kf_roll) * sin(kf_pitch) - mag_z * cos(kf_roll) * sin(kf_pitch);
+    float mag_y_comp = mag_y * cos(kf_roll) + mag_z * sin(kf_roll);
+
+    // Calculate measured yaw from the compensated magnetometer values
+    float measured_yaw = atan2(-mag_y_comp, mag_x_comp);
+
+    // Kalman Gain for Yaw
+    float K_yaw = P_diag[2] / (P_diag[2] + R_mag);
+
+    // Update Yaw estimate
+    kf_yaw = kf_yaw + K_yaw * (measured_yaw - kf_yaw);
+
+    // Update Yaw error covariance
+    P_diag[2] = (1 - K_yaw) * P_diag[2];
 }
 
 void kalman_get_orientation(float &roll, float &pitch, float &yaw) {

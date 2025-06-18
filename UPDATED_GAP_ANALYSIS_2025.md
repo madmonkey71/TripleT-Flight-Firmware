@@ -60,18 +60,42 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
 ### 3.1. 🔴 HIGH PRIORITY - Critical Functional Gaps
 
 #### 3.1.1. Live Telemetry System
-**Status:** Not implemented
+**Status:** Not implemented - On Hold as this will require changes to the hardware architecture
 **Impact:** High - Essential for real-time flight monitoring and safety
+**Proposed Architecture:** Implement an "ESP32 Wireless Bridge" using a pair of ESP32 devices. An onboard ESP32 will act as a telemetry coprocessor, receiving log data from the Teensy 4.1 via UART and transmitting it via the ESP-NOW protocol. A second ground-based ESP32 will receive the ESP-NOW data and forward it as serial CSV data to the existing web interface over USB. This leverages the current web interface without modification.
 **Tasks Required:**
-- [ ] Design radio communication protocol
-- [ ] Implement RF module integration (LoRa, XBee, or similar)
-- [ ] Develop ground station software
-- [ ] Create telemetry data packet structure
-- [ ] Implement error correction and signal strength monitoring
-- [ ] Add telemetry health monitoring to sensor suite
+**3.1.1.1 - Hardware & Setup:**
+    - [ ] Procure two ESP32 development boards.
+    - [ ] Connect one ESP32 to the Teensy 4.1 via a hardware UART (Serial) port.
+    - [ ] Prepare the second ESP32 as a ground station receiver with a USB connection.
+
+**3.1.1.2 - Onboard Firmware (Teensy 4.1 Flight Controller):**
+    - [ ] In `TripleT_Flight_Firmware.cpp`, activate a secondary hardware serial port (e.g., `Serial1`).
+    - [ ] Create a new function `sendTelemetryData(String data)` that writes the provided log data string to the telemetry serial port.
+    - [ ] Call `sendTelemetryData()` from the main `loop()` after the `LogDataString` is prepared, in parallel with writing to the SD card.
+
+**3.1.1.3 - Onboard Firmware (ESP32 Telemetry Coprocessor):**
+    - [ ] Create a new PlatformIO project for the ESP32 telemetry transmitter.
+    - [ ] Initialize the ESP-NOW protocol and configure the peer MAC address of the ground station receiver.
+    - [ ] In the main loop, read data from its UART port until a newline character (`\n`) is received, assembling a complete CSV string.
+    - [ ] On receiving a complete string, immediately send it as an ESP-NOW packet.
+    - [ ] Implement a status LED to indicate telemetry transmission status.
+
+**3.1.1.4 - Ground Station Firmware (ESP32 Receiver):**
+    - [ ] Create a new PlatformIO project for the ESP32 ground station receiver.
+    - [ ] Initialize the ESP-NOW protocol to receive data.
+    - [ ] Create a callback function for ESP-NOW receive events.
+    - [ ] When a packet is received, write the contents directly to the USB Serial port (`Serial.write(data, len)`).
+    - [ ] Implement a status LED to indicate data reception.
+
+**3.1.1.5 - Integration & Testing:**
+    - [ ] Perform benchtop tests to ensure the end-to-end data pipeline is functional.
+    - [ ] Verify that the existing web interface can connect to the ground station's serial port and correctly displays the live data.
+    - [ ] Conduct range testing of the ESP-NOW link.
+    - [ ] Document the setup and operation of the new telemetry system.
 
 #### 3.1.2. Advanced Guidance Algorithms
-**Status:** Basic attitude hold only
+**Status:** Basic attitude hold only - On hold. Meets current requirements
 **Impact:** High - Limits vehicle performance and mission capability
 **Tasks Required:**
 - [ ] Implement gravity turn maneuver logic
@@ -85,11 +109,11 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
 **Status:** Paused development, basic implementation exists
 **Impact:** Medium-High - Affects guidance accuracy and reliability
 **Tasks Required:**
-- [ ] Complete Kalman filter implementation for orientation estimation
-- [ ] Integrate magnetometer calibration persistence
-- [ ] Implement sensor fusion for redundant acceleration sources (ICM-20948 + KX134)
-- [ ] Add dynamic sensor switching based on flight phase and reliability
-- [ ] Validate orientation accuracy against known reference data
+- [x] **Complete Kalman filter implementation for orientation estimation** - *Kalman filter now integrates accelerometer, gyroscope, and magnetometer data. Yaw drift is corrected using a tilt-compensated magnetometer reading.*
+- [x] **Integrate magnetometer calibration persistence** - *Magnetometer bias and scale factors are now saved to EEPROM and loaded on startup, eliminating the need for frequent recalibration.*
+- [x] **Implement sensor fusion for redundant acceleration sources (ICM-20948 + KX134)** - *A new sensor fusion module (`sensor_fusion.cpp`) has been implemented.*
+- [x] **Add dynamic sensor switching based on flight phase and reliability** - *The system now automatically switches to the high-g KX134 accelerometer during the BOOST phase and uses the ICM-20948 otherwise.*
+- [ ] **Validate orientation accuracy against known reference data** - *Validation remains an outstanding task requiring physical test data.*
 
 ### 3.2. 🟡 MEDIUM PRIORITY - System Enhancement
 

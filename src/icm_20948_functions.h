@@ -17,7 +17,13 @@ void ICM_20948_print();
 void ICM_20948_calibrate();
 void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // New function
 void ICM_20948_calibrate_gyro_bias(int num_samples, int delay_ms); // Static gyro bias calibration
+bool icm_20948_get_mag(float* mag);
+void icm_20948_get_gyro(float* gyro);
+void icm_20948_get_accel(float* accel);
 
+// Functions for magnetometer calibration persistence
+bool icm_20948_save_calibration();
+bool icm_20948_load_calibration();
 
 // Global variable declarations
 extern ICM_20948_I2C myICM;

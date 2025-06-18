@@ -185,3 +185,11 @@
 // EEPROM_UPDATE_INTERVAL is now defined in constants.h
 
 // Sensor Configuration
+
+// --- Magnetometer Calibration Persistence ---
+#define MAG_CAL_EEPROM_ADDR 100 // Starting address in EEPROM for mag calibration
+#define MAG_CAL_MAGIC_NUMBER 0xBAADF00D // Magic number to validate stored data
+
+// --- Flight State Machine Configuration ---
+#define ARMED_TIMEOUT_MS 300000UL // 5 minutes in ARMED state before disarming
+#define BOOST_ACCEL_THRESHOLD 15.0f // m/s^2, threshold to detect liftoff

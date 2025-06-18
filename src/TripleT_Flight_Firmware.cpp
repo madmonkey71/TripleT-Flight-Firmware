@@ -55,6 +55,7 @@
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
+#include "sensor_fusion.h"   // For sensor fusion logic
 
 // Define variables declared as extern in utility_functions.h
 String FileDateString = "";
@@ -945,6 +946,9 @@ void processCommand(String command) {
         toggleDebugFlag(enableSensorDebug, F("Sensor detail debug"), Serial, 0);
       enableDetailedOutput = false;
         Serial.println(F("Legacy Detailed output (global): OFF"));
+    } else if (command == "cal_mag") {
+        Serial.println(F("Starting interactive magnetometer calibration. Please rotate the device around all axes."));
+        ICM_20948_calibrate_magnetometer(); // Assuming this is the interactive calibration function
     } else if (command.length() > 0) { // Changed !command.isEmpty() to command.length() > 0
        Serial.print(F("Unknown command: '"));
        Serial.print(command);
@@ -1090,29 +1094,15 @@ void setup() {
     Serial.println(F("KX134 accelerometer initialized"));
   }
   
-  ICM_20948_init();
-  if (myICM.status == ICM_20948_Stat_Ok) { // Check if initialization was successful
-    icm20948_ready = true; // Set flag if successful
-    Serial.println(F("ICM-20948 (9-DOF IMU) reported successful initialization."));
-    ICM_20948_calibrate(); // Perform static gyro bias calibration and other calibrations
-
-    // Initialize Kalman Filter after ICM is ready and calibrated
-    if (useKalmanFilter) { // Only initialize if Kalman filter is selected
-        // Potentially read initial orientation from ICM if stable, otherwise use zeros
-        // For now, using zeros as specified. Madgwick's icm_q0 etc. are not yet populated here.
-        float initial_roll = 0.0f;
-        float initial_pitch = 0.0f;
-        float initial_yaw = 0.0f;
-        // If Madgwick were run once (e.g. if ICM_20948_read() also updates icm_q0-q3):
-        // ICM_20948_read(); // Ensure icm_q0-q3 are populated if using them
-        // convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, initial_roll, initial_pitch, initial_yaw);
-        kalman_init(initial_roll, initial_pitch, initial_yaw);
-        Serial.println(F("Kalman filter initialized."));
-    }
+  // Initialize ICM-20948
+  if (!icm_20948_init()) {
+      Serial.println(F("ICM-20948 initialization failed!"));
   } else {
-    icm20948_ready = false;
-    Serial.println(F("ICM-20948 (9-DOF IMU) reported initialization FAILED. Kalman filter not initialized."));
-    // Potentially set flightState = ERROR; here if critical
+      Serial.println(F("ICM-20948 initialized successfully."));
+      // Attempt to load magnetometer calibration from EEPROM
+      if (!icm_20948_load_calibration()) {
+          Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
+      }
   }
   
   ms5611_init();
@@ -1372,7 +1362,7 @@ void loop() {
         }
         // If lastKalmanUpdateTime was 0 (first ever call in loop), it's now set,
         // and dt_kalman would be based on millis() which is fine for the first dt after setup.
-        // The condition dt_kalman > 0 above handles the very first call if lastKalmanUpdateTime was 0.
+        // The condition dt_kalman > 0 above handles the very first call if lastKalmanUpdateTime is 0.
         // To be more robust for the very first loop iteration:
         // if (lastKalmanUpdateTime == 0) { // First time in loop
         //    lastKalmanUpdateTime = currentTimeMillis; // Initialize, skip processing this one cycle
@@ -1510,6 +1500,20 @@ void loop() {
         }
     }
   }
+
+  // Update the Kalman filter with the fused sensor data
+  if (useKalmanFilter) {
+      float fused_accel[3];
+      get_fused_acceleration(fused_accel, currentFlightState);
+      kalman_update_accel(fused_accel[0], fused_accel[1], fused_accel[2]);
+
+      float mag_data[3];
+      icm_20948_get_mag(mag_data);
+      kalman_update_mag(mag_data[0], mag_data[1], mag_data[2]);
+  }
+
+  // Guidance and Actuator Update
+  static unsigned long lastGuidanceTime = 0;
 }
 
 

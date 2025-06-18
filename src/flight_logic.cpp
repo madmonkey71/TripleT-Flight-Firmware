@@ -73,22 +73,37 @@ void ProcessFlightState() {
     float currentAbsoluteBaroAlt = 0.0f;
     float currentAglAlt = 0.0f;
     bool newStateSignal = false;
+    static unsigned long lastErrorCheckTime = 0;
+    const unsigned long errorCheckInterval = 1000; // 1 second
+
+    // Defer the health check to avoid immediate re-entry into ERROR state
+    // after a manual `clear_errors` command.
+    if (currentFlightState != LANDED && currentFlightState != RECOVERY && currentFlightState != ERROR) {
+        if (millis() - lastErrorCheckTime > errorCheckInterval) {
+            lastErrorCheckTime = millis();
+            if (!isSensorSuiteHealthy(currentFlightState)) {
+                // Log detailed sensor status before transitioning to ERROR
+                if (enableSystemDebug) {
+                    Serial.println(F("--- Sensor Suite Health Report (Pre-ERROR) ---"));
+                    isSensorSuiteHealthy(currentFlightState, true); // Call with verbose=true
+                    Serial.println(F("---------------------------------------------"));
+                }
+                currentFlightState = ERROR;
+                if (enableSystemDebug) {
+                    Serial.println(F("Sensor suite unhealthy, transitioning to ERROR state."));
+                }
+                // When we transition to error, we should immediately save and return
+                // to avoid any other logic processing in this loop cycle.
+                saveStateToEEPROM();
+                setFlightStateLED(currentFlightState);
+                return;
+            }
+        }
+    }
 
     if (ms5611Sensor.isConnected() && baroCalibrated) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();
         currentAglAlt = currentAbsoluteBaroAlt - launchAltitude;
-    }
-
-    saveStateToEEPROM();
-
-    if (currentFlightState != LANDED && currentFlightState != RECOVERY && currentFlightState != ERROR) {
-        if (!isSensorSuiteHealthy(currentFlightState)) {
-            currentFlightState = ERROR;
-            if (enableSystemDebug) {
-                Serial.println(F("Sensor suite unhealthy, transitioning to ERROR state."));
-            }
-            return;
-        }
     }
 
     if (currentFlightState != previousFlightState) {

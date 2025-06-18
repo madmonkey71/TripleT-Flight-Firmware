@@ -118,8 +118,10 @@ void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, flo
 // Consider moving FlightState enum to data_structures.h or its own header for better organization.
 enum FlightState : uint8_t; // Assuming FlightState is compatible with uint8_t as used in FlightStateData
 
-bool isSensorSuiteHealthy(FlightState currentState); // Add if not present
+// Sensor and system health check
+bool isSensorSuiteHealthy(FlightState currentState, bool verbose = false);
 
+// Get the string name of a flight state
 const char* getStateName(FlightState state);
 
 #endif // UTILITY_FUNCTIONS_H 

@@ -476,17 +476,41 @@ void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, flo
 
 // ... other functions ...
 
-bool isSensorSuiteHealthy(FlightState currentState) {
-  // Placeholder implementation - customize with actual sensor checks
-  if (enableSystemDebug && (millis() % 5000 < 20)) { // Print periodically if debug enabled
-    Serial.print(F("Placeholder: isSensorSuiteHealthy() called for state "));
-    Serial.print(getStateName(currentState)); // Assuming getStateName is available via this file or its includes
-    Serial.println(F(", returning true."));
-  }
-  // Example check (actual checks would be more comprehensive)
-  // if (!barometerStatus.isWorking && currentState > CALIBRATION && currentState < LANDED) return false;
-  // if (!accelerometerStatus.isWorking && currentState > ARMED && currentState < LANDED) return false;
-  return true;
+bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
+    bool isHealthy = true;
+
+    // Barometer Health Check (Essential for most states)
+    if (!ms5611_initialized_ok) {
+        if (verbose) Serial.println(F("HEALTH_FAIL: MS5611 (Barometer) not initialized."));
+        isHealthy = false;
+    }
+    if (currentState > CALIBRATION && !baroCalibrated) {
+        if (verbose) Serial.println(F("HEALTH_FAIL: Barometer not calibrated."));
+        isHealthy = false;
+    }
+
+    // IMU Health Check (Essential for flight)
+    if (currentState >= ARMED && currentState < LANDED) {
+        if (!icm20948_ready && !kx134_initialized_ok) {
+            if (verbose) Serial.println(F("HEALTH_FAIL: No primary or secondary IMU is ready for flight."));
+            isHealthy = false;
+        }
+    }
+    
+    // GPS Health Check (Less critical for flight, more for recovery)
+    // We can be more lenient here, but log if it's not available.
+    if (myGNSS.getFixType() == 0 && verbose) {
+        Serial.println(F("HEALTH_WARN: No GPS fix."));
+    }
+
+    // Special case for PAD_IDLE: only require the barometer to be initialized.
+    // This allows the user to debug other sensors without being locked in ERROR.
+    if (currentState == PAD_IDLE) {
+        if (verbose) Serial.println(F("HEALTH_CHECK: In PAD_IDLE, only checking barometer initialization."));
+        return ms5611_initialized_ok;
+    }
+
+    return isHealthy;
 }
 
 const char* getStateName(FlightState state) {

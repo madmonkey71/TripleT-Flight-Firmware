@@ -823,7 +823,7 @@ void processCommand(String command) {
         Serial.println(F("Clearing error state and resetting to normal operation..."));
         if (currentFlightState == ERROR) {
             // Check if systems are healthy before clearing error
-            bool systemHealthy = true; // TODO: Implement proper health check
+            // TODO: Implement proper health check
             // For now, assume system is healthy if we can execute commands
             
             currentFlightState = PAD_IDLE;

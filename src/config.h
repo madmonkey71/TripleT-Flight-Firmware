@@ -192,4 +192,16 @@
 
 // --- Flight State Machine Configuration ---
 #define ARMED_TIMEOUT_MS 300000UL // 5 minutes in ARMED state before disarming
-#define BOOST_ACCEL_THRESHOLD 15.0f // m/s^2, threshold to detect liftoff
+
+#define APOGEE_DELAY 1000           // Milliseconds to wait after apogee before deploying parachute
+
+// --- Sensor Selections and Configurations ---
+
+#define USE_KX134_FOR_LAUNCH_DETECTION  // Use KX134 for launch detection, otherwise use ICM20948
+
+#ifdef USE_KX134_FOR_LAUNCH_DETECTION
+
+#endif
+
+// --- Servo Configuration ---
+#define NUM_SERVOS 4          // Total number of servos

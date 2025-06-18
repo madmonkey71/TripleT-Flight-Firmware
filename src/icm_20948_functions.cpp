@@ -1,8 +1,11 @@
 #include "icm_20948_functions.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <EEPROM.h>
 #include "config.h" // For Madgwick filter parameters
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
+#include "ICM_20948.h"
+#include "data_structures.h"
 
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
@@ -570,6 +573,10 @@ void ICM_20948_print() {
   Serial.println("°C");
 
 } 
+
+void icm_20948_get_accel(float* accel) {
+  memcpy(accel, icm_accel, sizeof(float) * 3);
+}
 
 // Function to get calibrated gyroscope data (raw - bias)
 void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {

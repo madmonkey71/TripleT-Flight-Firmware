@@ -9,6 +9,7 @@ bool kx134_init();
 void kx134_read();
 void kx134_print();
 void kx134_calibrate();
+void kx134_get_accel(float* accel);
 
 // Global variable declarations
 extern SparkFun_KX134 kxAccel;

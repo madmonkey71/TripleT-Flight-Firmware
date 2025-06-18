@@ -77,4 +77,8 @@ void kx134_print(){
   Serial.print(F("g Z:"));
   Serial.print(kx134_accel[2], 2);
   Serial.print(F("g"));
+}
+
+void kx134_get_accel(float* accel) {
+  memcpy(accel, kx134_accel, sizeof(float) * 3);
 } 

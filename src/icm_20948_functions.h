@@ -24,6 +24,7 @@ void icm_20948_get_accel(float* accel);
 // Functions for magnetometer calibration persistence
 bool icm_20948_save_calibration();
 bool icm_20948_load_calibration();
+void ICM_20948_calibrate_mag_interactive();
 
 // Global variable declarations
 extern ICM_20948_I2C myICM;

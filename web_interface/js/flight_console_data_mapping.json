@@ -54,5 +54,22 @@
   "csv_settings": {
     "delimiter": ",",
     "has_header": true
+  },
+  "flight_states": {
+    "0": "STARTUP",
+    "1": "CALIBRATION",
+    "2": "PAD_IDLE",
+    "3": "ARMED",
+    "4": "BOOST",
+    "5": "COAST",
+    "6": "APOGEE",
+    "7": "DROGUE_DEPLOY",
+    "8": "DROGUE_DESCENT",
+    "9": "MAIN_DEPLOY",
+    "10": "MAIN_DESCENT",
+    "11": "LANDED",
+    "12": "RECOVERY",
+    "13": "ERROR",
+    "UNKNOWN": "UNKNOWN"
   }
 } 

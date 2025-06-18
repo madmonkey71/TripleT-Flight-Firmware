@@ -44,9 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initialize Data Parser ---
     initDataParser(
-        () => {
+        (loadedFlightStates) => {
             console.log("Data parser initialized successfully in main.js.");
             parserInitialized = true;
+            if (typeof initUI === 'function') {
+                initUI(loadedFlightStates);
+            }
             if (connectButton) connectButton.disabled = false; // Enable connect button once parser is ready
         },
         (error) => {

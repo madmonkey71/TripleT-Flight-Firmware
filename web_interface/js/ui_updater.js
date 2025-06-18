@@ -14,35 +14,19 @@ let valRoll, valPitch, valYaw;
 let valPressure, valTemp, valAltBaro;
 let currentFlightStateValueElement; // Added for flight state
 
-// Flight State Enum (matches data_structures.h)
-const FlightState = {
-    0: "STARTUP",
-    1: "CALIBRATION",
-    2: "PAD_IDLE",
-    3: "ARMED",
-    4: "BOOST",
-    5: "COAST",
-    6: "APOGEE",
-    7: "DROGUE_DEPLOY",
-    8: "DROGUE_DESCENT",
-    9: "MAIN_DEPLOY",
-    10: "MAIN_DESCENT",
-    11: "LANDED",
-    12: "RECOVERY",
-    13: "ERROR",
-    UNKNOWN: "UNKNOWN"
-};
+// Flight State Enum will be populated by initUI
+let FlightState = { UNKNOWN: "UNKNOWN" };
 
 /**
- * Converts a flight state number to its string representation.
- * @param {number} stateNumber - The flight state number from the firmware.
- * @returns {string} The string representation of the flight state.
+ * Initializes the UI components and flight state mappings.
+ * This function is called by main.js after the data parser is ready.
+ * @param {object} loadedFlightStates - The flight state mapping object from the JSON config.
  */
-function getFlightStateString(stateNumber) {
-    return FlightState[stateNumber] || FlightState.UNKNOWN;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
+function initUI(loadedFlightStates) {
+    FlightState = loadedFlightStates;
+    console.log("UI Initialized with flight states:", FlightState);
+    
+    // The rest of the DOMContentLoaded logic can be moved here
     // Initialize chart contexts
     const altitudeChartCtx = document.getElementById('altitudeChart')?.getContext('2d');
     const accelerationChartCtx = document.getElementById('accelerationChart')?.getContext('2d');
@@ -118,6 +102,21 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         console.error("Failed to initialize 3D Visualizer: init3DVisualizer function not found.");
     }
+}
+
+/**
+ * Converts a flight state number to its string representation.
+ * @param {number} stateNumber - The flight state number from the firmware.
+ * @returns {string} The string representation of the flight state.
+ */
+function getFlightStateString(stateNumber) {
+    return FlightState[stateNumber] || FlightState.UNKNOWN;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // This event listener is now effectively replaced by the initUI function,
+    // which is called from main.js once the parser and configs are ready.
+    // We can leave it empty or remove it if all initialization logic has been moved.
 });
 
 /**

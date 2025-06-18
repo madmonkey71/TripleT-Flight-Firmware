@@ -2,6 +2,7 @@
 
 let columnMappings = null;
 let csvDelimiter = ','; // Default delimiter
+let flightStateMappings = null; // To store flight state mappings
 
 /**
  * Initializes the data parser by fetching the column mapping configuration.
@@ -17,18 +18,20 @@ async function initDataParser(callback, errorCallback) {
         }
         const mappingConfig = await response.json();
         
-        if (!mappingConfig.column_mappings || !mappingConfig.csv_settings) {
-            throw new Error("Invalid mapping configuration file format.");
+        if (!mappingConfig.column_mappings || !mappingConfig.csv_settings || !mappingConfig.flight_states) {
+            throw new Error("Invalid mapping configuration file format. Missing column_mappings, csv_settings, or flight_states.");
         }
 
         columnMappings = mappingConfig.column_mappings;
         csvDelimiter = mappingConfig.csv_settings.delimiter || ',';
+        flightStateMappings = mappingConfig.flight_states; // Load flight states
         
         console.log("Data mapping configuration loaded successfully.");
         console.log(`Using delimiter: '${csvDelimiter}'`);
         console.log(`Number of column mappings: ${columnMappings.length}`);
+        console.log(`Number of flight state mappings: ${Object.keys(flightStateMappings).length}`);
 
-        if (callback) callback();
+        if (callback) callback(flightStateMappings); // Pass mappings to the callback
     } catch (error) {
         console.error("Error initializing data parser:", error);
         columnMappings = null; // Ensure mappings are null if loading fails

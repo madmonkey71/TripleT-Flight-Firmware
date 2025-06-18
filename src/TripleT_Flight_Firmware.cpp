@@ -341,30 +341,14 @@ void WriteLogData(bool forceLog) {
   // Without dedicated getter functions, we log placeholders or last known values if available.
   // For now, logging placeholders (0.0f).
   // A more complete solution would involve adding getters to guidance_control.cpp.
-  guidance_get_target_euler_angles(logEntry.target_euler_roll,
-                                   logEntry.target_euler_pitch,
-                                   logEntry.target_euler_yaw);
-  guidance_get_pid_integrals(logEntry.pid_integral_roll,
-                             logEntry.pid_integral_pitch,
-                             logEntry.pid_integral_yaw);
+  guidance_get_target_euler_angles(logEntry.target_roll,
+                                   logEntry.target_pitch,
+                                   logEntry.target_yaw);
+  guidance_get_pid_integrals(logEntry.pid_roll_integral,
+                             logEntry.pid_pitch_integral,
+                             logEntry.pid_yaw_integral);
   
-  guidance_get_actuator_outputs(logEntry.actuator_x, logEntry.actuator_y, logEntry.actuator_z);
-
-  // Populate the new GNC fields (Task 2.2)
-  // Assuming the guidance functions can correctly populate these new fields.
-  // Note: The task specifies actuator_output_roll, then pitch, then yaw for the call.
-  // We map actuator_x to roll, actuator_y to pitch, actuator_z to yaw based on common conventions.
-  guidance_get_target_euler_angles(logEntry.target_roll,       // New field
-                                   logEntry.target_pitch,      // New field
-                                   logEntry.target_yaw);       // New field
-
-  guidance_get_pid_integrals(logEntry.pid_roll_integral,  // New field
-                             logEntry.pid_pitch_integral, // New field
-                             logEntry.pid_yaw_integral);  // New field
-
-  guidance_get_actuator_outputs(logEntry.actuator_output_roll,  // New field (Order: Roll, Pitch, Yaw)
-                                logEntry.actuator_output_pitch, // New field
-                                logEntry.actuator_output_yaw);  // New field
+  guidance_get_actuator_outputs(logEntry.actuator_output_roll, logEntry.actuator_output_pitch, logEntry.actuator_output_yaw);
 
   // Output to serial if enabled
   if (enableSerialCSV) {
@@ -946,13 +930,19 @@ void processCommand(String command) {
         toggleDebugFlag(enableSensorDebug, F("Sensor detail debug"), Serial, 0);
       enableDetailedOutput = false;
         Serial.println(F("Legacy Detailed output (global): OFF"));
-    } else if (command == "cal_mag") {
+    } else if (command.equalsIgnoreCase("calibrate_mag")) {
         Serial.println(F("Starting interactive magnetometer calibration. Please rotate the device around all axes."));
-        ICM_20948_calibrate_magnetometer(); // Assuming this is the interactive calibration function
-    } else if (command.length() > 0) { // Changed !command.isEmpty() to command.length() > 0
-       Serial.print(F("Unknown command: '"));
-       Serial.print(command);
-       Serial.println(F("'"));
+        ICM_20948_calibrate_mag_interactive();
+    } else if (command.equalsIgnoreCase("calibrate_gyro")) {
+        Serial.println(F("Starting gyro calibration..."));
+        ICM_20948_calibrate_gyro_bias(2000, 1); // Using default parameters
+    } else if (command.equalsIgnoreCase("save_mag_cal")) {
+        Serial.println(F("Saving magnetometer calibration..."));
+        if (icm_20948_save_calibration()) {
+            Serial.println(F("Magnetometer calibration saved successfully."));
+        } else {
+            Serial.println(F("Failed to save magnetometer calibration."));
+        }
     }
 }
 
@@ -1095,14 +1085,11 @@ void setup() {
   }
   
   // Initialize ICM-20948
-  if (!icm_20948_init()) {
-      Serial.println(F("ICM-20948 initialization failed!"));
-  } else {
-      Serial.println(F("ICM-20948 initialized successfully."));
-      // Attempt to load magnetometer calibration from EEPROM
-      if (!icm_20948_load_calibration()) {
-          Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
-      }
+  ICM_20948_init();
+  Serial.println(F("ICM-20948 initialized."));
+  // Attempt to load magnetometer calibration from EEPROM
+  if (!icm_20948_load_calibration()) {
+      Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
   }
   
   ms5611_init();
@@ -1342,179 +1329,12 @@ void loop() {
             // Accel data for Kalman is now in current_accel_for_kalman (g's)
 
             kalman_predict(icm_gyro[0], icm_gyro[1], icm_gyro[2], dt_kalman);
-            kalman_update(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2]);
+            kalman_update_accel(current_accel_for_kalman[0], current_accel_for_kalman[1], current_accel_for_kalman[2]);
+            float mag_data[3];
+            icm_20948_get_mag(mag_data);
+            kalman_update_mag(mag_data[0], mag_data[1], mag_data[2]);
             kalman_get_orientation(kalmanRoll, kalmanPitch, kalmanYaw);
-
-            if (enableIMUDebug) { // Optional: Add specific Kalman debug
-                static unsigned long lastKalmanDebugPrintTime = 0;
-                if (millis() - lastKalmanDebugPrintTime > 500) { // Print every 500ms
-                    lastKalmanDebugPrintTime = millis();
-                    Serial.print(F("Kalman Out - R: ")); Serial.print(kalmanRoll * (180.0f/PI), 1);
-                    Serial.print(F(" P: ")); Serial.print(kalmanPitch * (180.0f/PI), 1);
-                    Serial.print(F(" Y: ")); Serial.println(kalmanYaw * (180.0f/PI), 1);
-                }
-            }
-        } else if (dt_kalman <= 0.0f && lastKalmanUpdateTime != 0) { // Handles first run or timer rollover after initialization
-             // If dt is zero or negative (e.g. timer rollover or first pass),
-             // re-initialize lastKalmanUpdateTime to current time to ensure next dt is valid.
-             // Don't run predict/update with invalid dt.
-             lastKalmanUpdateTime = currentTimeMillis;
-        }
-        // If lastKalmanUpdateTime was 0 (first ever call in loop), it's now set,
-        // and dt_kalman would be based on millis() which is fine for the first dt after setup.
-        // The condition dt_kalman > 0 above handles the very first call if lastKalmanUpdateTime is 0.
-        // To be more robust for the very first loop iteration:
-        // if (lastKalmanUpdateTime == 0) { // First time in loop
-        //    lastKalmanUpdateTime = currentTimeMillis; // Initialize, skip processing this one cycle
-        // } else { ... process ... }
-        // The current logic should be okay as dt_kalman will be large on the first run if lastKalmanUpdateTime is 0,
-        // so the dt_kalman < 1.0f check might prevent it.
-        // Let's refine the dt_kalman initialization slightly for clarity on the first run.
-        // The current logic: if lastKalmanUpdateTime is 0, dt_kalman = millis()/1000.0. This is usually large.
-        // The check dt_kalman < 1.0f would prevent execution on the first frame if setup took >1s.
-        // Setting lastKalmanUpdateTime = millis() if dt_kalman <=0 handles subsequent calls correctly.
-    }
-  }
-  if (millis() - lastAccelReadTime >= ACCEL_POLL_INTERVAL) {
-    lastAccelReadTime = millis();
-    kx134_read(); // Existing KX134 read
-    sensorsUpdatedThisCycle = true;
-  }
-
-  // --- Flight State Machine ---
-  ProcessFlightState(); // Call the main state machine logic
-
-  // --- Data Logging ---
-  // WriteLogData has its own rate-limiting logic.
-  // ProcessFlightState also calls WriteLogData(true) for critical events.
-  if (sensorsUpdatedThisCycle) { // Log if sensor data was updated this cycle
-      WriteLogData(false); // false means it will use its internal timing logic for periodic logging
-  }
-
-  // --- Periodic Checks ---
-  if (millis() - lastGPSCheckTime >= GPS_CHECK_INTERVAL) {
-    lastGPSCheckTime = millis();
-    checkGPSConnection(); // Existing GPS connection check
-  }
-  if (millis() - lastStorageCheckTime >= STORAGE_CHECK_INTERVAL) {
-    lastStorageCheckTime = millis();
-    checkStorageSpace(); // Existing storage space check
-  }
-  // NOTE: Explicit LogDataFile.flush() every 10 seconds from old loop() should be REMOVED.
-  // WriteLogData() in TripleT_Flight_Firmware.cpp already has a flush-every-10-writes mechanism.
-
-  // --- Display/Status Updates ---
-  if (enableStatusSummary && millis() - lastDisplayTime >= DISPLAY_INTERVAL) {
-    lastDisplayTime = millis();
-    printStatusSummary(); // Existing status summary
-  }
-  if (displayMode && millis() - lastDetailedTime >= 5000) { // For ICM_20948_print
-    lastDetailedTime = millis();
-    ICM_20948_print();
-  }
-
-  // --- Guidance Control System ---
-  // This logic is kept as is. ProcessFlightState might indirectly control it
-  // by setting targets or flags that this system uses.
-  update_guidance_targets(); // Existing function or its equivalent for setting guidance targets
-
-  if (millis() - lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-    float deltat_guidance = (float)(millis() - lastGuidanceUpdateTime) / 1000.0f;
-    lastGuidanceUpdateTime = millis();
-
-    if (currentFlightState == BOOST || currentFlightState == COAST) {
-        float current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance;
-
-        if (useKalmanFilter && icm20948_ready) { // Ensure Kalman is active AND sensor is ready
-            current_roll_rad_for_guidance = kalmanRoll;   // Assumed to be in radians
-            current_pitch_rad_for_guidance = kalmanPitch; // Assumed to be in radians
-            current_yaw_rad_for_guidance = kalmanYaw;     // Assumed to be in radians
-        } else if (useMadgwickFilter && icm20948_ready) { // Fallback to Madgwick if it's active or Kalman isn't usable
-            convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
-                                     current_roll_rad_for_guidance,
-                                     current_pitch_rad_for_guidance,
-                                     current_yaw_rad_for_guidance);
-        } else {
-            // No valid orientation source is active or sensor not ready
-            // Default to zero orientation to prevent erratic behavior, or log error
-            current_roll_rad_for_guidance = 0.0f;
-            current_pitch_rad_for_guidance = 0.0f;
-            current_yaw_rad_for_guidance = 0.0f;
-            if (enableSystemDebug) { // Add a debug message for this case
-                static unsigned long lastGuidanceWarnTime = 0;
-                if (millis() - lastGuidanceWarnTime > 1000) { // Rate limit warning
-                    lastGuidanceWarnTime = millis();
-                    Serial.println(F("GUIDANCE_WARN: No valid orientation source for guidance update!"));
-                }
-            }
-        }
-
-        // Gyroscope data for rates (remains the same, directly from ICM)
-        float roll_rate_radps, pitch_rate_radps, yaw_rate_radps;
-        float calibrated_gyro_data[3]; // Ensure this is correctly populated
-        ICM_20948_get_calibrated_gyro(calibrated_gyro_data); // Assumes this function is available and works
-        roll_rate_radps = calibrated_gyro_data[0];
-        pitch_rate_radps = calibrated_gyro_data[1];
-        yaw_rate_radps = calibrated_gyro_data[2];
-
-        guidance_update(current_roll_rad_for_guidance, current_pitch_rad_for_guidance, current_yaw_rad_for_guidance,
-                        roll_rate_radps, pitch_rate_radps, yaw_rate_radps,
-                        deltat_guidance);
-
-        float actuator_x, actuator_y, actuator_z;
-        guidance_get_actuator_outputs(actuator_x, actuator_y, actuator_z);
-
-        float pitch_angle = map_float(actuator_x, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
-        float roll_angle  = map_float(actuator_y, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
-        float yaw_angle   = map_float(actuator_z, PID_OUTPUT_MIN, PID_OUTPUT_MAX, 0, 180);
-
-        servo_pitch.write(static_cast<int>(constrain(pitch_angle, 0, 180)));
-        servo_roll.write(static_cast<int>(constrain(roll_angle,  0, 180)));
-        servo_yaw.write(static_cast<int>(constrain(yaw_angle,   0, 180)));
-
-        if (enableSystemDebug) { // Existing guidance debug print logic
-            static unsigned long lastGuidanceDebugPrintTime = 0;
-            if (millis() - lastGuidanceDebugPrintTime > 500) {
-                lastGuidanceDebugPrintTime = millis();
-                Serial.print("Guidance Active - X(Pitch): "); Serial.print(actuator_x, 2);
-                Serial.print(" Y(Roll): "); Serial.print(actuator_y, 2);
-                Serial.print(" Z(Yaw): "); Serial.println(actuator_z, 2);
-                Serial.print("Guidance In  - R: "); Serial.print(current_roll_rad_for_guidance * (180.0f/PI), 1);
-                Serial.print(" P: "); Serial.print(current_pitch_rad_for_guidance * (180.0f/PI), 1);
-                Serial.print(" Y: "); Serial.println(current_yaw_rad_for_guidance * (180.0f/PI), 1);
-            }
-        }
-    } else {
-        // Not in BOOST or COAST state, set servos to neutral/default
-        servo_pitch.write(SERVO_DEFAULT_ANGLE);
-        servo_roll.write(SERVO_DEFAULT_ANGLE);
-        servo_yaw.write(SERVO_DEFAULT_ANGLE);
-        if (enableSystemDebug) {
-            static unsigned long lastServoNeutralPrintTime = 0;
-            if (millis() - lastServoNeutralPrintTime > 2000) { // Print every 2 seconds if servos are being neutralized
-                lastServoNeutralPrintTime = millis();
-                Serial.print(F("Guidance Inactive (State: "));
-                Serial.print(getStateName(currentFlightState));
-                Serial.println(F("). Servos set to default angle."));
-            }
         }
     }
   }
-
-  // Update the Kalman filter with the fused sensor data
-  if (useKalmanFilter) {
-      float fused_accel[3];
-      get_fused_acceleration(fused_accel, currentFlightState);
-      kalman_update_accel(fused_accel[0], fused_accel[1], fused_accel[2]);
-
-      float mag_data[3];
-      icm_20948_get_mag(mag_data);
-      kalman_update_mag(mag_data[0], mag_data[1], mag_data[2]);
-  }
-
-  // Guidance and Actuator Update
-  static unsigned long lastGuidanceTime = 0;
 }
-
-
-

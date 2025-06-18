@@ -215,7 +215,12 @@ Fixed critical issues with KX134 high-G accelerometer data logging and 3D visual
      - Moved the `dt` calculation to the correct position within the main loop, right before the `kalman_predict` call.
    - **Impact**: The Kalman filter is now correctly initialized **and** updated every cycle, providing accurate, real-time orientation data and fully enabling the 3D visualization.
 
-4. **Sensor Fusion Integration**: 
+4. **Web Interface State Display Fix**:
+   - **Root Cause**: The flight state enum (e.g., `PAD_IDLE`, `COAST`, `ERROR`) was hardcoded in a JavaScript file, which had become out of sync with the authoritative C++ enum in the firmware. This caused the web interface to display the wrong state (e.g., showing "STARTUP" when the firmware was in `DEBUG_MODE`).
+   - **Solution**: Refactored the web interface to load its configuration from a single, centralized `flight_console_data_mapping.json` file. The flight state map was removed from the JavaScript and added to this JSON file. The application now dynamically fetches this configuration on startup.
+   - **Impact**: The web interface now **always** displays the correct flight state, as it uses the same source of truth as the data parser. This makes the UI more robust and easier to update in the future.
+
+5. **Sensor Fusion Integration**: 
    - **KX134 Availability**: High-G accelerometer data is now properly logged and available for sensor fusion during high-G phases
    - **Orientation Data**: Both Kalman filter quaternions and Euler angles are now properly generated and logged
    - **Web Interface**: 3D visualizer now receives valid orientation data for real-time rocket attitude display

@@ -153,6 +153,21 @@ For more detailed design information, please refer to:
 - [Original Gap Analysis](GAP_ANALYSIS.md)
 - [Updated Gap Analysis & Roadmap](UPDATED_GAP_ANALYSIS_2025.md) ⭐ **Current**
 
+## Recent Changes
+
+### Compilation Fixes (Latest)
+Fixed several critical compilation errors that were preventing the firmware from building:
+
+1. **Reference vs Pointer Error**: Fixed incorrect usage of address operator (&) when calling guidance functions. The functions expect references (`float&`) but were being passed pointers (`float*`). Changed:
+   - `guidance_get_target_euler_angles(&logEntry.target_roll, ...)` → `guidance_get_target_euler_angles(logEntry.target_roll, ...)`
+   - Similar fixes for `guidance_get_pid_integrals()` and `guidance_get_actuator_outputs()`
+
+2. **Function Name Error**: Corrected the ICM-20948 initialization function call from `icm_20948_init()` to `ICM_20948_init()` to match the actual function declaration in the header file.
+
+3. **Missing Closing Braces**: Added missing closing braces at the end of the `loop()` function that were causing syntax errors.
+
+These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform.
+
 ## Development Roadmap (Priority-Based)
 
 ### 🔴 Phase 1: Critical Flight Operations (1-2 months)
@@ -176,6 +191,7 @@ For more detailed design information, please refer to:
 - [x] **Enhanced Data Logging**: Complete GNC data logging for post-flight analysis and tuning
 - [x] **Web Interface**: Real-time data visualization with Web Serial API integration
 - [x] **Sensor Fusion & Calibration**: Kalman filter with dynamic accelerometer switching and persistent magnetometer calibration is complete.
+- [x] **Compilation Fixes**: Resolved pointer/reference errors, function naming issues, and missing braces in main loop
 
 **Estimated Timeline to Production-Ready**: 4-6 months  
 **Current Status**: Ready for controlled test flights with basic guidance functionality

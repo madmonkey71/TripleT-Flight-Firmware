@@ -1118,6 +1118,7 @@ void setup() {
   // Initialize ICM-20948
   ICM_20948_init();
   Serial.println(F("ICM-20948 initialized."));
+  icm20948_ready = true; // Set the flag to true after initialization
   // Attempt to load magnetometer calibration from EEPROM
   if (!icm_20948_load_calibration()) {
       Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
@@ -1333,6 +1334,14 @@ void loop() {
 
     // --- Kalman Filter Processing ---
     if (useKalmanFilter && icm20948_ready) {
+        float dt_kalman = 0.0f;
+        unsigned long currentTimeMillis = millis(); // Cache current time
+
+        if (lastKalmanUpdateTime > 0) { // Ensure lastKalmanUpdateTime has been initialized after the first run
+            dt_kalman = (currentTimeMillis - lastKalmanUpdateTime) / 1000.0f;
+        }
+        lastKalmanUpdateTime = currentTimeMillis;
+        
         // Sensor switching logic for Kalman filter accelerometer
         float current_accel_for_kalman[3]; // Temporary array to hold accel data for Kalman
         bool kx134_was_used = usingKX134ForKalman; // Store previous state for message toggling
@@ -1365,14 +1374,6 @@ void loop() {
                 Serial.println(F("KALMAN: Low-G detected. Switched back to ICM20948 for accelerometer data."));
             }
         }
-
-        float dt_kalman = 0.0f;
-        unsigned long currentTimeMillis = millis(); // Cache current time
-
-        if (lastKalmanUpdateTime > 0) { // Ensure lastKalmanUpdateTime has been initialized after the first run
-            dt_kalman = (currentTimeMillis - lastKalmanUpdateTime) / 1000.0f;
-        }
-        lastKalmanUpdateTime = currentTimeMillis;
 
         if (dt_kalman > 0.0f && dt_kalman < 1.0f) { // Basic sanity check for dt
             // Gyro data is in icm_gyro (rad/s)

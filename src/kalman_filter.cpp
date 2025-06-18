@@ -26,7 +26,7 @@ static float R_accel[2] = {0.2f, 0.2f}; // Increased R_accel to reduce sensitivi
 
 // Measurement noise for yaw from magnetometer
 // static float R_mag_yaw = 0.1f; // Measurement noise for yaw from magnetometer (can be tuned)
-static float R_mag_yaw = 0.8f; // Increased R_mag_yaw to reduce snap-back
+static float R_mag_yaw = 2.0f; // Increased R_mag_yaw to reduce snap-back
 
 // --- Kalman Filter Functions ---
 

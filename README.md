@@ -182,6 +182,13 @@ Fixed several critical compilation errors that were preventing the firmware from
    - **Additional Fix**: Added call to `ProcessFlightState()` for proper flight state machine operation
    - **Impact**: Serial CSV output now works correctly and can be used with the web interface
 
+8. **3D Visualization Not Updating**: Fixed critical issue where 3D position visualization in web interface wasn't updating:
+   - **Root Cause**: When using Kalman filter (default), quaternions were never populated, causing web interface to show static orientation
+   - **Solution**: Added `convertEulerToQuaternion()` function to convert Kalman filter Euler angles back to quaternions for logging and visualization
+   - **Web Interface Mapping**: Updated CSV header mapping to match firmware output (`TgtRoll` vs `TargetRoll_rad`, `ActuatorOutRoll` vs `ActuatorX`)
+   - **Filter Management**: Ensured Madgwick filter remains disabled (as requested) while Kalman filter provides proper orientation data
+   - **Data Flow**: Now when `useKalmanFilter=true`, Euler angles come from Kalman filter and quaternions are calculated from those angles
+
 These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, properly manage error state recovery and clearing, and most critically, the data logging/CSV output functionality now works properly.
 
 ## Development Roadmap (Priority-Based)

@@ -1,6 +1,6 @@
 // TripleT Flight Firmware
 // Current Version: v0.48
-// Current State: Alpha
+// Current State: Beta
 // Last Updated: 18/06/2025
 // **Notes**
 // This code started out life as a remake of the Blip Test Code from Joe Barnard @ BPS.Space

@@ -1,5 +1,5 @@
 # TripleT Flight Firmware Function Documentation
-## Version 0.40
+## Version 0.47
 
 ## Flow Diagram
 
@@ -61,6 +61,7 @@ graph TD
     C5 -- SHUTDOWN --> S_SHUTDOWN;
 
 ```
+*Note: The "State Machine Detail" diagram above is a simplified representation. For the canonical list of all 14 flight states and their detailed transitions, please refer to `State Machine.md`.*
 
 ## Function Documentation (`src/TripleT_Flight_Firmware.cpp`)
 
@@ -86,7 +87,7 @@ This section details the functions defined in the main firmware file, tracing th
 *   **Trace:** `ProcessFlightState()` -> `loop()` / `saveStateToEEPROM()` -> Various
 
 **`ProcessFlightState()`**
-*   **Purpose:** The core state machine logic. Evaluates conditions based on sensor data and the current state to determine if a state transition is necessary. Calls `setState()` to enact transitions. Also triggers state-specific actions (e.g., deploying chutes).
+*   **Purpose:** The core state machine logic. Evaluates conditions based on sensor data and the current state to determine if a state transition is necessary. Calls `setState()` to enact transitions. Also triggers state-specific actions (e.g., deploying chutes). It also manages state-specific actions, such as capturing the current orientation for Attitude Hold mode at the transition from BOOST to COAST, and activating an audible buzzer sequence during the RECOVERY state.
 *   **Called By:** `loop()`
 *   **Trace:** Direct call from `loop()`
 
@@ -179,7 +180,7 @@ This section details the functions defined in the main firmware file, tracing th
 ### Data Logging & Output
 
 **`logData()`**
-*   **Purpose:** Formats sensor data, state information, and timestamps into a CSV string and writes it to the SD card. Also prints summary data to Serial.
+*   **Purpose:** Formats sensor data, state information, and timestamps into a CSV string and writes it to the SD card. Also prints summary data to Serial. The logged CSV data includes a comprehensive set of parameters: sensor readings, flight state, timestamps, and detailed Guidance, Navigation, and Control (GNC) data (such as PID target angles, PID integral values, and final actuator outputs).
 *   **Called By:** `loop()`
 *   **Trace:** Direct call from `loop()`
 
@@ -322,7 +323,7 @@ Based on the current analysis of `src/TripleT_Flight_Firmware.cpp`:
 *   **Trace:** Called by checkSensorStatus() -> `loop()`
 
 **`isSensorSuiteHealthy()`**
-*   **Purpose:** Determines if the flight computer's sensor suite is healthy enough for the current flight state. Different flight states have different sensor requirements - for ground states (STARTUP through ARMED), both GPS and barometer must be working; for recovery states, all sensors including GPS must be working.
+*   **Purpose:** Determines if the flight computer's sensor suite is healthy enough for the current flight state. Different flight states have different sensor requirements - for ground states (STARTUP through ARMED), both GPS and barometer must be working; for recovery states, all sensors including GPS must be working. This function is critically called by `ProcessFlightState()` at the beginning of its execution cycle for most active flight states. If `isSensorSuiteHealthy()` returns `false`, `ProcessFlightState()` will immediately transition the system to the `ERROR` state.
 *   **Called By:** `checkSensorStatus()`, `setup()` (during final health check)
 *   **Trace:** `checkSensorStatus()` -> `loop()` / Direct call from `setup()`
 

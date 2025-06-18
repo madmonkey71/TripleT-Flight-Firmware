@@ -120,7 +120,7 @@ Key configuration parameters affecting the state machine are primarily located i
 
 // Redundant sensing configuration (examples from config.h)
 #define APOGEE_CONFIRMATION_COUNT 5   // Number of consecutive readings/conditions to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 10  // Number of consecutive readings/conditions to confirm landing
+#define LANDING_CONFIRMATION_COUNT 10  // Number of consecutive readings/conditions to confirm landing (Note: current firmware's primary landing logic in flight_logic.cpp uses LANDING_CONFIRMATION_TIME_MS for a time-based check, though this count-based constant also exists in config.h)
 #define BACKUP_APOGEE_TIME_MS 20000      // Backup time-based apogee detection (ms after boost detection if primary fails)
 ```
 **Note:** The C++ code blocks for `Non-Volatile Storage Implementation`, `Redundant Sensing for Critical Events`, `Enhanced Flight State Processing`, `Setup Function Enhancement`, and `Testing Considerations` are illustrative examples of how these features are implemented in the firmware (`.cpp` files within the `src` directory, primarily `TripleT_Flight_Firmware.cpp`, `flight_logic.cpp`, `state_management.cpp`, and sensor-specific files). Refer to the actual source code for the most up-to-date and complete implementation details.
@@ -368,6 +368,7 @@ bool detectApogee() {
   return apogeeDetected;
 }
 
+*Note: The actual firmware's `detectLanding()` function in `src/flight_logic.cpp` uses a time-based confirmation (`LANDING_CONFIRMATION_TIME_MS`) and accelerometer magnitude stability (comparing G-force to expected gravity ranges) rather than a simple counter as shown in the illustrative example below. Refer to `src/flight_logic.cpp` for the precise implementation.*
 // Redundant landing detection
 bool detectLanding() {
   static int stableCount = 0;

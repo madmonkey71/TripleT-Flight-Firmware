@@ -143,6 +143,12 @@ This uses the PID controllers in `guidance_control.cpp` and AHRS output.
     *   **Evaluation:**
         *   Log the target roll, pitch, and yaw angles alongside the current roll, pitch, yaw from the AHRS. Verify the targets are being set as expected.
 
+### Example: Attitude Hold Feature
+
+The firmware includes an "Attitude Hold" feature that automatically engages during the `COAST` phase of flight. This feature captures the rocket's current roll, pitch, and yaw orientation at the moment of motor burnout (transition from `BOOST` to `COAST`) and sets these values as the target for the PID controllers. The system then attempts to maintain this captured orientation throughout the `COAST` phase.
+
+This is a practical application of the `guidance_set_target_orientation_euler()` function and relies on well-tuned PID controllers (as described below) and accurate AHRS data (from Parts 1 and 2) to perform effectively.
+
 2.  **Tune PID Controller Gains (in `config.h`):**
     *   **Variables:**
         *   `PID_ROLL_KP, KI, KD`

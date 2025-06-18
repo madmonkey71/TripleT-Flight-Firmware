@@ -63,8 +63,8 @@ This document details the usage and configuration of major features within the T
         *   `` `SERVO_DEFAULT_ANGLE` ``: Default angle (in degrees) to which servos are set upon initialization.
 *   **Usage and Interaction**:
     *   The guidance system is initialized in `setup()` by `guidance_init()`, which resets PID states.
-    *   Target orientations (roll, pitch, yaw in radians) are set by calling `guidance_set_target_orientation_euler()`. This is typically done by the `update_guidance_targets()` function from the flight logic module.
-    *   In the main `loop()`, `guidance_update()` is called periodically. This function calculates the error between current and target orientations and computes the PID outputs for each axis.
+    *   Target orientations (roll, pitch, yaw in radians) are set by calling `guidance_set_target_orientation_euler()`. This is typically done by the `update_guidance_targets()` function from the flight logic module or by specific state logic (like Attitude Hold).
+    *   In the main `loop()`, `guidance_update()` (which computes PID outputs) and the subsequent mapping of these outputs to servo commands (e.g., `servo_pitch.write()`) are performed conditionally. These operations are active only when the `currentFlightState` is `BOOST` or `COAST`. In other flight states, the servos are typically commanded to their neutral/default positions to ensure safety and prevent unintended movement.
     *   The normalized PID outputs (-1.0 to 1.0) are then retrieved from `guidance_get_actuator_outputs()`.
     *   These outputs are mapped to servo angle commands (0-180 degrees) using the `map_float()` utility and then written to the respective servos using the `PWMServo` library in `TripleT_Flight_Firmware.cpp`.
 *   **Logged Data**:
@@ -76,6 +76,30 @@ This document details the usage and configuration of major features within the T
     *   `config.h` for all PID parameters, actuator pins, and servo settings.
     *   `PWMServo` library for servo control.
     *   `utility_functions.h` for `map_float()` and `constrain()`.
+
+## Attitude Hold Mode
+
+*   **Purpose**: To maintain the rocket's orientation (roll, pitch, and yaw) automatically during the `COAST` phase of flight. This helps stabilize the rocket along its trajectory after motor burnout.
+*   **Key Files**:
+    *   `src/flight_logic.cpp` (specifically `ProcessFlightState()` where Attitude Hold is triggered)
+    *   `src/guidance_control.cpp` (for `guidance_set_target_orientation_euler()` which sets the hold target)
+    *   `src/TripleT_Flight_Firmware.cpp` (where `guidance_update()` is conditionally called)
+*   **Configuration**:
+    *   Attitude Hold is an automatic feature and is not directly enabled/disabled by a single `#define` in `config.h`.
+    *   Its performance is dependent on a well-tuned PID controller (see "PID-based Actuator Control" section for gains like `` `PID_ROLL_KP` ``, etc.) and an accurate orientation estimate from the MARG sensor fusion system.
+*   **Usage and Interaction**:
+    *   The Attitude Hold mode is automatically engaged when the flight state transitions from `BOOST` to `COAST`.
+    *   At this transition, the firmware captures the rocket's current roll, pitch, and yaw angles from the active orientation sensor (Kalman filter or Madgwick).
+    *   These captured angles are then immediately set as the new target orientation for the PID control system using `guidance_set_target_orientation_euler()`.
+    *   Throughout the `COAST` state, the PID controllers will work to minimize any deviation from this locked-in target orientation. The `update_guidance_targets()` function, in its current implementation, sets its target once at initialization and does not interfere with the Attitude Hold target during `COAST`.
+*   **Logged Data**:
+    *   `target_euler_roll`, `target_euler_pitch`, `target_euler_yaw`: During the `COAST` phase, these fields will reflect the orientation captured at the start of the coast.
+    *   Current orientation data (`euler_roll`, `euler_pitch`, `euler_yaw`, or quaternions) to compare against the target.
+    *   PID controller internal states (`pid_integral_roll`, etc.) and actuator outputs (`actuator_x`, etc.) to assess performance.
+*   **Dependencies**:
+    *   PID-based Actuator Control system.
+    *   MARG Sensor Fusion system (or Kalman filter if active) for providing current orientation.
+    *   Flight State Machine for triggering the mode at the correct phase.
 
 ## Dynamic Target Updates
 

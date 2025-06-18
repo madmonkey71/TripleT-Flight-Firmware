@@ -5,13 +5,16 @@
 TripleT Flight Firmware is an advanced flight controller software designed for model rockets and high-power rocketry applications. Built for the Teensy 4.0/4.1 microcontroller, it provides robust sensor integration, multi-target data logging, and a command-driven interface for configuration and data retrieval.
 
 ### Key Features
-- Multi-sensor integration (GPS, barometer, accelerometer, 9-DOF IMU)
-- Triple redundant data logging (SD card, external flash, internal flash)
-- Efficient LittleFS implementation for internal flash storage
-- Comprehensive data collection and logging
-- Interactive serial interface
-- Diagnostic tools and status monitoring
-- Configurable logging rates and data formats
+- Comprehensive Flight State Machine: Manages 14 states from startup to recovery.
+- MARG Sensor Fusion: Uses Madgwick AHRS with ICM-20948 data for robust 3D orientation.
+- PID-based Actuator Control: Framework for 3-axis control, with state-dependent activation (BOOST/COAST).
+- Attitude Hold Mode: Automatically maintains rocket orientation during the COAST phase.
+- Redundant Apogee Detection: Utilizes barometer, accelerometer, GPS, and a backup timer for reliable apogee detection.
+- Integrated Sensor Health Monitoring: Continuously checks sensor status and can trigger an ERROR state.
+- State Persistence: Saves flight state to EEPROM for power loss recovery.
+- SD Card Data Logging: Detailed CSV logging of sensor data, flight state, orientation, and GNC parameters (PID targets, integrals, actuator outputs).
+- Interactive Serial Interface: For diagnostics, commands, and real-time data viewing.
+- Audible Recovery Beacon: Buzzer sequence in RECOVERY state to aid location.
 
 ## Hardware Requirements
 
@@ -30,8 +33,8 @@ TripleT Flight Firmware is an advanced flight controller software designed for m
 ### Optional Components
 - Buzzer (pin 23)
 - WS2812 LEDs (pin 7)
-- Servo motors for TVC (pins 0, 1)
-- Pyro channels (pins 5, 6, 7, 8)
+- Servo motors for TVC (pins 0, 1) // Example pins, actual in config.h
+- Pyro channels (pins 2, 3 as per current config.h for PYRO_CHANNEL_1, PYRO_CHANNEL_2)
 
 ## System Architecture
 
@@ -56,8 +59,8 @@ graph TD
    - Sensor calibration and validation
 
 2. **Data Logging System**
-   - Multi-target storage implementation
-   - Efficient binary data format
+   - Primary logging target is an SD card with data stored in CSV format.
+   - (Note: Internal and external flash logging mentioned previously are not the current primary methods or are under development for specific/backup uses).
    - Configurable logging rates
    - Data integrity checks
 
@@ -152,6 +155,10 @@ graph TD
   - Converts to human-readable format
   - Outputs to serial interface
 
+## Data Format
+
+The primary data logging format to the SD card is CSV (Comma Separated Values). Each row represents a time step and includes a comprehensive set of data points. For a detailed list and description of each logged field (column header) and its data type, please refer to the `LOG_COLUMNS` definition in `src/log_format_definition.cpp` and the "Data Logging System" section in `docs/Feature_Usage_And_Configuration.md`. Logged data includes timestamps, flight state, raw sensor values, processed orientation data (quaternions and Euler angles), and GNC parameters (PID targets, integrals, actuator outputs).
+
 #### Utility Functions
 - `checkStorageSpace()`: Storage monitoring
   - Checks available space
@@ -167,31 +174,6 @@ graph TD
   - Lists available commands
   - Shows usage information
   - Provides system status
-
-## Data Format
-
-### Binary Log Format
-Each log record consists of 52 bytes:
-1. Timestamp (4 bytes)
-2. GPS fix type and satellite count (2 bytes)
-3. Latitude (4 bytes)
-4. Longitude (4 bytes)
-5. Altitude (4 bytes)
-6. Speed (2 bytes)
-7. Pressure (2 bytes)
-8. Temperature (2 bytes)
-9. KX134 accelerometer values (6 bytes)
-10. ICM-20948 accelerometer values (6 bytes)
-11. ICM-20948 gyroscope values (6 bytes)
-12. ICM-20948 magnetometer values (6 bytes)
-13. Checksum (2 bytes)
-
-### CSV Log Format
-- Timestamp
-- GPS information (fix type, satellites, position, altitude, speed)
-- Barometric data (pressure, temperature)
-- Accelerometer readings (X, Y, Z in g)
-- IMU data (accelerometer, gyroscope, magnetometer)
 
 ## Command Reference
 
@@ -250,12 +232,11 @@ Each log record consists of 52 bytes:
 - Data integrity checks
 
 ## Future Enhancements
-- Flight state detection
-- Parachute deployment control
-- Thrust vector control
-- Enhanced telemetry
-- Power management
-- User-configurable settings
+- Advanced guidance maneuvers (e.g., full thrust vector control, gravity turns)
+- Live radio telemetry system
+- Persistent magnetometer calibration (saving/loading from non-volatile memory)
+- Enhanced power management features
+- Further user-configurable settings via serial interface or configuration files.
 
 ## License
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0).

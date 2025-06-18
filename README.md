@@ -17,11 +17,11 @@ An eventually comprehensive flight controller firmware for Teensy 4.1 microcontr
 - ✅ **Parachute Deployment**: Pyro channels for drogue and main parachutes are controlled based on the flight state.
 - ✅ **Actuator Control**: A 3-axis PID controller is implemented and connected to PWM servos.
 - ✅ **Web Interface**: A web-based interface for live data visualization is available and aligned with the current data logging format.
-- 🚧 **Guidance System**: A basic framework for guidance exists, but the current implementation is a placeholder (time-based yaw target). It is not yet integrated with the flight state machine.
+- ✅ **Guidance System**: A basic framework for guidance exists. The PID controller is active only during BOOST and COAST states. Attitude Hold is implemented for the COAST phase.
 - 🚧 **Sensor Fusion**: An orientation filter is in place, but development on it is currently paused.
-- 🚧 **System Robustness**:
-    - Sensor health checks exist but are not yet integrated into the flight state machine to trigger error states.
-    - Redundant apogee detection (e.g., backup timer) is designed but not implemented in the flight logic.
+- ✅ **System Robustness**:
+    - Sensor health checks are integrated into the flight state machine to trigger error states.
+    - Redundant apogee detection, including a backup timer, is implemented and active.
 - 🚧 **Enhanced Telemetry**: Live data transmission via radio is planned but not yet implemented.
 
 ### Redundant Apogee Detection
@@ -77,10 +77,12 @@ TripleT Flight Firmware is an open-source flight controller software built for t
 - **Multi-sensor Integration**: Fuses data from GPS, barometer, accelerometer, and 9-DOF IMU.
 - **Flight State Machine**: A sophisticated 14-state machine manages the entire flight profile, from `PAD_IDLE` through `BOOST`, `COAST`, `APOGEE`, multiple `DESCENT` phases, and finally to `RECOVERY`. State transitions are handled automatically based on sensor data.
 - **State Persistence & Recovery**: Automatically saves the flight state and critical data (max altitude, launch altitude) to EEPROM. In case of power loss, the firmware attempts to resume the flight in a safe state (e.g., resuming in `DROGUE_DESCENT` if power was lost during ascent).
-- **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place, ready for a functional guidance engine to provide it with targets.
+- **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place.
+  - Includes an Attitude Hold mode during the COAST phase, which maintains the orientation captured at motor burnout.
+- **Audible Recovery Aid**: Audible buzzer sequence in RECOVERY state to aid in locating the rocket.
 - **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps.
 - **GPS/Barometer Calibration**: Calibrates the barometric altimeter using GPS data for accurate altitude-above-ground-level (AGL) readings.
-- **Error Handling**: Includes watchdog timers and sensor initialization checks. (Note: In-flight sensor health monitoring is not yet fully integrated with the state machine).
+- **Error Handling**: Includes watchdog timers, sensor initialization checks, and in-flight sensor health monitoring integrated with the state machine.
 - **Interactive Serial Interface**: A command-driven system for real-time data monitoring, configuration, and diagnostics.
 
 ## Installation
@@ -114,8 +116,8 @@ The firmware supports a rich set of serial commands for interaction:
 ### Data Logging
 
 Data is logged to the SD card in CSV format. The log includes:
-- Timestamp, Flight State (integer), GPS data, Barometric data, Accelerometer data, and IMU data.
-- **Note**: Logging for the PID guidance system (targets, errors, outputs) is planned but not yet implemented.
+- Timestamp, Flight State (integer), GPS data, Barometric data, Accelerometer data, IMU data.
+- Includes logging for the PID guidance system: target orientation, PID integral values, and final actuator outputs.
 
 ### Configuration
 
@@ -135,12 +137,12 @@ For more detailed design information, please refer to:
 
 ## Potential Improvements and Future Work (Based on Gap Analysis)
 
-- [ ] **Implement Functional Guidance:** Replace the placeholder guidance logic with a meaningful system, starting with a "Attitude Hold" mode during the coast phase.
-- [ ] **Integrate Guidance with State Machine:** The PID control system should be active only during appropriate flight states (e.g., `BOOST`, `COAST`). In other states, actuators should be disabled or centered.
-- [ ] **Fortify the State Machine:**
-    - [ ] Integrate the existing sensor health checks into the main flight loop to trigger the `ERROR` state upon sensor failure.
-    - [ ] Implement the designed backup apogee detection timer for redundancy.
-- [x] **Enhance Data Logging:** Add PID controller data (target orientation, integral values, actuator outputs) to the SD card log for post-flight tuning and analysis.
+- [~] **Implement Functional Guidance:** Attitude Hold for COAST phase is implemented. Further maneuvers (e.g., gravity turn) remain future work.
+- [x] **Integrate Guidance with State Machine:** PID control system is now active only during BOOST and COAST states.
+- [x] **Fortify the State Machine:**
+    - [x] Integrate the existing sensor health checks into the main flight loop to trigger the `ERROR` state upon sensor failure.
+    - [x] Implement the designed backup apogee detection timer for redundancy.
+- [x] **Enhance Data Logging:** PID controller data (target orientation, integral values, actuator outputs) added to the SD card log for post-flight tuning and analysis.
 - [ ] **Live Telemetry:** Implement the planned live data transmission system using a radio module.
 - [ ] **Persistent Magnetometer Calibration:** Save and load magnetometer calibration values to/from EEPROM or the SD card to avoid the need for recalibration or manual code changes.
 - [ ] **Refine `isStationary` Detection:** The thresholds for detecting a stationary state may need tuning for different physical systems and environments.

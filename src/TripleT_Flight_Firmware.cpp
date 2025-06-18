@@ -1109,8 +1109,10 @@ void setup() {
   Serial.println(F("\nInitializing sensors..."));
   if (!kx134_init()) {
     Serial.println(F("WARNING: KX134 accelerometer initialization failed"));
+    kx134_initialized_ok = false;
   } else {
     Serial.println(F("KX134 accelerometer initialized"));
+    kx134_initialized_ok = true;
   }
   
   // Initialize ICM-20948
@@ -1309,6 +1311,12 @@ void loop() {
   if (millis() - lastIMUReadTime >= IMU_POLL_INTERVAL) {
     lastIMUReadTime = millis();
     ICM_20948_read(); // Existing ICM read
+    
+    // Read KX134 if available
+    if (kx134_initialized_ok) {
+      kx134_read();
+    }
+    
     sensorsUpdatedThisCycle = true;
 
     // --- Kalman Filter Processing ---

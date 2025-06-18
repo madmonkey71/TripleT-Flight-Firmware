@@ -166,7 +166,11 @@ Fixed several critical compilation errors that were preventing the firmware from
 
 3. **Missing Closing Braces**: Added missing closing braces at the end of the `loop()` function that were causing syntax errors.
 
-These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform.
+4. **Linker Error**: Implemented missing `icm_20948_get_mag()` function in `icm_20948_functions.cpp` that was declared in the header but not defined, causing a linker error.
+
+5. **Unused Variable Warnings**: Cleaned up unused variables in the `loop()` function (`lastDisplayTime`, `lastDetailedTime`, `lastAccelReadTime`, `lastGPSCheckTime`, `lastStorageCheckTime`, `lastGuidanceUpdateTime`) that were causing compiler warnings.
+
+These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings.
 
 ## Development Roadmap (Priority-Based)
 

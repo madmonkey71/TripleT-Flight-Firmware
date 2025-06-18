@@ -67,6 +67,7 @@ float maxAltitudeReached = 0.0f;
 float currentAltitude = 0.0f;
 bool kx134_initialized_ok = false;
 bool icm20948_ready = false;
+extern bool ms5611_initialized_ok;
 
 // Global variable for dynamic main deployment altitude (Task Step 2)
 float g_main_deploy_altitude_m_agl = 0.0f;
@@ -1248,34 +1249,38 @@ void setup() {
   // if (!ms5611Sensor.isConnected()) systemHealthy = false; // Assuming ms5611_init updates this
   // if (!kx134_initialized_ok && !icm20948_ready) systemHealthy = false; // If no IMU is good. (Need to define these flags based on init funcs)
 
-
-  if (currentFlightState == CALIBRATION) { 
-      if (systemHealthy) {
-          Serial.println(F("System healthy, proceeding to PAD_IDLE state."));
-          currentFlightState = PAD_IDLE;
-      } else {
-          Serial.println(F("System unhealthy after calibration attempt, proceeding to ERROR state."));
-          currentFlightState = ERROR;
-      }
-      stateEntryTime = millis();
-      // updateLoggingRate(currentFlightState); // Handled by ProcessFlightState
-  } else if (currentFlightState == STARTUP && systemHealthy) {
-       // This case handles if recovery somehow ended in STARTUP (e.g. EEPROM invalid) but system is now healthy
-       Serial.println(F("Fresh start, system healthy, proceeding to PAD_IDLE state."));
-       currentFlightState = PAD_IDLE;
-       stateEntryTime = millis();
-  } else if (currentFlightState == ERROR && systemHealthy) {
-      // If we recovered an ERROR state but all systems are now healthy, automatically clear it
-      Serial.println(F("ERROR state recovered but all systems are healthy. Automatically clearing error and transitioning to PAD_IDLE."));
+  // Check if we recovered into an ERROR state
+  if (currentFlightState == ERROR) {
+    Serial.println(F("Recovered into ERROR state. Checking system health..."));
+    // Add logic here to check if the error condition is still present
+    // For now, we'll assume if all hardware initialized, we can transition to PAD_IDLE
+    if (sdCardMounted && kx134_initialized_ok && icm20948_ready && ms5611_initialized_ok) {
+      Serial.println(F("All systems appear healthy. Transitioning from ERROR to PAD_IDLE."));
       currentFlightState = PAD_IDLE;
-      stateEntryTime = millis();
-      // Save the cleared state to EEPROM
-      saveStateToEEPROM();
+      if (!sdCardMounted) Serial.println(F("- SD Card not mounted."));
+      if (!kx134_initialized_ok) Serial.println(F("- KX134 failed to initialize."));
+      if (!icm20948_ready) Serial.println(F("- ICM-20948 not ready."));
+      if (!ms5611_initialized_ok) Serial.println(F("- MS5611 (Baro) failed to initialize."));
+    }
+  }
+
+  // Final check - if still in STARTUP, move to CALIBRATION or PAD_IDLE
+  if (currentFlightState == STARTUP && systemHealthy) {
+    Serial.println(F("Fresh start, system healthy, proceeding to PAD_IDLE state."));
+    currentFlightState = PAD_IDLE;
+    stateEntryTime = millis();
+  } else if (currentFlightState == ERROR && systemHealthy) {
+    // If we recovered an ERROR state but all systems are now healthy, automatically clear it
+    Serial.println(F("ERROR state recovered but all systems are healthy. Automatically clearing error and transitioning to PAD_IDLE."));
+    currentFlightState = PAD_IDLE;
+    stateEntryTime = millis();
+    // Save the cleared state to EEPROM
+    saveStateToEEPROM();
   } else if (!systemHealthy && currentFlightState != ERROR) {
-      // If system is not healthy and not already in ERROR state (e.g. recovered into a flight state but sensors now fail during setup)
-      Serial.println(F("System became unhealthy during setup, transitioning to ERROR state."));
-      currentFlightState = ERROR;
-      stateEntryTime = millis();
+    // If system is not healthy and not already in ERROR state (e.g. recovered into a flight state but sensors now fail during setup)
+    Serial.println(F("System became unhealthy during setup, transitioning to ERROR state."));
+    currentFlightState = ERROR;
+    stateEntryTime = millis();
   }
   // If currentFlightState is already a later flight state (e.g., DROGUE_DESCENT) and system is healthy,
   // it will remain in that state. If system becomes unhealthy during its specific setup/checks, it transitions to ERROR.

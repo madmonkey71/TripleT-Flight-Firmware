@@ -32,6 +32,7 @@ float pressure = 0;
 float temperature = 0;
 float baro_altitude_offset = 0.0f;
 bool baro_calibration_done = false;
+bool ms5611_initialized_ok = false;
 
 // Declare the global variable from main
 extern bool baroCalibrated;
@@ -228,6 +229,7 @@ void ms5611_init() {
         Serial.println(ms5611Sensor.getAddress());
     } else {
         Serial.println(F("ERROR: MS5611 not found! Check connections."));
+        ms5611_initialized_ok = false;
         delay(INIT_ERROR_DELAY_MS);
         return;
     }
@@ -248,33 +250,27 @@ void ms5611_init() {
             Serial.print(pressure);
             Serial.print(F(" hPa, Temperature = "));
             Serial.print(temperature);
-            Serial.println(F("°C"));
+            Serial.println(F(" C"));
         } else {
             Serial.print(F("Read attempt #"));
             Serial.print(i+1);
             Serial.print(F(" failed with error: "));
             Serial.println(result);
         }
-        delay(INIT_STABILIZATION_DELAY_MS); // Small delay between readings
+        delay(INIT_STABILIZATION_DELAY_MS);
     }
     
-    if (validReading) {
-        Serial.println(F("MS5611 successfully initialized!"));
-        
-        // Check if pressure readings are in valid range
-        if (pressure < INIT_VALID_PRESSURE_MIN_HPA || pressure > INIT_VALID_PRESSURE_MAX_HPA) {
-            Serial.print(F("WARNING: Pressure readings outside expected range ("));
-            Serial.print(INIT_VALID_PRESSURE_MIN_HPA); Serial.print(F("-"));
-            Serial.print(INIT_VALID_PRESSURE_MAX_HPA); Serial.print(F(" hPa)"));
-            Serial.print(F("Current pressure: "));
-            Serial.print(pressure);
-            Serial.println(F(" hPa - check sensor calibration"));
-        } else {
-            Serial.println(F("Pressure readings in valid range."));
-        }
-    } else {
-        Serial.println(F("ERROR: Failed to get valid readings from MS5611"));
+    // Check if a valid reading was obtained and pressure is within a reasonable range
+    if (!validReading || pressure < INIT_VALID_PRESSURE_MIN_HPA || pressure > INIT_VALID_PRESSURE_MAX_HPA) {
+        Serial.print(F("ERROR: MS5611 stabilization failed. Last pressure: "));
+        Serial.print(pressure);
+        Serial.println(F(" hPa. Check sensor."));
+        ms5611_initialized_ok = false;
+        return;
     }
+    
+    Serial.println(F("MS5611 stabilization complete."));
+    ms5611_initialized_ok = true;
 }
 
 void ms5611_print() {

@@ -195,6 +195,26 @@ Fixed several critical compilation errors that were preventing the firmware from
 
 These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, properly manage error state recovery and clearing, and most critically, the data logging/CSV output functionality now works properly.
 
+### KX134 Sensor & 3D Visualization Fixes (Latest)
+Fixed critical issues with KX134 high-G accelerometer data logging and 3D visualization:
+
+1. **KX134 Data Logging Issue**: 
+   - **Root Cause**: While `kx134_init()` was called during setup, `kx134_read()` was never called in the main loop, so KX134 data was never actually read or logged
+   - **Solution**: Added `kx134_read()` call in the main loop when `kx134_initialized_ok` is true
+   - **Flag Management**: Fixed `kx134_initialized_ok` flag to properly reflect initialization status based on `kx134_init()` return value
+
+2. **3D Visualization Not Working**: 
+   - **Root Cause**: Kalman filter was enabled by default but never initialized, so orientation data (Euler angles) remained at zero values
+   - **Solution**: Added Kalman filter initialization in `setup()` function when `useKalmanFilter` is true and ICM-20948 is ready
+   - **Impact**: 3D visualization now properly displays rocket orientation in real-time
+
+3. **Sensor Fusion Integration**: 
+   - **KX134 Availability**: High-G accelerometer data is now properly logged and available for sensor fusion during high-G phases
+   - **Orientation Data**: Both Kalman filter quaternions and Euler angles are now properly generated and logged
+   - **Web Interface**: 3D visualizer now receives valid orientation data for real-time rocket attitude display
+
+These fixes ensure that all sensor data is properly read, logged, and visualized, providing complete situational awareness for flight operations.
+
 ## Development Roadmap (Priority-Based)
 
 ### 🔴 Phase 1: Critical Flight Operations (1-2 months)

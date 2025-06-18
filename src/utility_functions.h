@@ -107,8 +107,9 @@ void printDebugDivider();
 // Function for saving flight state to EEPROM (defined elsewhere, e.g. main .cpp)
 void saveStateToEEPROM();
 
-// Attitude utility function
+// Attitude utility functions
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw);
+void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, float& q1, float& q2, float& q3);
 
 // Forward declaration for FlightState enum.
 // This is needed because the function signature uses FlightState.

@@ -458,6 +458,22 @@ void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& rol
     yaw = atan2(siny_cosp, cosy_cosp);
 }
 
+void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, float& q1, float& q2, float& q3) {
+    // Compute half angles
+    float cy = cos(yaw * 0.5f);
+    float sy = sin(yaw * 0.5f);
+    float cp = cos(pitch * 0.5f);
+    float sp = sin(pitch * 0.5f);
+    float cr = cos(roll * 0.5f);
+    float sr = sin(roll * 0.5f);
+
+    // Compute quaternion components (Hamilton convention: w, x, y, z)
+    q0 = cr * cp * cy + sr * sp * sy; // w component
+    q1 = sr * cp * cy - cr * sp * sy; // x component  
+    q2 = cr * sp * cy + sr * cp * sy; // y component
+    q3 = cr * cp * sy - sr * sp * cy; // z component
+}
+
 // ... other functions ...
 
 bool isSensorSuiteHealthy(FlightState currentState) {

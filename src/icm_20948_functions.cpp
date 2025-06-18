@@ -428,13 +428,13 @@ void ICM_20948_read() {
     // --- End Motion Detection & Dynamic Beta ---
 
     // --- Madgwick AHRS MARG Update ---
-    // The Madgwick filter update is temporarily disabled for testing.
-    // This will result in no orientation updates.
+    // The Madgwick filter update is DISABLED as we are using Kalman filter instead.
+    // This will result in no orientation updates from Madgwick.
     // MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
     //                        ax, ay, az,
     //                        mx_cal, my_cal, mz_cal,
     //                        deltat, beta);
-    // Note: icm_q0, icm_q1, icm_q2, icm_q3 are updated globally by MadgwickAHRSupdateMARG
+    // Note: Quaternions should come from Kalman filter instead
 
     // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)
     // For now, let's keep the existing gyro bias update logic based on accelerometer feedback

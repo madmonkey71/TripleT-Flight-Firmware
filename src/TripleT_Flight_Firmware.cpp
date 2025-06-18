@@ -317,17 +317,23 @@ void WriteLogData(bool forceLog) {
   memcpy(logEntry.icm_mag, icm_mag, sizeof(icm_mag));          // Copy ICM mag array
   logEntry.icm_temp = icm_temp;
 
-  // Populate AHRS Data
-  logEntry.q0 = icm_q0;
-  logEntry.q1 = icm_q1;
-  logEntry.q2 = icm_q2;
-  logEntry.q3 = icm_q3;
-
   if (useKalmanFilter) {
+      // Use Kalman filter Euler angles
       logEntry.euler_roll = kalmanRoll;   // Assuming kalmanRoll, Pitch, Yaw are in radians
       logEntry.euler_pitch = kalmanPitch;
       logEntry.euler_yaw = kalmanYaw;
+      
+      // Convert Kalman Euler angles back to quaternions for logging and visualization
+      // This ensures quaternion fields are populated even when using Kalman filter
+      convertEulerToQuaternion(kalmanRoll, kalmanPitch, kalmanYaw,
+                               logEntry.q0, logEntry.q1, logEntry.q2, logEntry.q3);
   } else { // Default to Madgwick if Kalman is not active
+      // Use quaternions from Madgwick filter (if available)
+      logEntry.q0 = icm_q0;
+      logEntry.q1 = icm_q1;
+      logEntry.q2 = icm_q2;
+      logEntry.q3 = icm_q3;
+      
       convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
                                logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
   }

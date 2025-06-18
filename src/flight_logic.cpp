@@ -196,6 +196,35 @@ void ProcessFlightState() {
         case BOOST:
             detectBoostEnd();
             if (boostEndTime > 0) {
+                // Attitude Hold: Capture current orientation and set as target for COAST phase
+                float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
+                if (useKalmanFilter && icm20948_ready) {
+                    targetRollRad = kalmanRoll;
+                    targetPitchRad = kalmanPitch;
+                    targetYawRad = kalmanYaw;
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD: Using Kalman orientation for target at BOOST->COAST."));
+                    }
+                } else if (icm20948_ready) { // Default to Madgwick/ICM if Kalman not active but ICM is ready
+                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad);
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD: Using Madgwick/ICM quaternion conversion for target at BOOST->COAST."));
+                    }
+                } else {
+                    // Fallback: No reliable orientation data, set targets to zero.
+                    targetRollRad = 0.0f;
+                    targetPitchRad = 0.0f;
+                    targetYawRad = 0.0f;
+                    if (enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD_WARN: No valid orientation source at BOOST->COAST. Setting target to 0,0,0."));
+                    }
+                }
+                guidance_set_target_orientation_euler(targetRollRad, targetPitchRad, targetYawRad);
+                if (enableSystemDebug) {
+                    Serial.print(F("ATT_HOLD: Set target orientation R:")); Serial.print(targetRollRad * (180.0f/PI), 2);
+                    Serial.print(F(" P:")); Serial.print(targetPitchRad * (180.0f/PI), 2);
+                    Serial.print(F(" Y:")); Serial.println(targetYawRad * (180.0f/PI), 2);
+                }
                 currentFlightState = COAST;
             }
             if (ms5611Sensor.isConnected() && baroCalibrated && currentAglAlt > maxAltitudeReached) {

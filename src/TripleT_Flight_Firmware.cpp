@@ -1123,6 +1123,18 @@ void setup() {
       Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
   }
   
+  // Initialize orientation filters based on configuration
+  if (useKalmanFilter && icm20948_ready) {
+    Serial.println(F("Initializing Kalman filter..."));
+    float initial_roll = 0.0f;
+    float initial_pitch = 0.0f;
+    float initial_yaw = 0.0f;
+    kalman_init(initial_roll, initial_pitch, initial_yaw);
+    Serial.println(F("Kalman filter initialized."));
+  } else if (useMadgwickFilter) {
+    Serial.println(F("Using Madgwick filter (default, no explicit initialization needed)."));
+  }
+  
   ms5611_init();
   Serial.println(F("MS5611 initialized"));
   

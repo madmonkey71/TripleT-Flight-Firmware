@@ -824,8 +824,18 @@ void processCommand(String command) {
         Serial.println(F("Clearing error state and resetting to normal operation..."));
         if (currentFlightState == ERROR) {
             // Check if systems are healthy before clearing error
-            // TODO: Implement proper health check
-            // For now, assume system is healthy if we can execute commands
+            Serial.println(F("--- Pre-Clear Health Check ---"));
+            bool healthyForPadIdle = isSensorSuiteHealthy(PAD_IDLE, true);
+            Serial.print(F("Health check result for PAD_IDLE: "));
+            Serial.println(healthyForPadIdle ? F("PASS") : F("FAIL"));
+            
+            Serial.println(F("--- Sensor Status Summary ---"));
+            Serial.print(F("ms5611_initialized_ok: ")); Serial.println(ms5611_initialized_ok);
+            Serial.print(F("icm20948_ready: ")); Serial.println(icm20948_ready);
+            Serial.print(F("kx134_initialized_ok: ")); Serial.println(kx134_initialized_ok);
+            Serial.print(F("baroCalibrated: ")); Serial.println(baroCalibrated);
+            Serial.print(F("GPS fix type: ")); Serial.println(myGNSS.getFixType());
+            Serial.println(F("------------------------------"));
             
             currentFlightState = PAD_IDLE;
             stateEntryTime = millis();
@@ -836,6 +846,7 @@ void processCommand(String command) {
             
             Serial.println(F("Error state cleared. System reset to PAD_IDLE."));
             Serial.println(F("Note: Please verify all systems are functioning correctly."));
+            Serial.println(F("Enable system debug with 'debug_system on' to monitor health checks."));
             
             // Save the cleared state to EEPROM
             saveStateToEEPROM();

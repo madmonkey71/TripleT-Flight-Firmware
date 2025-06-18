@@ -97,7 +97,28 @@ void ProcessFlightState() {
                 saveStateToEEPROM();
                 setFlightStateLED(currentFlightState);
                 return;
+            } else {
+                // Add periodic health status when things are OK
+                static unsigned long lastHealthOkTime = 0;
+                if (millis() - lastHealthOkTime > 5000) { // Every 5 seconds
+                    lastHealthOkTime = millis();
+                    if (enableSystemDebug) {
+                        Serial.print(F("Health check OK for state: "));
+                        Serial.println(getStateName(currentFlightState));
+                    }
+                }
             }
+        }
+    } else if (currentFlightState == ERROR && enableSystemDebug) {
+        // Add periodic debugging for ERROR state
+        static unsigned long lastErrorDebugTime = 0;
+        if (millis() - lastErrorDebugTime > 2000) { // Every 2 seconds
+            lastErrorDebugTime = millis();
+            Serial.println(F("--- Currently in ERROR state ---"));
+            Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
+            Serial.println(F("Or check sensor health with detailed report:"));
+            isSensorSuiteHealthy(PAD_IDLE, true); // Show what PAD_IDLE health check would find
+            Serial.println(F("--------------------------------"));
         }
     }
 

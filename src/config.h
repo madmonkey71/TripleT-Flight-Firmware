@@ -119,11 +119,11 @@
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 
 // --- EEPROM Configuration ---
-#define EEPROM_STATE_ADDR 0           // EEPROM address for flight state
-#define EEPROM_ALTITUDE_ADDR 4        // EEPROM address for last altitude // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_TIMESTAMP_ADDR 8       // EEPROM address for timestamp // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
+#define EEPROM_STATE_ADDR 0                // EEPROM address for flight state
+#define EEPROM_ALTITUDE_ADDR 4             // EEPROM address for last altitude // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_TIMESTAMP_ADDR 8            // EEPROM address for timestamp // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_SIGNATURE_ADDR 12           // EEPROM address for signature // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
+#define EEPROM_SIGNATURE_VALUE 0xDEADBEEF  // Signature to validate EEPROM data
 
 // --- Madgwick Filter Configuration ---
 #define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)

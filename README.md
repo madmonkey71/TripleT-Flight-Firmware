@@ -208,7 +208,14 @@ Fixed critical issues with KX134 high-G accelerometer data logging and 3D visual
    - **Solution**: Added Kalman filter initialization in `setup()` function when `useKalmanFilter` is true and ICM-20948 is ready
    - **Impact**: 3D visualization now properly displays rocket orientation in real-time
 
-3. **Sensor Fusion Integration**: 
+3. **CRITICAL FIX: 3D Visualization Still Not Working (Follow-up)**
+   - **Root Cause**: A follow-up investigation revealed that the `icm20948_ready` flag, which the Kalman filter depends on, was never set to `true`. Additionally, the `dt` (delta-time) calculation was misplaced, preventing the filter from updating.
+   - **Solution**:
+     - Set `icm20948_ready = true;` immediately after the ICM-20948 sensor is initialized.
+     - Moved the `dt` calculation to the correct position within the main loop, right before the `kalman_predict` call.
+   - **Impact**: The Kalman filter is now correctly initialized **and** updated every cycle, providing accurate, real-time orientation data and fully enabling the 3D visualization.
+
+4. **Sensor Fusion Integration**: 
    - **KX134 Availability**: High-G accelerometer data is now properly logged and available for sensor fusion during high-G phases
    - **Orientation Data**: Both Kalman filter quaternions and Euler angles are now properly generated and logged
    - **Web Interface**: 3D visualizer now receives valid orientation data for real-time rocket attitude display

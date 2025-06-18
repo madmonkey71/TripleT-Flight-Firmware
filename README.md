@@ -233,6 +233,14 @@ Fixed critical issues with KX134 high-G accelerometer data logging and 3D visual
      - Updated the health check in `setup()` to use the new `ms5611_initialized_ok` flag instead of the erroneous `baro.begin()` call.
    - **Impact**: The firmware can now correctly assess sensor health upon booting into an `ERROR` state. If all systems are nominal, it will automatically transition to `PAD_IDLE`, allowing the system to recover from transient errors without user intervention.
 
+7. **Flight State Logic Fix**:
+   - **Root Cause**: The flight state was being immediately set back to `ERROR` after being cleared due to an aggressive, unconditional health check at the start of the main processing loop. The check didn't allow time for a manual `clear_errors` command to take effect before re-evaluating the system's health.
+   - **Solution**:
+     - The health check within `ProcessFlightState()` is now deferred by one second, preventing it from immediately overriding a manually cleared state.
+     - The health check logic in `isSensorSuiteHealthy()` was relaxed for the `PAD_IDLE` state, requiring only the essential barometer to be initialized. This allows for easier debugging of other sensors without being locked out.
+     - Added a `verbose` flag to the health check function to provide detailed reports on which sensor is failing, improving diagnostics.
+   - **Impact**: The flight controller is now more resilient and easier to debug. It no longer gets stuck in an `ERROR` state after a manual clear and provides more precise feedback when a sensor issue is detected.
+
 These fixes ensure that all sensor data is properly read, logged, and visualized, providing complete situational awareness for flight operations.
 
 ## Development Roadmap (Priority-Based)

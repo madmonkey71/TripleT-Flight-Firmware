@@ -578,6 +578,14 @@ void icm_20948_get_accel(float* accel) {
   memcpy(accel, icm_accel, sizeof(float) * 3);
 }
 
+bool icm_20948_get_mag(float* mag) {
+  if (mag != nullptr) {
+    memcpy(mag, icm_mag, sizeof(float) * 3);
+    return true;
+  }
+  return false;
+}
+
 // Function to get calibrated gyroscope data (raw - bias)
 void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
   out_gyro[0] = icm_gyro[0] - gyroBias[0];

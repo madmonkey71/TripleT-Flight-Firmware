@@ -1242,15 +1242,9 @@ void setup() {
 
 void loop() {
   // --- Timekeeping and Sensor Update Flags ---
-  static unsigned long lastDisplayTime = 0;
-  static unsigned long lastDetailedTime = 0; // For ICM_20948_print
   static unsigned long lastGPSReadTime = 0;
   static unsigned long lastIMUReadTime = 0;   // For ICM20948 IMU
   static unsigned long lastBaroReadTime = 0;
-  static unsigned long lastAccelReadTime = 0; // For KX134 Accelerometer
-  static unsigned long lastGPSCheckTime = 0;
-  static unsigned long lastStorageCheckTime = 0;
-  static unsigned long lastGuidanceUpdateTime = 0;
   static unsigned long lastKalmanUpdateTime = 0; // For Kalman filter dt calculation
 
   bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
@@ -1337,4 +1331,13 @@ void loop() {
         }
     }
   }
+
+  // TODO: Add other periodic tasks here as needed
+  // - Flight state processing
+  // - Actuator updates 
+  // - Data logging
+  // - Status monitoring
+  
+  // Note: The rest of the loop function implementation should be added here
+  // based on the flight state machine and other system requirements
 }

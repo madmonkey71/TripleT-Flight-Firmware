@@ -1,7 +1,7 @@
 // TripleT Flight Firmware
-// Current Version: v0.41
+// Current Version: v0.48
 // Current State: Alpha
-// Last Updated: 25/05/2025
+// Last Updated: 18/06/2025
 // **Notes**
 // This code started out life as a remake of the Blip Test Code from Joe Barnard @ BPS.Space
 // Nothing remains of the original code but that's where the concept originated.
@@ -31,7 +31,7 @@
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.41
+#define TRIPLET_FLIGHT_VERSION 0.48
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41

@@ -189,6 +189,10 @@ Fixed several critical compilation errors that were preventing the firmware from
    - **Filter Management**: Ensured Madgwick filter remains disabled (as requested) while Kalman filter provides proper orientation data
    - **Data Flow**: Now when `useKalmanFilter=true`, Euler angles come from Kalman filter and quaternions are calculated from those angles
 
+9. **Compilation Warning Fixes**: Fixed remaining compiler warnings:
+   - **Unused Variable**: Removed unused `systemHealthy` variable in `clear_errors` command implementation
+   - **EEPROM Signature Overflow**: Changed `EEPROM_SIGNATURE_VALUE` from `0xDEADBEEF` (32-bit) to `0xBEEF` (16-bit) to match the `uint16_t` signature field in `FlightStateData` structure
+
 These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, properly manage error state recovery and clearing, and most critically, the data logging/CSV output functionality now works properly.
 
 ## Development Roadmap (Priority-Based)

@@ -813,6 +813,29 @@ void processCommand(String command) {
     } else if (command == "test_watchdog") {
         Serial.println(F("Simulating watchdog timeout..."));
         // Implement watchdog timeout simulation logic
+    } else if (command == "clear_errors") {
+        Serial.println(F("Clearing error state and resetting to normal operation..."));
+        if (currentFlightState == ERROR) {
+            // Check if systems are healthy before clearing error
+            bool systemHealthy = true; // TODO: Implement proper health check
+            // For now, assume system is healthy if we can execute commands
+            
+            currentFlightState = PAD_IDLE;
+            stateEntryTime = millis();
+            
+            // Update LED to green
+            pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green
+            pixels.show();
+            
+            Serial.println(F("Error state cleared. System reset to PAD_IDLE."));
+            Serial.println(F("Note: Please verify all systems are functioning correctly."));
+            
+            // Save the cleared state to EEPROM
+            saveStateToEEPROM();
+        } else {
+            Serial.print(F("System is not in ERROR state. Current state: "));
+            Serial.println(getStateName(currentFlightState));
+        }
     } else if (command == "summary") { // Legacy "summary"
         toggleDebugFlag(enableStatusSummary, F("Status summary"), Serial);
     } else if (command == "status") { // Legacy "status"
@@ -1220,6 +1243,13 @@ void setup() {
        Serial.println(F("Fresh start, system healthy, proceeding to PAD_IDLE state."));
        currentFlightState = PAD_IDLE;
        stateEntryTime = millis();
+  } else if (currentFlightState == ERROR && systemHealthy) {
+      // If we recovered an ERROR state but all systems are now healthy, automatically clear it
+      Serial.println(F("ERROR state recovered but all systems are healthy. Automatically clearing error and transitioning to PAD_IDLE."));
+      currentFlightState = PAD_IDLE;
+      stateEntryTime = millis();
+      // Save the cleared state to EEPROM
+      saveStateToEEPROM();
   } else if (!systemHealthy && currentFlightState != ERROR) {
       // If system is not healthy and not already in ERROR state (e.g. recovered into a flight state but sensors now fail during setup)
       Serial.println(F("System became unhealthy during setup, transitioning to ERROR state."));

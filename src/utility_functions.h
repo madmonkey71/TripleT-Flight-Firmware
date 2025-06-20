@@ -1,97 +1,46 @@
 #ifndef UTILITY_FUNCTIONS_H
 #define UTILITY_FUNCTIONS_H
 
-#include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <SdFat.h>
-#include <SerialFlash.h>
-#include <Adafruit_NeoPixel.h>
-#include <SparkFun_KX13X.h>
-#include <MS5611.h>
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+#include <Arduino.h> // For Serial, basic types, math functions (indirectly)
+#include <Wire.h>    // For scan_i2c
+#include <Adafruit_NeoPixel.h> // For initNeoPixel parameter type
 
 // Include LogData definition before it's used in function declarations
-#include "data_structures.h"
+#include "data_structures.h" // For LogData, FlightState (if not forward declared)
 
 // SD Card Configuration is now centralized in config.h
-// Ensure config.h is included if these definitions are needed, typically via TripleT_Flight_Firmware.cpp including it.
-
-// Serial Flash Configuration
+// Serial Flash Configuration - Kept if any low-level utilities might use it, otherwise can be removed if specific to a module.
 #ifndef FLASH_CS_PIN
 #define FLASH_CS_PIN 6  // CS pin for Serial Flash
 #endif
 
-// NeoPixel Configuration
+// NeoPixel Configuration - Kept if initNeoPixel or other utilities use these defines.
 #define NEOPIXEL_PIN 2  // Pin for NeoPixel
 #define NEOPIXEL_COUNT 2  // Number of NeoPixels
 
-// External sensor objects - These should be included from their respective module headers
-// extern SparkFun_KX134 kx134Accel;
-// extern MS5611 ms5611Sensor;
-
-// Add forward declaration for LittleFS_Program 
-class LittleFS_Program;
-
-// External variables
-extern SdFat SD;
-extern Adafruit_NeoPixel pixels;
-extern bool sdCardAvailable;
-extern bool sdCardPresent;
-extern bool sdCardMounted;
-extern bool loggingEnabled;
-extern uint64_t availableSpace;
-extern bool flashAvailable;
-extern String FileDateString;
-
-// Kalman Filter Global Variables
-extern bool useMadgwickFilter;
-extern bool useKalmanFilter;
-extern float kalmanRoll;
-extern float kalmanPitch;
-extern float kalmanYaw;
-extern bool usingKX134ForKalman; // Flag to indicate if KX134 is being used for Kalman accel input
-
-// External logging variables
-extern unsigned long currentTime;
-extern bool baroCalibrated;
-extern const char* BOARD_NAME;
-extern bool enableSystemDebug; // Flag for system debug messages
-
-// External sensor data - These should be included from their respective module headers
-// extern SFE_UBLOX_GNSS myGNSS;
-// extern float pressure;
-// extern float temperature;
-// extern float kx134_accel[3];
-// extern float icm_accel[3];
-// extern float icm_gyro[3];
-// extern float icm_mag[3];
-// extern float icm_temp;
-// extern bool icm_data_available;
-// extern float icm_q0, icm_q1, icm_q2, icm_q3; // These are not in icm_20948_functions.h as extern
-// extern uint16_t icm_data_header;
-
-// External board configuration
-// extern const char* BOARD_NAME; // This is defined in main .cpp and also extern here, it's fine.
+// External variable declarations REMOVED.
+// Forward declarations for sensor object types are no longer needed here as no function signature uses them directly.
+// Forward declaration for LittleFS_Program REMOVED (assuming unused).
 
 // Function declarations
-bool initSDCard();
-void initNeoPixel();
-void scan_i2c();
-bool createNewLogFile();
-void WriteLogData(bool forceLog = false);
-void formatNumber(float input, byte columns, byte places);
-void printStatusSummary();
-void printHelpMessage();
-void printStorageStatistics();
-void checkStorageSpace();
-void handleCommand(const String& command);
-void listRootDirectory(); // Function to list files in the root directory
-float get_accel_magnitude(); // Calculate acceleration magnitude from available sensors
-String logDataToString(const LogData& data); // Convert LogData struct to CSV string
+// bool initSDCard(); // Moved to command_processor.h as extern, defined in main
+void initNeoPixel(Adafruit_NeoPixel& pixels_obj); // Updated signature
+void scan_i2c();     // Definition in utility_functions.cpp
+// bool createNewLogFile(); // Moved to command_processor.h as extern, defined in main
+// void WriteLogData(bool forceLog = false); // Defined in main
+// void formatNumber(float input, byte columns, byte places); // Removed
+// void printStatusSummary(); // Defined in main
+// void printHelpMessage(); // Defined in command_processor.cpp
+// void printStorageStatistics(); // Defined in command_processor.cpp
+// void checkStorageSpace(); // Moved to command_processor.h as extern, defined in main
+// void handleCommand(const String& command); // Superseded by processCommand
 
-// Helper function to map a float value from one range to another
-float map_float(float x, float in_min, float in_max, float out_min, float out_max);
+// void listRootDirectory(); // REMOVED as unused
+float get_accel_magnitude(bool kx134_ok, const float* kx_accel, bool icm_ready, const float* icm_accel_data, bool system_debug_enabled); // Restored
+String logDataToString(const LogData& data); // Definition in utility_functions.cpp
+
+// Helper function to map a float value from one range to another - REMOVED as unused
+// float map_float(float x, float in_min, float in_max, float out_min, float out_max);
 
 // Debug formatting functions
 void printDebugHeader(const char* title);
@@ -114,9 +63,8 @@ void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, flo
 // Forward declaration for FlightState enum.
 // This is needed because the function signature uses FlightState.
 // The actual definition of FlightState is expected to be in a place accessible
-// by utility_functions.cpp (e.g. by including TripleT_Flight_Firmware.cpp or a shared header).
-// Consider moving FlightState enum to data_structures.h or its own header for better organization.
-enum FlightState : uint8_t; // Assuming FlightState is compatible with uint8_t as used in FlightStateData
+// by utility_functions.cpp (e.g. by including data_structures.h).
+// enum FlightState : uint8_t; // REMOVED as FlightState should be defined in data_structures.h
 
 // Sensor and system health check
 bool isSensorSuiteHealthy(FlightState currentState, bool verbose = false);

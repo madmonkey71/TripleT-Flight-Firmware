@@ -15,8 +15,8 @@
 #endif
 
 
-// Define the pixels variable
-Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+// Removed global Adafruit_NeoPixel pixels object definition from here.
+// It should be defined once in TripleT_Flight_Firmware.cpp as g_pixels.
 
 void scan_i2c() {
   Serial.println(F("\nI2C Scanner"));
@@ -60,80 +60,9 @@ void scan_i2c() {
     Serial.println(F("I2C scan complete\n"));
 }
 
-// Initialize the SD card with detailed error handling and status reporting
-bool initSDCard() {
-  Serial.println(F("--- SD Card Initialization ---"));
-
-  // Reset SD card flags initially
-  sdCardPresent = false;
-  sdCardMounted = false;
-  sdCardAvailable = false;
-
-  // Step 1: Initialize the SD card library using SDIO
-  // Note: Teensy 4.1 built-in SD card slot uses SDIO, no card detect pin needed
-  Serial.println(F("Initializing SD library (SD.begin) with SDIO..."));
-  if (!SD.begin(SD_CONFIG)) {
-    Serial.println(F("ERROR: SD.begin() failed."));
-    Serial.println(F(" -> Check card formatting (FAT16/FAT32), card insertion, or try a different SD card."));
-    sdCardPresent = false; // If SD.begin fails, likely no card or bad connection
-    sdCardMounted = false; // Explicitly set
-    return false; // Critical error, cannot proceed
-  }
-  Serial.println(F("SUCCESS: SD.begin() completed with SDIO."));
-  sdCardMounted = true; // Card is mounted
-  sdCardPresent = true; // If SD.begin() succeeded, card is present
-
-  // Step 2: Check FAT type
-  Serial.println(F("Checking filesystem type (SD.fatType())..."));
-  uint8_t fatType = SD.fatType();
-  if (fatType == 0) {
-    Serial.println(F("ERROR: SD.fatType() returned 0. Filesystem is not FAT16 or FAT32 or card not usable."));
-    Serial.println(F(" -> Reformat the card with a supported FAT filesystem."));
-    sdCardAvailable = false; // Card is mounted but not usable
-    return false; 
-  } else {
-    Serial.print(F("SUCCESS: Filesystem type is FAT"));
-    Serial.println(fatType == FAT_TYPE_EXFAT ? F("EX (EXFAT)") : String(fatType));
-    // Note: SdFat typically uses defines like FAT_TYPE_FAT16, FAT_TYPE_FAT32, FAT_TYPE_EXFAT
-    // For simplicity, just printing the number or "EXFAT" if detected.
-  }
-
-  // Step 3: Check card capacity and free space
-  Serial.println(F("Checking card capacity and free space..."));
-  
-  // Card capacity
-  uint32_t sectorCount = SD.card()->sectorCount();
-  if (sectorCount == 0) {
-    Serial.println(F("ERROR: Failed to get card sector count (SD.card()->sectorCount() returned 0)."));
-    Serial.println(F(" -> Card may be corrupted or unreadable."));
-    sdCardAvailable = false; // Card is mounted but details are not readable
-    return false;
-  }
-  uint64_t cardCapacity = (uint64_t)sectorCount * 512; // SdFat uses 512 byte sectors
-  Serial.print(F("  Card Capacity: "));
-  Serial.print(cardCapacity / (1024ULL * 1024ULL));
-  Serial.println(F(" MB"));
-
-  // Free space
-  uint32_t freeClusterCount = SD.vol()->freeClusterCount();
-  uint32_t bytesPerCluster = SD.vol()->bytesPerCluster();
-  if (bytesPerCluster == 0) { // Check if bytesPerCluster is valid
-      Serial.println(F("ERROR: Failed to get valid cluster size (bytesPerCluster is 0)."));
-      Serial.println(F(" -> Filesystem metadata might be corrupted."));
-      sdCardAvailable = false;
-      return false;
-  }
-  availableSpace = (uint64_t)freeClusterCount * bytesPerCluster;
-  Serial.print(F("  Available Space: "));
-  Serial.print(availableSpace / (1024ULL * 1024ULL));
-  Serial.println(F(" MB"));
-
-  // All checks passed
-  Serial.println(F("SUCCESS: SD card is initialized, mounted, and available."));
-  sdCardAvailable = true;
-  Serial.println(F("--- SD Card Initialization Complete ---"));
-  return true;
-}
+// Old initSDCard() definition REMOVED.
+// The refactored version bool initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out)
+// is (or should be) in TripleT_Flight_Firmware.cpp.
 
 // Function to list all files in the root directory
 void listRootDirectory() {
@@ -198,11 +127,11 @@ void listRootDirectory() {
   Serial.println();
 }
 
-void initNeoPixel() {
-  pixels.begin();
-  pixels.setBrightness(50);  // Set brightness to 50%
-  pixels.setPixelColor(0, pixels.Color(0, 0, 0));  // Turn off the LED
-  pixels.show();
+void initNeoPixel(Adafruit_NeoPixel& pixels_obj) {
+  pixels_obj.begin();
+  pixels_obj.setBrightness(50);  // Set brightness to 50%
+  pixels_obj.setPixelColor(0, pixels_obj.Color(0, 0, 0));  // Turn off the LED
+  pixels_obj.show();
 }
 
 // Debug formatting functions
@@ -281,45 +210,39 @@ void printDebugDivider() {
 }
 
 // Helper function to get acceleration magnitude regardless of which accelerometer is available
-float get_accel_magnitude() {
-  // Need access to the status flags and data arrays
-  extern bool kx134_initialized_ok; // Assume defined in main .cpp
-  extern float kx134_accel[3];      // Assume defined in kx134_functions.cpp
-  extern bool icm20948_ready;       // Assume defined in main .cpp or icm_functions? Needs checking.
-  extern float icm_accel[3];        // Assume defined in icm_20948_functions.cpp
+float get_accel_magnitude(bool kx134_ok, const float* kx_accel,
+                          bool icm_ready, const float* icm_accel_data,
+                          bool system_debug_enabled) {
 
   // Prefer KX134 if it initialized successfully
-  // Note: The original code had complex checks for data readiness/timeouts.
-  // Here we simplify based on the initialization flag. More robust checking
-  // might be needed depending on how sensor reads are handled elsewhere.
-  if (kx134_initialized_ok) {
+  if (kx134_ok) {
     // Check for non-zero values to ensure data is likely valid (simple check)
-    if (kx134_accel[0] != 0.0 || kx134_accel[1] != 0.0 || kx134_accel[2] != 0.0) {
-      return sqrt(kx134_accel[0] * kx134_accel[0] +
-                  kx134_accel[1] * kx134_accel[1] +
-                  kx134_accel[2] * kx134_accel[2]);
+    if (kx_accel && (kx_accel[0] != 0.0 || kx_accel[1] != 0.0 || kx_accel[2] != 0.0)) {
+      return sqrt(kx_accel[0] * kx_accel[0] +
+                  kx_accel[1] * kx_accel[1] +
+                  kx_accel[2] * kx_accel[2]);
     } else {
-        if (enableSystemDebug) { // Only print if debug enabled
-             Serial.println(F("[ACC MAG] KX134 initialized but data is zero. Falling back."));
+        if (system_debug_enabled) {
+             Serial.println(F("[ACC MAG] KX134 OK but data is zero/null. Falling back."));
         }
     }
   }
 
-  // Fallback to ICM20948 if KX134 didn't init or data was zero
-  if (icm20948_ready) { 
+  // Fallback to ICM20948 if KX134 didn't init or data was zero/null
+  if (icm_ready) {
     // Check for non-zero values (simple check)
-    if (icm_accel[0] != 0.0 || icm_accel[1] != 0.0 || icm_accel[2] != 0.0) {
-        return sqrt(icm_accel[0] * icm_accel[0] +
-                    icm_accel[1] * icm_accel[1] +
-                    icm_accel[2] * icm_accel[2]);
+    if (icm_accel_data && (icm_accel_data[0] != 0.0 || icm_accel_data[1] != 0.0 || icm_accel_data[2] != 0.0)) {
+        return sqrt(icm_accel_data[0] * icm_accel_data[0] +
+                    icm_accel_data[1] * icm_accel_data[1] +
+                    icm_accel_data[2] * icm_accel_data[2]);
     } else {
-        if (enableSystemDebug) { // Only print if debug enabled
-             Serial.println(F("[ACC MAG] ICM20948 ready but data is zero."));
+        if (system_debug_enabled) {
+             Serial.println(F("[ACC MAG] ICM20948 ready but data is zero/null."));
         }
     }
   }
   
-  if (enableSystemDebug) { // Only print if debug enabled
+  if (system_debug_enabled) {
     Serial.println(F("[ACC MAG] No valid accel data available, returning 0.0"));
   }
   return 0.0; // No accelerometer available or ready or data is zero
@@ -430,14 +353,10 @@ String logDataToString(const LogData& data) {
     return String(buffer);
 }
 
-// Helper function to map a float value from one range to another
-float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
-  // Check for division by zero if in_min == in_max
-  if (in_min == in_max) {
-    return out_min; // Or handle as an error, like returning NaN or a specific error value
-  }
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
+// Helper function to map a float value from one range to another - REMOVED as unused.
+// float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
+// ... implementation ...
+// }
 
 void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float& roll, float& pitch, float& yaw) {
     // Roll (x-axis rotation)

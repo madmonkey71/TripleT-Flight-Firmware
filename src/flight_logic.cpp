@@ -406,42 +406,65 @@ void ProcessFlightState() {
                 }
             } // This simple fast beep is not the SOS pattern. Reverting to attempt the requested pattern.
 
-            // Attempting the 3 short beeps + pause pattern for ERROR state:
-            // Beep (2500 Hz) for 100ms -> Silence for 100ms -> Beep 100ms -> Silence 100ms -> Beep 100ms -> Silence 500ms -> Repeat
-            // Total cycle time: 100+100+100+100+100+500 = 1000ms
+            // Refined 3 short beeps + pause pattern for ERROR state:
+            // Beep (100ms) - Silence (100ms) - Beep (100ms) - Silence (100ms) - Beep (100ms) - Silence (1000ms)
+            // Total cycle: 100+100+100+100+100+1000 = 1500ms
             // States: 0 (Beep1), 1 (Silence1), 2 (Beep2), 3 (Silence2), 4 (Beep3), 5 (SilenceLong)
             static uint8_t errorBuzzerPhase = 0;
-            currentErrorTime = millis(); // Re-fetch current time for precision
+            // Removed `errorBeepCount` as it was part of a previous, more complex/buggy logic.
+            // `lastErrorBuzzerTime` is still static and used.
+            // `currentErrorTime` is local and updated each call.
 
-            if (errorBuzzerPhase == 0 && (currentErrorTime - lastErrorBuzzerTime >= 0)) { // Start Beep1
-                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 1;
-            } else if (errorBuzzerPhase == 1 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep1, Start Silence1
-                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 2;
-            } else if (errorBuzzerPhase == 2 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Silence1, Start Beep2
-                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 3;
-            } else if (errorBuzzerPhase == 3 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep2, Start Silence2
-                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 4;
-            } else if (errorBuzzerPhase == 4 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Silence2, Start Beep3
-                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 5;
-            } else if (errorBuzzerPhase == 5 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep3, Start SilenceLong
-                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                lastErrorBuzzerTime = currentErrorTime;
-                errorBuzzerPhase = 6;
-            } else if (errorBuzzerPhase == 6 && (currentErrorTime - lastErrorBuzzerTime >= 500)) { // End SilenceLong, Reset cycle
-                lastErrorBuzzerTime = currentErrorTime; // Reset time for next cycle start
-                errorBuzzerPhase = 0;
+            currentErrorTime = millis(); // Ensure currentErrorTime is up-to-date for this iteration
+
+            switch (errorBuzzerPhase) {
+                case 0: // Beep 1
+                    if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                    lastErrorBuzzerTime = currentErrorTime;
+                    errorBuzzerPhase = 1;
+                    break;
+                case 1: // Silence 1
+                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
+                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                        lastErrorBuzzerTime = currentErrorTime;
+                        errorBuzzerPhase = 2;
+                    }
+                    break;
+                case 2: // Beep 2
+                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
+                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                        lastErrorBuzzerTime = currentErrorTime;
+                        errorBuzzerPhase = 3;
+                    }
+                    break;
+                case 3: // Silence 2
+                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
+                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                        lastErrorBuzzerTime = currentErrorTime;
+                        errorBuzzerPhase = 4;
+                    }
+                    break;
+                case 4: // Beep 3
+                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
+                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                        lastErrorBuzzerTime = currentErrorTime;
+                        errorBuzzerPhase = 5;
+                    }
+                    break;
+                case 5: // Silence Long
+                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
+                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                        lastErrorBuzzerTime = currentErrorTime;
+                        errorBuzzerPhase = 6;
+                    }
+                    break;
+                case 6: // Wait for end of long silence
+                    if (currentErrorTime - lastErrorBuzzerTime >= 1000) {
+                        errorBuzzerPhase = 0; // Reset to start next cycle
+                        // lastErrorBuzzerTime will be updated when phase 0 starts the beep
+                    }
+                    break;
             }
-
 
             if (millis() - g_stateEntryTime > ERROR_RECOVERY_ATTEMPT_MS) {
                 if (isSensorSuiteHealthy(g_currentFlightState)) {

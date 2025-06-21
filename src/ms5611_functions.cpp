@@ -192,31 +192,31 @@ float ms5611_get_altitude(float seaLevelPressure) {
     return raw_altitude + baro_altitude_offset;
 }
 
-void ms5611_update_calibration() {
-    // Only update calibration if we have a good GPS fix (3D fix or better)
-    // and good DOP (less than 2.0 is considered good)
-    if (GPS_fixType >= MIN_GPS_FIX_TYPE_FOR_CALIBRATION && pDOP < MAX_PDOP_FOR_OFFSET_UPDATE) {  // pDOP is in 0.01 units
-        float gps_altitude = GPS_altitude / MM_TO_M_CONVERSION_FACTOR;  // Convert from mm to meters
-        float baro_altitude = ms5611_get_altitude() - baro_altitude_offset;  // Get raw baro altitude
-        
-        // Calculate new offset
-        float new_offset = gps_altitude - baro_altitude;
-        
-        // Apply some smoothing to the calibration (80% old value, 20% new value)
-        baro_altitude_offset = OFFSET_UPDATE_SMOOTHING_OLD_FACTOR * baro_altitude_offset + OFFSET_UPDATE_SMOOTHING_NEW_FACTOR * new_offset;
-        
-        // Print debug info if GPS debugging is enabled
-        if (enableGPSDebug) {
-            Serial.print(F("Baro Calibration: GPS="));
-            Serial.print(gps_altitude, 1);
-            Serial.print(F("m Baro="));
-            Serial.print(baro_altitude, 1);
-            Serial.print(F("m Offset="));
-            Serial.print(baro_altitude_offset, 1);
-            Serial.println(F("m"));
-        }
-    }
-}
+// void ms5611_update_calibration() { // REMOVED as unused
+//     // Only update calibration if we have a good GPS fix (3D fix or better)
+//     // and good DOP (less than 2.0 is considered good)
+//     if (GPS_fixType >= MIN_GPS_FIX_TYPE_FOR_CALIBRATION && pDOP < MAX_PDOP_FOR_OFFSET_UPDATE) {  // pDOP is in 0.01 units
+//         float gps_altitude = GPS_altitude / MM_TO_M_CONVERSION_FACTOR;  // Convert from mm to meters
+//         float baro_altitude = ms5611_get_altitude() - baro_altitude_offset;  // Get raw baro altitude
+//
+//         // Calculate new offset
+//         float new_offset = gps_altitude - baro_altitude;
+//
+//         // Apply some smoothing to the calibration (80% old value, 20% new value)
+//         baro_altitude_offset = OFFSET_UPDATE_SMOOTHING_OLD_FACTOR * baro_altitude_offset + OFFSET_UPDATE_SMOOTHING_NEW_FACTOR * new_offset;
+//
+//         // Print debug info if GPS debugging is enabled
+//         if (enableGPSDebug) {
+//             Serial.print(F("Baro Calibration: GPS="));
+//             Serial.print(gps_altitude, 1);
+//             Serial.print(F("m Baro="));
+//             Serial.print(baro_altitude, 1);
+//             Serial.print(F("m Offset="));
+//             Serial.print(baro_altitude_offset, 1);
+//             Serial.println(F("m"));
+//         }
+//     }
+// }
 
 void ms5611_init() {
     Serial.println(F("Initializing MS5611 barometer..."));
@@ -273,24 +273,24 @@ void ms5611_init() {
     ms5611_initialized_ok = true;
 }
 
-void ms5611_print() {
-    // Only print if sensor debug is enabled
-    if (!enableSensorDebug) return;
-    
-    // Convert pressure from hPa to Pa for altitude calculation
-    float pressure_Pa = pressure * HPA_TO_PA_CONVERSION_FACTOR; 
-    float std_pressure_Pa = STANDARD_SEA_LEVEL_PRESSURE * HPA_TO_PA_CONVERSION_FACTOR;
-    
-    float raw_altitude = HYPSOMETRIC_CONSTANT_A * (1.0 - pow(pressure_Pa / std_pressure_Pa, HYPSOMETRIC_EXPONENT));
-    
-    Serial.print("MS5611 Data");
-    Serial.print(" Baro (hPa): ");
-    Serial.print(pressure, 2);
-    Serial.print(" Temp: ");
-    Serial.print(temperature, 2);
-    Serial.print(" Raw Alt: ");
-    Serial.print(raw_altitude, 2);
-    Serial.print(" Cal'd Alt: ");
-    Serial.print(raw_altitude + baro_altitude_offset, 2);
-    Serial.print("m");
-}
+// void ms5611_print() { // REMOVED as unused
+//     // Only print if sensor debug is enabled
+//     if (!enableSensorDebug) return;
+//
+//     // Convert pressure from hPa to Pa for altitude calculation
+//     float pressure_Pa = pressure * HPA_TO_PA_CONVERSION_FACTOR;
+//     float std_pressure_Pa = STANDARD_SEA_LEVEL_PRESSURE * HPA_TO_PA_CONVERSION_FACTOR;
+//
+//     float raw_altitude = HYPSOMETRIC_CONSTANT_A * (1.0 - pow(pressure_Pa / std_pressure_Pa, HYPSOMETRIC_EXPONENT));
+//
+//     Serial.print("MS5611 Data");
+//     Serial.print(" Baro (hPa): ");
+//     Serial.print(pressure, 2);
+//     Serial.print(" Temp: ");
+//     Serial.print(temperature, 2);
+//     Serial.print(" Raw Alt: ");
+//     Serial.print(raw_altitude, 2);
+//     Serial.print(" Cal'd Alt: ");
+//     Serial.print(raw_altitude + baro_altitude_offset, 2);
+//     Serial.print("m");
+// }

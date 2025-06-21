@@ -66,19 +66,19 @@ void kx134_read(){
   }
 }
 
-void kx134_print(){
-  // Only print if sensor debug is enabled
-  if (!enableSensorDebug) return;
-  
-  Serial.print(F("  KX134: X:"));
-  Serial.print(kx134_accel[0], 2);
-  Serial.print(F("g Y:"));
-  Serial.print(kx134_accel[1], 2);
-  Serial.print(F("g Z:"));
-  Serial.print(kx134_accel[2], 2);
-  Serial.print(F("g"));
-}
+// void kx134_print(){ // REMOVED as unused
+//   // Only print if sensor debug is enabled
+//   if (!enableSensorDebug) return;
+//
+//   Serial.print(F("  KX134: X:"));
+//   Serial.print(kx134_accel[0], 2);
+//   Serial.print(F("g Y:"));
+//   Serial.print(kx134_accel[1], 2);
+//   Serial.print(F("g Z:"));
+//   Serial.print(kx134_accel[2], 2);
+//   Serial.print(F("g"));
+// }
 
 void kx134_get_accel(float* accel) {
   memcpy(accel, kx134_accel, sizeof(float) * 3);
-} 
+}

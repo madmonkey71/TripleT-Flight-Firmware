@@ -14,12 +14,12 @@ extern uint32_t lastUpdateTime; // Time of last sensor update
 void ICM_20948_init();
 void ICM_20948_read();
 void ICM_20948_print();
-void ICM_20948_calibrate();
-void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // New function
+// void ICM_20948_calibrate(); // REMOVED as unused
+// void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // REMOVED as unused
 void ICM_20948_calibrate_gyro_bias(int num_samples, int delay_ms); // Static gyro bias calibration
 bool icm_20948_get_mag(float* mag);
-void icm_20948_get_gyro(float* gyro);
-void icm_20948_get_accel(float* accel);
+// void icm_20948_get_gyro(float* gyro); // REMOVED as unused
+void icm_20948_get_accel(float* accel); // Restoring
 
 // Functions for magnetometer calibration persistence
 bool icm_20948_save_calibration();
@@ -42,7 +42,7 @@ extern bool isStationary;       // Defined in .cpp, used by main firmware
 extern float icm_q0, icm_q1, icm_q2, icm_q3;  // Quaternion components (w,x,y,z)
 extern float gyroBias[3];                   // Estimated gyroscope bias (rad/s)
 
-// Helper function to convert quaternion to Euler angles
-void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw);
+// Helper function to convert quaternion to Euler angles is in utility_functions.h
+// void convertQuaternionToEuler(float q0, float q1, float q2, float q3, float &roll, float &pitch, float &yaw);
 
 #endif // ICM_20948_FUNCTIONS_H

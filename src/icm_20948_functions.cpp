@@ -68,107 +68,7 @@ float magScale[3][3] = { // Soft iron correction matrix from calibrate3.py outpu
   {0.01539642f, -0.00649950f,  1.13008801f}
 };
 
-// Function to update quaternion using 9-axis Madgwick filter
-void MadgwickAHRSupdateMARG(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz, float deltat, float beta_val) {
-    float recipNorm;
-    float s0, s1, s2, s3;
-    float qDot1, qDot2, qDot3, qDot4;
-    float hx, hy; // Removed hz as it was unused
-    float _2q0mx, _2q0my, _2q0mz, _2q1mx, _2bx, _2bz, _4bx, _4bz, _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
-
-    // Use global quaternions
-    float q0 = icm_q0;
-    float q1 = icm_q1;
-    float q2 = icm_q2;
-    float q3 = icm_q3;
-
-    // Rate of change of quaternion from gyroscope
-    qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
-    qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
-    qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
-    qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
-
-    // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-    if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-        // Normalise accelerometer measurement
-        recipNorm = 1.0f / sqrt(ax * ax + ay * ay + az * az);
-        ax *= recipNorm;
-        ay *= recipNorm;
-        az *= recipNorm;
-
-        // Normalise magnetometer measurement
-        recipNorm = 1.0f / sqrt(mx * mx + my * my + mz * mz);
-        mx *= recipNorm;
-        my *= recipNorm;
-        mz *= recipNorm;
-
-        // Auxiliary variables to avoid repeated arithmetic
-        _2q0mx = 2.0f * q0 * mx;
-        _2q0my = 2.0f * q0 * my;
-        _2q0mz = 2.0f * q0 * mz;
-        _2q1mx = 2.0f * q1 * mx;
-        _2q0 = 2.0f * q0;
-        _2q1 = 2.0f * q1;
-        _2q2 = 2.0f * q2;
-        _2q3 = 2.0f * q3;
-        _2q0q2 = 2.0f * q0 * q2;
-        _2q2q3 = 2.0f * q2 * q3;
-        q0q0 = q0 * q0;
-        q0q1 = q0 * q1;
-        q0q2 = q0 * q2;
-        q0q3 = q0 * q3;
-        q1q1 = q1 * q1;
-        q1q2 = q1 * q2;
-        q1q3 = q1 * q3;
-        q2q2 = q2 * q2;
-        q2q3 = q2 * q3;
-        q3q3 = q3 * q3;
-
-        // Reference direction of Earth's magnetic field
-        hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 + _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
-        hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 + my * q2q2 + _2q2 * mz * q3 - my * q3q3;
-        _2bx = sqrt(hx * hx + hy * hy);
-        _2bz = -_2q0mx * q2 + _2q0my * q1 + mz * q0q0 + _2q1mx * q3 - mz * q1q1 + _2q2 * my * q3 - mz * q2q2 + mz * q3q3;
-        _4bx = 2.0f * _2bx;
-        _4bz = 2.0f * _2bz;
-
-        // Gradient descent algorithm corrective step
-        s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) + _2q1 * (2.0f * q0q1 + _2q2q3 - ay) - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-        s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax) + _2q0 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q1 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az) + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-        s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax) + _2q3 * (2.0f * q0q1 + _2q2q3 - ay) - 4.0f * q2 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az) + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-        s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax) + _2q2 * (2.0f * q0q1 + _2q2q3 - ay) + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
-        recipNorm = 1.0f / sqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
-        s0 *= recipNorm;
-        s1 *= recipNorm;
-        s2 *= recipNorm;
-        s3 *= recipNorm;
-
-        // Apply feedback step
-        qDot1 -= beta_val * s0;
-        qDot2 -= beta_val * s1;
-        qDot3 -= beta_val * s2;
-        qDot4 -= beta_val * s3;
-    }
-
-    // Integrate rate of change of quaternion
-    q0 += qDot1 * deltat;
-    q1 += qDot2 * deltat;
-    q2 += qDot3 * deltat;
-    q3 += qDot4 * deltat;
-
-    // Normalise quaternion
-    recipNorm = 1.0f / sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
-    q0 *= recipNorm;
-    q1 *= recipNorm;
-    q2 *= recipNorm;
-    q3 *= recipNorm;
-
-    // Update global quaternions
-    icm_q0 = q0;
-    icm_q1 = q1;
-    icm_q2 = q2;
-    icm_q3 = q3;
-}
+// Function to update quaternion using 9-axis Madgwick filter - REMOVED as unused / disabled
 
 // Function to perform static gyro bias calibration
 void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
@@ -419,53 +319,17 @@ void ICM_20948_read() {
         }
     }
 
-    // --- Dynamic Beta Adjustment ---
-    if (isStationary) {
-        beta = MADGWICK_BETA_STATIONARY;
-    } else {
-        beta = MADGWICK_BETA_MOTION;
-    }
+    // --- Dynamic Beta Adjustment --- REMOVED as beta was only for Madgwick
+    // if (isStationary) {
+    //     beta = MADGWICK_BETA_STATIONARY;
+    // } else {
+    //     beta = MADGWICK_BETA_MOTION;
+    // }
     // --- End Motion Detection & Dynamic Beta ---
 
-    // --- Madgwick AHRS MARG Update ---
-    // The Madgwick filter update is DISABLED as we are using Kalman filter instead.
-    // This will result in no orientation updates from Madgwick.
-    // MadgwickAHRSupdateMARG(gx_corrected, gy_corrected, gz_corrected,
-    //                        ax, ay, az,
-    //                        mx_cal, my_cal, mz_cal,
-    //                        deltat, beta);
-    // Note: Quaternions should come from Kalman filter instead
+    // --- Madgwick AHRS MARG Update --- REMOVED
 
-    // Gyro bias estimation (original logic, can be refined or integrated into MARG if needed)
-    // For now, let's keep the existing gyro bias update logic based on accelerometer feedback
-    // as the MARG function above doesn't explicitly include gyro bias updates in this form.
-    // This part might need to be removed or adapted if the MARG implementation handles it.
-    // However, the provided MARG function does not update gyroBias.
-    // The IMU version had this:
-    /* // Temporarily commenting out online gyro bias estimation
-    if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-        float recipNorm_acc;
-        recipNorm_acc = 1.0f / sqrt(ax * ax + ay * ay + az * az);
-        float ax_norm = ax * recipNorm_acc;
-        float ay_norm = ay * recipNorm_acc;
-        float az_norm = az * recipNorm_acc;
-
-        float hx_g = 2.0f * (icm_q1 * icm_q3 - icm_q0 * icm_q2);
-        float hy_g = 2.0f * (icm_q0 * icm_q1 + icm_q2 * icm_q3);
-        float hz_g = icm_q0 * icm_q0 - icm_q1 * icm_q1 - icm_q2 * icm_q2 + icm_q3 * icm_q3;
-
-        float ex = (ay_norm * hz_g - az_norm * hy_g);
-        float ey = (az_norm * hx_g - ax_norm * hz_g);
-        float ez = (ax_norm * hy_g - ay_norm * hx_g);
-
-        if (MADGWICK_GYRO_BIAS_LEARN_RATE > 0.0f) {
-            gyroBias[0] += MADGWICK_GYRO_BIAS_LEARN_RATE * ex * deltat;
-            gyroBias[1] += MADGWICK_GYRO_BIAS_LEARN_RATE * ey * deltat;
-            gyroBias[2] += MADGWICK_GYRO_BIAS_LEARN_RATE * ez * deltat;
-        }
-    }
-    */ // End of temporarily commented out block
-    // --- End Madgwick AHRS MARG Update ---
+    // --- Online Gyro Bias Estimation --- REMOVED
     
     // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
@@ -493,8 +357,10 @@ void ICM_20948_read() {
       Serial.print(isStationary ? "YES" : "NO");
       Serial.print(", Counter: ");
       Serial.print(isStationary ? stationaryCounter : movingCounter);
-      Serial.print(", Beta: ");
-      Serial.println(beta, 4);
+      // Serial.print(", Beta: "); // Beta removed
+      // Serial.println(beta, 4); // Beta removed
+      Serial.println();
+
 
       // --- Temporary Madgwick Euler Angle Debug Print ---
       float roll_deg, pitch_deg, yaw_deg;
@@ -577,6 +443,8 @@ void ICM_20948_print() {
 void icm_20948_get_accel(float* accel) {
   memcpy(accel, icm_accel, sizeof(float) * 3);
 }
+// void icm_20948_get_gyro(float* gyro) { // REMOVED as unused }
+// void ICM_20948_get_calibrated_gyro(float out_gyro[3]) { // REMOVED as unused }
 
 bool icm_20948_get_mag(float* mag) {
   if (mag != nullptr) {
@@ -584,13 +452,6 @@ bool icm_20948_get_mag(float* mag) {
     return true;
   }
   return false;
-}
-
-// Function to get calibrated gyroscope data (raw - bias)
-void ICM_20948_get_calibrated_gyro(float out_gyro[3]) {
-  out_gyro[0] = icm_gyro[0] - gyroBias[0];
-  out_gyro[1] = icm_gyro[1] - gyroBias[1];
-  out_gyro[2] = icm_gyro[2] - gyroBias[2];
 }
 
 // Helper function to convert quaternion to Euler angles (Roll, Pitch, Yaw)

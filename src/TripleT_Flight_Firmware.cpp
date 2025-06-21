@@ -60,7 +60,7 @@
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
-#include "sensor_fusion.h"   // For sensor fusion logic
+// #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
 // Define variables declared as extern in utility_functions.h
 String g_FileDateString = ""; // Assuming this should also be global

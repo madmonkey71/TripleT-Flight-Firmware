@@ -103,15 +103,14 @@ void gps_init() {
   setGPSDebugging(enableGPSDebug);
 }
 
-// Original checkGPSConnection function was redundant - replaced with simpler version
-bool checkGPSConnection() {
-  // Ensure debug settings are consistent
-  setGPSDebugging(enableGPSDebug);
-  
-  // Just verify we can get data from the GPS
-  byte rate = myGNSS.getNavigationFrequency();
-  return (rate > 0);
-}
+// bool checkGPSConnection() { // REMOVED as unused
+//   // Ensure debug settings are consistent
+//   setGPSDebugging(enableGPSDebug);
+//
+//   // Just verify we can get data from the GPS
+//   byte rate = myGNSS.getNavigationFrequency();
+//   return (rate > 0);
+// }
 
 bool gps_read() {
   // Update GPS data if available

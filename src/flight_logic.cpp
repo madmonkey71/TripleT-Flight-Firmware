@@ -17,21 +17,20 @@
 extern FlightState g_currentFlightState;
 extern FlightState g_previousFlightState;
 extern unsigned long g_stateEntryTime;
-extern Adafruit_NeoPixel g_pixels; // Assuming g_pixels is the new name in main
+extern Adafruit_NeoPixel g_pixels;
 extern float g_launchAltitude;
 extern float g_maxAltitudeReached;
 extern bool g_baroCalibrated;
-extern MS5611 g_ms5611Sensor; // Assuming g_ms5611Sensor is the new name in main
-// kx134_accel and icm_accel are often externed in their respective function .h files
-// If kx134_functions.h and icm_20948_functions.h provide these, local externs are not needed.
-// Assuming they are provided by those headers for now.
-extern float kx134_accel[3]; // Retaining if not provided by kx134_functions.h as extern
-extern float icm_accel[3];   // Retaining if not provided by icm_20948_functions.h as extern
+extern MS5611 g_ms5611Sensor;
+// kx134_accel and icm_accel are defined in their respective _functions.cpp files and externed in their .h files.
+// flight_logic.cpp includes kx134_functions.h and icm_20948_functions.h, so these externs are not needed here.
+// extern float kx134_accel[3];
+// extern float icm_accel[3];
+extern bool g_kx134_initialized_ok; // This IS defined in TripleT_Flight_Firmware.cpp
 extern bool g_icm20948_ready;
 extern bool g_useKalmanFilter;
-// extern bool enableSystemDebug; // Replaced by g_debugFlags
 extern DebugFlags g_debugFlags; // To access g_debugFlags.enableSystemDebug
-extern float g_main_deploy_altitude_m_agl; // Already correctly prefixed
+extern float g_main_deploy_altitude_m_agl;
 
 // Externs from TripleT_Flight_Firmware.cpp for attitude hold logic
 extern float g_kalmanRoll;
@@ -55,21 +54,21 @@ int descendingCount = 0;
 // Helper function to set LED color based on flight state
 void setFlightStateLED(FlightState state) {
     switch (state) {
-        case STARTUP: g_pixels.setPixelColor(0, g_pixels.Color(128, 0, 0)); break; // Dark Red
-        case CALIBRATION: g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); break; // Orange
-        case PAD_IDLE: g_pixels.setPixelColor(0, g_pixels.Color(0, 255, 0)); break; // Green
-        case ARMED: g_pixels.setPixelColor(0, g_pixels.Color(255, 255, 0)); break; // Yellow
-        case BOOST: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 255)); break; // Magenta
-        case COAST: g_pixels.setPixelColor(0, g_pixels.Color(0, 255, 255)); break; // Cyan
-        case APOGEE: g_pixels.setPixelColor(0, g_pixels.Color(255, 255, 255)); break; // White
-        case DROGUE_DEPLOY: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 0)); g_pixels.setPixelColor(1, g_pixels.Color(255, 0, 0)); break; // Pulsing Red (simulated by setting both)
-        case DROGUE_DESCENT: g_pixels.setPixelColor(0, g_pixels.Color(139, 0, 0)); break; // DarkRed
-        case MAIN_DEPLOY: g_pixels.setPixelColor(0, g_pixels.Color(0, 0, 255)); g_pixels.setPixelColor(1, g_pixels.Color(0, 0, 255)); break; // Pulsing Blue
-        case MAIN_DESCENT: g_pixels.setPixelColor(0, g_pixels.Color(0, 0, 139)); break; // DarkBlue
-        case LANDED: g_pixels.setPixelColor(0, g_pixels.Color(75, 0, 130)); break; // Indigo
-        case RECOVERY: g_pixels.setPixelColor(0, g_pixels.Color(0, 128, 0)); break; // Dark Green (for GPS beacon active, etc.)
-        case ERROR: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 0)); break; // Solid Red for error
-        default: g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 50)); break; // Grey for unknown
+        case STARTUP: g_pixels.setPixelColor(0, g_pixels.Color(128, 0, 0)); break;
+        case CALIBRATION: g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); break;
+        case PAD_IDLE: g_pixels.setPixelColor(0, g_pixels.Color(0, 255, 0)); break;
+        case ARMED: g_pixels.setPixelColor(0, g_pixels.Color(255, 255, 0)); break;
+        case BOOST: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 255)); break;
+        case COAST: g_pixels.setPixelColor(0, g_pixels.Color(0, 255, 255)); break;
+        case APOGEE: g_pixels.setPixelColor(0, g_pixels.Color(255, 255, 255)); break;
+        case DROGUE_DEPLOY: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 0)); g_pixels.setPixelColor(1, g_pixels.Color(255, 0, 0)); break;
+        case DROGUE_DESCENT: g_pixels.setPixelColor(0, g_pixels.Color(139, 0, 0)); break;
+        case MAIN_DEPLOY: g_pixels.setPixelColor(0, g_pixels.Color(0, 0, 255)); g_pixels.setPixelColor(1, g_pixels.Color(0, 0, 255)); break;
+        case MAIN_DESCENT: g_pixels.setPixelColor(0, g_pixels.Color(0, 0, 139)); break;
+        case LANDED: g_pixels.setPixelColor(0, g_pixels.Color(75, 0, 130)); break;
+        case RECOVERY: g_pixels.setPixelColor(0, g_pixels.Color(0, 128, 0)); break;
+        case ERROR: g_pixels.setPixelColor(0, g_pixels.Color(255, 0, 0)); break;
+        default: g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 50)); break;
     }
     g_pixels.show();
 }
@@ -86,7 +85,7 @@ void ProcessFlightState() {
     if (g_currentFlightState != LANDED && g_currentFlightState != RECOVERY && g_currentFlightState != ERROR) {
         if (millis() - lastErrorCheckTime > errorCheckInterval) {
             lastErrorCheckTime = millis();
-            if (!isSensorSuiteHealthy(g_currentFlightState)) {
+            if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, g_myGNSS
                 // Log detailed sensor status before transitioning to ERROR
                 if (g_debugFlags.enableSystemDebug) {
                     Serial.println(F("--- Sensor Suite Health Report (Pre-ERROR) ---"));
@@ -99,7 +98,7 @@ void ProcessFlightState() {
                 }
                 // When we transition to error, we should immediately save and return
                 // to avoid any other logic processing in this loop cycle.
-                saveStateToEEPROM(); // Uses g_currentFlightState
+                saveStateToEEPROM();
                 setFlightStateLED(g_currentFlightState);
                 return;
             } else {
@@ -122,13 +121,13 @@ void ProcessFlightState() {
             Serial.println(F("--- Currently in ERROR state ---"));
             Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
             Serial.println(F("Or check sensor health with detailed report:"));
-            isSensorSuiteHealthy(PAD_IDLE, true); // Show what PAD_IDLE health check would find
+            isSensorSuiteHealthy(PAD_IDLE, true);
             Serial.println(F("--------------------------------"));
         }
     }
 
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        currentAbsoluteBaroAlt = ms5611_get_altitude(); // Uses global ms5611Sensor
+        currentAbsoluteBaroAlt = ms5611_get_altitude();
         currentAglAlt = currentAbsoluteBaroAlt - g_launchAltitude;
     }
 
@@ -141,8 +140,8 @@ void ProcessFlightState() {
             Serial.print(F("Transitioning to state: "));
             Serial.println(getStateName(g_currentFlightState));
         }
-        WriteLogData(true); // Uses g_currentFlightState and other globals
-        saveStateToEEPROM(); // Uses g_currentFlightState
+        WriteLogData(true);
+        saveStateToEEPROM();
         setFlightStateLED(g_currentFlightState);
     }
 
@@ -153,8 +152,8 @@ void ProcessFlightState() {
                 g_maxAltitudeReached = 0.0f;
                 boostEndTime = 0;
                 landingDetectedFlag = false;
-                descendingCount = 0; // Reset for apogee detection
-                previousApogeeDetectAltitude = g_launchAltitude; // Initialize for apogee detection
+                descendingCount = 0;
+                previousApogeeDetectAltitude = g_launchAltitude;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("PAD_IDLE: System initialized. Launch altitude set."));
                 pinMode(PYRO_CHANNEL_1, OUTPUT); digitalWrite(PYRO_CHANNEL_1, LOW);
                 pinMode(PYRO_CHANNEL_2, OUTPUT); digitalWrite(PYRO_CHANNEL_2, LOW);
@@ -188,8 +187,8 @@ void ProcessFlightState() {
                 break;
             case COAST:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("COAST: Motor burnout. Coasting to apogee."));
-                descendingCount = 0; // Reset for apogee detection
-                previousApogeeDetectAltitude = currentAbsoluteBaroAlt; // Initialize for apogee baro detection
+                descendingCount = 0;
+                previousApogeeDetectAltitude = currentAbsoluteBaroAlt;
                 break;
             case APOGEE:
                 if (g_debugFlags.enableSystemDebug) {
@@ -203,7 +202,7 @@ void ProcessFlightState() {
                 break;
             case DROGUE_DESCENT:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("DROGUE_DESCENT: Descending under drogue parachute."));
-                if (!MAIN_PRESENT) { // If no main, prepare for landing detection under drogue
+                if (!MAIN_PRESENT) {
                     lastLandingCheckAltitudeAgl = currentAglAlt;
                 }
                 break;
@@ -212,7 +211,7 @@ void ProcessFlightState() {
                 break;
             case MAIN_DESCENT:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("MAIN_DESCENT: Descending under main parachute."));
-                lastLandingCheckAltitudeAgl = currentAglAlt; // Initialize for landing detection
+                lastLandingCheckAltitudeAgl = currentAglAlt;
                 break;
             case LANDED:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("LANDED: Touchdown confirmed."));
@@ -235,9 +234,8 @@ void ProcessFlightState() {
             }
             break;
         case BOOST:
-            detectBoostEnd(); // Uses get_accel_magnitude internally
+            detectBoostEnd();
             if (boostEndTime > 0) {
-                // Attitude Hold: Capture current orientation and set as target for COAST phase
                 float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
                 if (g_useKalmanFilter && g_icm20948_ready) {
                     targetRollRad = g_kalmanRoll;
@@ -246,13 +244,12 @@ void ProcessFlightState() {
                     if (g_debugFlags.enableSystemDebug) {
                         Serial.println(F("ATT_HOLD: Using Kalman orientation for target at BOOST->COAST."));
                     }
-                } else if (g_icm20948_ready) { // Default to Madgwick/ICM if Kalman not active but ICM is ready
-                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad); // icm_q variables are extern from icm_20948_functions.h
+                } else if (g_icm20948_ready) {
+                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad);
                     if (g_debugFlags.enableSystemDebug) {
                         Serial.println(F("ATT_HOLD: Using Madgwick/ICM quaternion conversion for target at BOOST->COAST."));
                     }
                 } else {
-                    // Fallback: No reliable orientation data, set targets to zero.
                     targetRollRad = 0.0f;
                     targetPitchRad = 0.0f;
                     targetYawRad = 0.0f;
@@ -273,7 +270,7 @@ void ProcessFlightState() {
             }
             break;
         case COAST:
-            if (detectApogee()) { // Uses get_accel_magnitude internally
+            if (detectApogee()) {
                 g_currentFlightState = APOGEE;
             }
             if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt > g_maxAltitudeReached) {
@@ -306,7 +303,7 @@ void ProcessFlightState() {
                     g_currentFlightState = MAIN_DEPLOY;
                 }
             } else {
-                if (detectLanding()) { // Uses get_accel_magnitude internally
+                if (detectLanding()) {
                     g_currentFlightState = LANDED;
                 }
             }
@@ -322,7 +319,7 @@ void ProcessFlightState() {
             g_currentFlightState = MAIN_DESCENT;
             break;
         case MAIN_DESCENT:
-            if (detectLanding()) { // Uses get_accel_magnitude internally
+            if (detectLanding()) {
                 g_currentFlightState = LANDED;
             }
             break;
@@ -368,6 +365,7 @@ void ProcessFlightState() {
 }
 
 void detectBoostEnd() {
+    // Assumes kx134_accel and icm_accel are available via extern from their respective .h files
     if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
         boostEndTime = millis();
         if (g_debugFlags.enableSystemDebug) Serial.println(F("BOOST_END detected by accelerometer."));
@@ -380,7 +378,7 @@ bool detectApogee() {
     // Method 1: Barometric Detection (Primary)
     static int baro_descending_count = 0;
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentBaroAlt = ms5611_get_altitude(); // Uses global g_ms5611Sensor
+        float currentBaroAlt = ms5611_get_altitude();
         if (currentBaroAlt < g_maxAltitudeReached) {
             baro_descending_count++;
         } else {
@@ -396,7 +394,7 @@ bool detectApogee() {
     // Method 2: Accelerometer Detection (Secondary)
     if (!apogeeDetected && g_icm20948_ready) {
         static int accel_negative_count = 0;
-        if (icm_accel[2] < 0.0f) { // Assuming Z-axis is vertical; icm_accel from icm_20948_functions.h
+        if (icm_accel[2] < 0.0f) {
             accel_negative_count++;
         } else {
             accel_negative_count = 0;
@@ -409,15 +407,15 @@ bool detectApogee() {
     }
 
     // Method 3: GPS Altitude Detection (Tertiary)
-    if (!apogeeDetected && getFixType() > 0) { // getFixType from gps_functions.h
+    if (!apogeeDetected && getFixType() > 0) {
         static int gps_descending_count = 0;
         static float maxGpsAltitude = 0.0f;
-        float currentGpsAlt = getGPSAltitude(); // from gps_functions.h
+        float currentGpsAlt = getGPSAltitude();
 
         if (currentGpsAlt > maxGpsAltitude) {
             maxGpsAltitude = currentGpsAlt;
             gps_descending_count = 0;
-        } else if (currentGpsAlt < maxGpsAltitude - 5.0) { // Hysteresis for noise
+        } else if (currentGpsAlt < maxGpsAltitude - 5.0) {
             gps_descending_count++;
         }
 
@@ -442,7 +440,7 @@ bool detectLanding() {
     static unsigned long firstStableTime = 0;
 
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentAgl = ms5611_get_altitude() - g_launchAltitude; // Uses global g_ms5611Sensor
+        float currentAgl = ms5611_get_altitude() - g_launchAltitude;
         float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
 
         // Check if we're close to ground with low, stable acceleration
@@ -465,18 +463,18 @@ bool detectLanding() {
     return false;
 }
 
-// Placeholder/test implementation for guidance target updates
-void update_guidance_targets() {
-    static bool initial_target_set = false;
-    static float initial_yaw_target = 0.0f; // Store the initial yaw target in radians
-
-    if (!initial_target_set) {
-        float current_roll, current_pitch, current_yaw;
-        convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, current_roll, current_pitch, current_yaw); // icm_q vars are extern from icm_20948_functions.h
-        initial_yaw_target = current_yaw;
-        guidance_set_target_orientation_euler(0.0f, 0.0f, initial_yaw_target);
-        initial_target_set = true;
-    }
-    // Note: The time-based target changing logic has been removed for simplification.
-    // The target is now set once at initialization and held.
-}
+// Placeholder/test implementation for guidance target updates - REMOVED as unused
+// void update_guidance_targets() {
+//     static bool initial_target_set = false;
+//     static float initial_yaw_target = 0.0f; // Store the initial yaw target in radians
+//
+//     if (!initial_target_set) {
+//         float current_roll, current_pitch, current_yaw;
+//         convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, current_roll, current_pitch, current_yaw);
+//         initial_yaw_target = current_yaw;
+//         guidance_set_target_orientation_euler(0.0f, 0.0f, initial_yaw_target);
+//         initial_target_set = true;
+//     }
+//     // Note: The time-based target changing logic has been removed for simplification.
+//     // The target is now set once at initialization and held.
+// }

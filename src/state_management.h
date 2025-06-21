@@ -14,7 +14,7 @@
 // so we will rely on it being defined where these functions are implemented or included.
 // The functions in state_management.cpp will need to know the actual FlightState enum.
 
-bool loadStateFromEEPROM();
+// bool loadStateFromEEPROM(); // Made static in .cpp, so removed from header
 void saveStateToEEPROM();
 void recoverFromPowerLoss();
 // Note: getStateName is already planned for utility_functions.cpp

@@ -119,23 +119,22 @@
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
 
 // --- EEPROM Configuration ---
-#define EEPROM_STATE_ADDR 0                // EEPROM address for flight state
-#define EEPROM_ALTITUDE_ADDR 4             // EEPROM address for last altitude // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_TIMESTAMP_ADDR 8            // EEPROM address for timestamp // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_SIGNATURE_ADDR 12           // EEPROM address for signature // Note: This might conflict with FlightStateData struct. Review during EEPROM implementation.
-#define EEPROM_SIGNATURE_VALUE 0xBEEF      // Signature to validate EEPROM data (16-bit)
+#define EEPROM_STATE_ADDR 0                // EEPROM address for flight state (now holds the entire FlightStateData struct)
+// #define EEPROM_ALTITUDE_ADDR 4             // REMOVED - Part of FlightStateData struct
+// #define EEPROM_TIMESTAMP_ADDR 8            // REMOVED - Part of FlightStateData struct
+// #define EEPROM_SIGNATURE_ADDR 12           // REMOVED - Part of FlightStateData struct
+#define EEPROM_SIGNATURE_VALUE 0xBEEF      // Signature to validate EEPROM data (16-bit), used within FlightStateData
 
-// --- Madgwick Filter Configuration ---
-#define MADGWICK_BETA_INIT 0.05f             // Initial beta value (overall filter responsiveness, higher = more reliant on accel/mag)
-#define MADGWICK_BETA_STATIONARY 0.02f   // Beta value when system is stationary (lower for stability)
+// --- Madgwick Filter Configuration --- (REMOVED as Madgwick is no longer an option)
+// #define MADGWICK_BETA_INIT 0.05f
+// #define MADGWICK_BETA_STATIONARY 0.02f
+// #define MADGWICK_BETA_MOTION 0.1f
+// #define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f
 
 // --- Orientation System Configuration ---
 // Determines which orientation system is active at startup.
-// If KALMAN_FILTER_ACTIVE_BY_DEFAULT is true, the Kalman filter will be used.
-// Otherwise, the Madgwick filter will be used.
+// Kalman filter is now the only option.
 #define KALMAN_FILTER_ACTIVE_BY_DEFAULT true
-#define MADGWICK_BETA_MOTION 0.1f        // Beta value when system is in motion (higher for responsiveness)
-#define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f // Rate at which gyro bias is learned (Increased from 0.001f)
 
 
 // --- PID Controller Gains ---

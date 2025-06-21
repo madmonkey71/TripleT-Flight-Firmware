@@ -15,7 +15,7 @@ void ICM_20948_init();
 void ICM_20948_read();
 void ICM_20948_print();
 // void ICM_20948_calibrate(); // REMOVED as unused
-// void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // REMOVED as unused
+void ICM_20948_get_calibrated_gyro(float out_gyro[3]); // Restoring
 void ICM_20948_calibrate_gyro_bias(int num_samples, int delay_ms); // Static gyro bias calibration
 bool icm_20948_get_mag(float* mag);
 // void icm_20948_get_gyro(float* gyro); // REMOVED as unused

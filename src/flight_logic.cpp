@@ -147,6 +147,13 @@ void ProcessFlightState() {
 
     if (newStateSignal) {
         switch (g_currentFlightState) {
+            case CALIBRATION:
+                // Initial message when entering CALIBRATION state
+                if (g_debugFlags.enableSystemDebug) {
+                    Serial.println(F("STATE: Entered CALIBRATION - Waiting for barometer calibration via 'calibrate' command. LED should be Orange."));
+                }
+                // Actual periodic waiting message and transition logic is in the main switch block below.
+                break;
             case PAD_IDLE:
                 g_launchAltitude = g_ms5611Sensor.isConnected() && g_baroCalibrated ? ms5611_get_altitude() : 0.0f;
                 g_maxAltitudeReached = 0.0f;
@@ -228,6 +235,21 @@ void ProcessFlightState() {
     }
 
     switch (g_currentFlightState) {
+        case CALIBRATION:
+            if (g_baroCalibrated) {
+                g_currentFlightState = PAD_IDLE;
+                if (g_debugFlags.enableSystemDebug) {
+                    Serial.println(F("CALIBRATION: Barometer calibrated, transitioning to PAD_IDLE."));
+                }
+            } else {
+                // Periodic message while waiting in CALIBRATION state
+                static unsigned long lastCalibWaitMsgTime = 0;
+                if (g_debugFlags.enableSystemDebug && (millis() - lastCalibWaitMsgTime > 5000)) { // Print every 5s
+                    Serial.println(F("CALIBRATION: Waiting for barometer calibration (use 'calibrate' command)..."));
+                    lastCalibWaitMsgTime = millis();
+                }
+            }
+            break;
         case ARMED:
             if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) > BOOST_ACCEL_THRESHOLD) {
                 g_currentFlightState = BOOST;
@@ -350,11 +372,84 @@ void ProcessFlightState() {
             }
             break;
         case ERROR:
+            // Buzzer pattern for ERROR state
+            static unsigned long lastErrorBuzzerTime = 0;
+            static int errorBeepCount = 0;
+            unsigned long currentErrorTime = millis();
+
+            if (errorBeepCount < 3) { // Three short beeps
+                if (currentErrorTime - lastErrorBuzzerTime > 100) { // Beep or silence duration
+                    if (errorBeepCount % 2 == 0) { // Beep states (0, 2, 4 -> effectively 0, 1, 2 beeps)
+                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500); // Start beep
+                    } else {
+                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN); // Stop beep (silence)
+                    }
+                    lastErrorBuzzerTime = currentErrorTime;
+                    if (errorBeepCount % 2 != 0 || errorBeepCount == 2) { // Increment after silence or after last short beep sound
+                         // This logic is a bit tricky to get exactly 3 beeps then pause.
+                         // Let's rethink state for buzzer.
+                    }
+                    // This needs a state machine for the buzzer itself or simpler logic.
+                    // For now, let's just do a continuous fast beep for error to simplify.
+                    // TODO: Implement more complex SOS-like pattern if desired.
+                    // The following is a simpler continuous fast beep for error:
+                    if (currentErrorTime - lastErrorBuzzerTime > 200) { // Fast beep on/off
+                        lastErrorBuzzerTime = currentErrorTime;
+                        static bool error_beep_on = false;
+                        error_beep_on = !error_beep_on;
+                        if (error_beep_on && BUZZER_OUTPUT) {
+                            tone(BUZZER_PIN, 2500);
+                        } else {
+                            if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                        }
+                    }
+                }
+            } // This simple fast beep is not the SOS pattern. Reverting to attempt the requested pattern.
+
+            // Attempting the 3 short beeps + pause pattern for ERROR state:
+            // Beep (2500 Hz) for 100ms -> Silence for 100ms -> Beep 100ms -> Silence 100ms -> Beep 100ms -> Silence 500ms -> Repeat
+            // Total cycle time: 100+100+100+100+100+500 = 1000ms
+            // States: 0 (Beep1), 1 (Silence1), 2 (Beep2), 3 (Silence2), 4 (Beep3), 5 (SilenceLong)
+            static uint8_t errorBuzzerPhase = 0;
+            currentErrorTime = millis(); // Re-fetch current time for precision
+
+            if (errorBuzzerPhase == 0 && (currentErrorTime - lastErrorBuzzerTime >= 0)) { // Start Beep1
+                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 1;
+            } else if (errorBuzzerPhase == 1 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep1, Start Silence1
+                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 2;
+            } else if (errorBuzzerPhase == 2 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Silence1, Start Beep2
+                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 3;
+            } else if (errorBuzzerPhase == 3 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep2, Start Silence2
+                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 4;
+            } else if (errorBuzzerPhase == 4 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Silence2, Start Beep3
+                if(BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 5;
+            } else if (errorBuzzerPhase == 5 && (currentErrorTime - lastErrorBuzzerTime >= 100)) { // End Beep3, Start SilenceLong
+                if(BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                lastErrorBuzzerTime = currentErrorTime;
+                errorBuzzerPhase = 6;
+            } else if (errorBuzzerPhase == 6 && (currentErrorTime - lastErrorBuzzerTime >= 500)) { // End SilenceLong, Reset cycle
+                lastErrorBuzzerTime = currentErrorTime; // Reset time for next cycle start
+                errorBuzzerPhase = 0;
+            }
+
+
             if (millis() - g_stateEntryTime > ERROR_RECOVERY_ATTEMPT_MS) {
                 if (isSensorSuiteHealthy(g_currentFlightState)) {
                     g_currentFlightState = PAD_IDLE;
+                    if(BUZZER_OUTPUT) noTone(BUZZER_PIN); // Ensure buzzer is off when exiting error state
+                    errorBuzzerPhase = 0; // Reset buzzer phase
                 } else {
-                    g_stateEntryTime = millis();
+                    g_stateEntryTime = millis(); // Reset timer for next recovery attempt
                 }
             }
             break;

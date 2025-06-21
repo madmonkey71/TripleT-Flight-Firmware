@@ -86,6 +86,7 @@ struct FlightStateData {
   float launchAltitude;     // Stored launch altitude
   float maxAltitude;        // Maximum altitude reached
   float currentAltitude;    // Current altitude
+  float mainDeployAltitudeAgl; // New field
   unsigned long timestamp;  // Timestamp of last save
   uint16_t signature;       // Validation signature
 };

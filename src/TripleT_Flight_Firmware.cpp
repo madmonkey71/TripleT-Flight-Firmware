@@ -61,6 +61,7 @@
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
+#include <Watchdog_t4.h>    // For Watchdog timer
 
 // Define variables declared as extern in utility_functions.h
 String g_FileDateString = ""; // Assuming this should also be global
@@ -146,6 +147,8 @@ const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
 // class SdFat;
 // class FsFile;
 // It's generally better to ensure includes are ordered correctly. flight_context.h includes SdFat.h.
+
+Watchdog_t4 wdt; // Global Watchdog object
 
 DebugFlags g_debugFlags = {
   .enableSerialCSV = false,
@@ -553,13 +556,45 @@ void setup() {
 
   // Initialize NeoPixel first for visual feedback
   initNeoPixel(g_pixels); // Call modified initNeoPixel with the global g_pixels object
-  // g_pixels.begin(); // These lines are now effectively inside initNeoPixel
-  // g_pixels.clear();
   g_pixels.setPixelColor(0, g_pixels.Color(20, 0, 0)); // Red during startup
   g_pixels.setPixelColor(1, g_pixels.Color(20, 0, 0)); // Red during startup
   g_pixels.show();
 
-  // Basic hardware init needed for recovery check (e.g. EEPROM access via I2C)
+  // --- Initialize Core Hardware ---
+  Wire.begin();
+  Wire.setClock(400000); // Ensure I2C is up for EEPROM
+  SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
+
+  // --- Initialize Watchdog Timer ---
+#if ENABLE_WATCHDOG
+  Serial.println(F("Initializing Watchdog Timer..."));
+  WDT_timings_t config;
+  config.timeout = WATCHDOG_TIMEOUT_MS; // WATCHDOG_TIMEOUT_MS from config.h (in ms)
+  // config.window = 0; // Optional: window mode, 0 for simple timeout
+  // config.callback = nullptr; // Optional: callback function on first timeout (before reset)
+  // config.pin = 0; // Optional: pin to toggle for watchdog activity
+  // config.prescaler = 0; // Optional: set prescaler if needed, 0 for default
+  if (!wdt.begin(config)) {
+    Serial.println(F("ERROR: Failed to initialize Watchdog Timer!"));
+    // Potentially indicate this error via LED or other means, though system might hang if WDT was critical
+  } else {
+    Serial.print(F("Watchdog Timer initialized with timeout: "));
+    Serial.print(WATCHDOG_TIMEOUT_MS);
+    Serial.println(F(" ms"));
+  }
+#else
+  Serial.println(F("Watchdog Timer is disabled by configuration."));
+#endif
+
+  // --- Recover Flight State ---
+  Serial.println(F("Checking for flight state recovery..."));
+  recoverFromPowerLoss(); // This function will update g_currentFlightState
+
+  Serial.print(F("Flight state after recovery attempt: "));
+  Serial.println(getStateName(g_currentFlightState)); // Assumes getStateName is available via utility_functions.h
+
+  // --- Initialize Debug Systems ---
+  // Important: Disable all debugging immediately at startup (unless recovery dictates otherwise, though not typical)
   Wire.begin();
   Wire.setClock(400000); // Ensure I2C is up for EEPROM
   SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
@@ -1073,4 +1108,7 @@ void loop() {
   
   // Note: The rest of the loop function implementation should be added here
   // based on the flight state machine and other system requirements
+#if ENABLE_WATCHDOG
+  wdt.feed();
+#endif
 }

@@ -92,13 +92,7 @@ extern float pressure; // Definition likely in sensor_functions.cpp
 extern float temperature; // Definition likely in sensor_functions.cpp
 // extern float kx134_accel[3]; // This is often a global in the KX134 driver itself.
 
-// Add missing global variable definitions
-bool g_baroCalibrated = false;
-FlightState g_currentFlightState = STARTUP;
-FlightState g_previousFlightState = STARTUP;
-float g_launchAltitude = 0.0f;
-float g_maxAltitudeReached = 0.0f;
-float g_currentAltitude = 0.0f;
+// Global variable definitions moved to avoid duplicates (already defined above)
 
 // Add debug flag definitions
 volatile bool enableGPSDebug = false;

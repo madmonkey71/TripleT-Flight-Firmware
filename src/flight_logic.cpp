@@ -276,15 +276,8 @@ void ProcessFlightState() {
                     }
                 }
 
-                // Check for recovery
-                if (currentTime - g_stateEntryTime > ERROR_RECOVERY_ATTEMPT_MS) {
-                    if (isSensorSuiteHealthy(g_currentFlightState)) {
-                        g_currentFlightState = PAD_IDLE;
-                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                    } else {
-                        g_stateEntryTime = currentTime; // Reset timer for next recovery attempt
-                    }
-                }
+                // ERROR recovery is now handled by handleInitialStateManagement() and clear_errors command
+                // No automatic recovery here to prevent conflicts
             }
                 break;
             default:
@@ -307,6 +300,10 @@ void ProcessFlightState() {
                     lastCalibWaitMsgTime = millis();
                 }
             }
+            break;
+        case PAD_IDLE:
+            // PAD_IDLE is a stable state - no automatic transitions
+            // Transitions to ARMED happen via command processor
             break;
         case ARMED:
             if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) > BOOST_ACCEL_THRESHOLD) {
@@ -428,6 +425,10 @@ void ProcessFlightState() {
                     }
                 }
             }
+            break;
+        case ERROR:
+            // ERROR state is stable - no automatic transitions
+            // Recovery happens via clear_errors command or handleInitialStateManagement
             break;
         default:
             Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));

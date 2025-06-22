@@ -11,6 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const serialSendCommandButton = document.getElementById('serialSendCommandButton');
     let parserInitialized = false;
 
+    // Configuration for CSV data logging
+    let logCSVDataToTerminal = true; // Show CSV data indicators in terminal
+    let verboseCSVLogging = false; // Set to true for full CSV data logging
+
     // --- Serial Terminal Logging Function ---
     function logToTerminal(message, type = 'info') { // type can be 'info', 'sent', 'received', 'error'
         if (serialTerminalOutput) {
@@ -88,9 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Always log to terminal, but with different styling based on category
         switch (messageCategory) {
             case 'csv_data':
-                // For CSV data, we might want to log less verbosely or not at all
-                // to avoid cluttering the terminal with data points
-                // logToTerminal(data, 'received'); // Uncomment if you want to see all data
+                // Log CSV data to terminal - condensed version by default
+                if (logCSVDataToTerminal) {
+                    if (verboseCSVLogging) {
+                        logToTerminal(data, 'received');
+                    } else {
+                        // Show condensed version: first few fields + field count
+                        const fields = data.split(',');
+                        const condensed = fields.slice(0, 3).join(',') + `... (${fields.length} fields)`;
+                        logToTerminal(`CSV: ${condensed}`, 'received');
+                    }
+                }
                 break;
             case 'info':
                 logToTerminal(data, 'received'); // Log informational messages

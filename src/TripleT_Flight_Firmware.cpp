@@ -168,7 +168,7 @@ const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
 
 DebugFlags g_debugFlags = {
   .enableSerialCSV = false,
-  .enableSystemDebug = false,
+  .enableSystemDebug = true, // ON by default for debugging ERROR state issues
   .enableIMUDebug = false,
   .enableGPSDebug = false,
   .enableBaroDebug = false,

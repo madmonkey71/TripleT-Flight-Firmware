@@ -80,24 +80,34 @@ void ProcessFlightState() {
     float currentAglAlt = 0.0f;
     bool newStateSignal = false;
     static unsigned long lastErrorCheckTime = 0;
+    static unsigned long lastErrorClearTime = 0; // Track when errors were last cleared
     const unsigned long errorCheckInterval = 1000; // 1 second
+    const unsigned long errorClearGracePeriod = 5000; // 5 seconds grace period after clearing errors
 
     // Defer the health check to avoid immediate re-entry into ERROR state
     // after a manual `clear_errors` command.
     if (g_currentFlightState != LANDED && g_currentFlightState != RECOVERY && g_currentFlightState != ERROR) {
-        if (millis() - lastErrorCheckTime > errorCheckInterval) {
+        // Add grace period check - don't run health checks immediately after clearing errors
+        bool withinGracePeriod = (millis() - lastErrorClearTime < errorClearGracePeriod);
+        
+        if (millis() - lastErrorCheckTime > errorCheckInterval && !withinGracePeriod) {
             lastErrorCheckTime = millis();
             if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, myGNSS
-                // Log detailed sensor status before transitioning to ERROR
-                if (g_debugFlags.enableSystemDebug) {
-                    Serial.println(F("--- Sensor Suite Health Report (Pre-ERROR) ---"));
-                    isSensorSuiteHealthy(g_currentFlightState, true); // Call with verbose=true
-                    Serial.println(F("---------------------------------------------"));
-                }
+                // ALWAYS log detailed sensor status before transitioning to ERROR (regardless of debug flags)
+                Serial.println(F("--- CRITICAL: Sensor Suite Health Check Failed ---"));
+                Serial.print(F("Current State: "));
+                Serial.println(getStateName(g_currentFlightState));
+                Serial.print(F("Time since last error clear: "));
+                Serial.print((millis() - lastErrorClearTime) / 1000.0, 1);
+                Serial.println(F(" seconds"));
+                Serial.println(F(""));
+                isSensorSuiteHealthy(g_currentFlightState, true); // Call with verbose=true
+                Serial.println(F(""));
+                Serial.println(F("Transitioning to ERROR state..."));
+                Serial.println(F("Use 'clear_errors' command to attempt recovery."));
+                Serial.println(F("--------------------------------------------------"));
+                
                 g_currentFlightState = ERROR;
-                if (g_debugFlags.enableSystemDebug) {
-                    Serial.println(F("Sensor suite unhealthy, transitioning to ERROR state."));
-                }
                 // When we transition to error, we should immediately save and return
                 // to avoid any other logic processing in this loop cycle.
                 saveStateToEEPROM();
@@ -106,7 +116,7 @@ void ProcessFlightState() {
             } else {
                 // Add periodic health status when things are OK
                 static unsigned long lastHealthOkTime = 0;
-                if (millis() - lastHealthOkTime > 5000) { // Every 5 seconds
+                if (millis() - lastHealthOkTime > 10000) { // Every 10 seconds (reduced frequency)
                     lastHealthOkTime = millis();
                     if (g_debugFlags.enableSystemDebug) {
                         Serial.print(F("Health check OK for state: "));
@@ -114,11 +124,20 @@ void ProcessFlightState() {
                     }
                 }
             }
+        } else if (withinGracePeriod && g_debugFlags.enableSystemDebug) {
+            // Debug message about grace period
+            static unsigned long lastGraceMsg = 0;
+            if (millis() - lastGraceMsg > 2000) { // Every 2 seconds during grace period
+                lastGraceMsg = millis();
+                Serial.print(F("Grace period active: "));
+                Serial.print((errorClearGracePeriod - (millis() - lastErrorClearTime)) / 1000.0, 1);
+                Serial.println(F(" seconds remaining"));
+            }
         }
     } else if (g_currentFlightState == ERROR && g_debugFlags.enableSystemDebug) {
         // Add periodic debugging for ERROR state
         static unsigned long lastErrorDebugTime = 0;
-        if (millis() - lastErrorDebugTime > 2000) { // Every 2 seconds
+        if (millis() - lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
             lastErrorDebugTime = millis();
             Serial.println(F("--- Currently in ERROR state ---"));
             Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
@@ -127,6 +146,14 @@ void ProcessFlightState() {
             Serial.println(F("--------------------------------"));
         }
     }
+
+    // Record when we transition OUT of ERROR state (for grace period tracking)
+    static FlightState lastRecordedState = STARTUP;
+    if (lastRecordedState == ERROR && g_currentFlightState != ERROR) {
+        lastErrorClearTime = millis();
+        Serial.println(F("ERROR state cleared - starting grace period for health checks"));
+    }
+    lastRecordedState = g_currentFlightState;
 
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();

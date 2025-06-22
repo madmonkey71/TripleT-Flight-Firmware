@@ -95,6 +95,25 @@
             <h2>Filtering Results</h2>
             <div id="results"></div>
         </div>
+
+        <div class="test-section">
+            <h3>Raw Message Monitor (Live)</h3>
+            <p>This section shows the last 10 raw messages received from the serial port:</p>
+            <div id="rawMessageLog" style="background-color: #1a1a1a; color: #00ff00; padding: 10px; border-radius: 4px; font-family: monospace; height: 200px; overflow-y: auto; border: 1px solid #333;">
+                <div>Waiting for serial connection...</div>
+            </div>
+            <button onclick="clearRawLog()">Clear Log</button>
+        </div>
+
+        <div class="test-section">
+            <h3>CSV Detection Test</h3>
+            <p>Enter a message to test CSV detection:</p>
+            <input type="text" id="testInput" placeholder="Enter test message..." style="width: 80%; padding: 5px;">
+            <button onclick="testCSVDetection()">Test</button>
+            <div id="testResult" style="margin-top: 10px; padding: 10px; background-color: #2a2a2a; border-radius: 4px;">
+                Result will appear here...
+            </div>
+        </div>
     </div>
 
     <script src="js/data_parser.js"></script>
@@ -183,6 +202,62 @@
 
         function clearResults() {
             document.getElementById('results').innerHTML = '';
+        }
+
+        // Raw message logging for debugging
+        let rawMessages = [];
+        function logRawMessage(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            rawMessages.unshift(`[${timestamp}] ${message}`);
+            if (rawMessages.length > 10) rawMessages.pop();
+            
+            const logDiv = document.getElementById('rawMessageLog');
+            if (logDiv) {
+                logDiv.innerHTML = rawMessages.map(msg => `<div>${msg}</div>`).join('');
+            }
+        }
+
+        function clearRawLog() {
+            rawMessages = [];
+            const logDiv = document.getElementById('rawMessageLog');
+            if (logDiv) {
+                logDiv.innerHTML = '<div>Log cleared...</div>';
+            }
+        }
+
+        function testCSVDetection() {
+            const input = document.getElementById('testInput');
+            const result = document.getElementById('testResult');
+            const message = input.value;
+            
+            if (!message) {
+                result.innerHTML = 'Please enter a message to test.';
+                return;
+            }
+            
+            const category = categorizeMessage(message);
+            const isCSV = isCSVDataMessage(message);
+            const shouldIgnore = shouldIgnoreMessage(message);
+            
+            result.innerHTML = `
+                <strong>Message:</strong> "${message}"<br>
+                <strong>Category:</strong> <span class="category ${category}">${category.toUpperCase()}</span><br>
+                <strong>Is CSV Data:</strong> ${isCSV ? '✓ Yes' : '❌ No'}<br>
+                <strong>Should Ignore:</strong> ${shouldIgnore ? '✓ Yes' : '❌ No'}<br>
+                <strong>Field Count:</strong> ${message.split(',').length}
+            `;
+        }
+
+        // Hook into the serial data reception if available
+        if (typeof window !== 'undefined') {
+            // Override console.log temporarily to capture debug messages
+            const originalConsoleLog = console.log;
+            console.log = function(...args) {
+                originalConsoleLog.apply(console, args);
+                if (args[0] && typeof args[0] === 'string' && args[0].includes('Received data:')) {
+                    logRawMessage(args.join(' '));
+                }
+            };
         }
 
         // Auto-run test on page load

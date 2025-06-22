@@ -86,8 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleReceivedData(data) {
         if (!parserInitialized) return;
         
+        // Add debugging for incoming data
+        console.log('Received data:', data.substring(0, 100) + (data.length > 100 ? '...' : ''));
+        
         // Categorize the incoming message
         const messageCategory = categorizeMessage(data);
+        console.log('Message category:', messageCategory);
         
         // Always log to terminal, but with different styling based on category
         switch (messageCategory) {
@@ -117,13 +121,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Only attempt to parse and update UI for CSV data messages
         if (messageCategory === 'csv_data') {
+            console.log('Attempting to parse CSV data...');
             const parsedData = parseSerialData(data);
             if (parsedData) {
+                console.log('CSV data parsed successfully:', parsedData);
                 if (typeof updateUI === 'function') {
                     updateUI(parsedData);
                 } else {
                     console.error("updateUI function is not defined.");
                 }
+            } else {
+                console.log('CSV data parsing failed');
             }
         }
         // For non-CSV messages, we could potentially trigger other UI updates

@@ -122,38 +122,39 @@ function isCSVDataMessage(message) {
     
     const trimmedMessage = message.trim();
     
-    // CSV data messages should:
-    // 1. Start with a number (sequence number)
-    // 2. Contain multiple comma-separated values
-    // 3. Have approximately the expected number of fields
+    // TEMPORARY: Much more lenient CSV detection for debugging
+    console.log(`CSV Detection: Checking message: "${trimmedMessage.substring(0, 50)}..."`);
     
-    // Check if it starts with a number
+    // Check if it starts with a number (sequence number)
     if (!/^\d+/.test(trimmedMessage)) {
+        console.log('CSV Detection: Does not start with number');
         return false;
     }
     
     // Count comma-separated fields
     const fields = trimmedMessage.split(csvDelimiter);
+    console.log(`CSV Detection: Found ${fields.length} fields`);
     
-    // Expect at least 10 fields for valid data (conservative estimate)
-    if (fields.length < 10) {
+    // Much more lenient - just need a few fields
+    if (fields.length < 5) {
+        console.log(`CSV Detection: Message has only ${fields.length} fields, need at least 5`);
         return false;
     }
     
-    // If we have column mappings loaded, check against expected count
-    if (columnMappings && Math.abs(fields.length - columnMappings.length) > 5) {
-        // Allow some tolerance, but not too much difference
+    // Skip the field count check temporarily for debugging
+    // if (columnMappings && Math.abs(fields.length - columnMappings.length) > 10) {
+    //     console.log(`CSV Detection: Field count ${fields.length} differs too much from expected ${columnMappings.length}`);
+    //     return false;
+    // }
+    
+    // Very lenient numeric check - just check if first field is a number
+    const firstField = fields[0].trim();
+    if (!/^\d+$/.test(firstField)) {
+        console.log(`CSV Detection: First field (${firstField}) is not a pure number`);
         return false;
     }
     
-    // Additional validation: check if first few fields are numeric
-    for (let i = 0; i < Math.min(3, fields.length); i++) {
-        const field = fields[i].trim();
-        if (!/^-?\d*\.?\d+$/.test(field)) {
-            return false;
-        }
-    }
-    
+    console.log(`CSV Detection: ✓ Message identified as CSV data with ${fields.length} fields`);
     return true;
 }
 

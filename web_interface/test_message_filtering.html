@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Filtering Test - TripleT Flight Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background-color: #2a2a2a;
+        }
+        .message {
+            padding: 5px 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .csv-data { background-color: #1a4d1a; border-left: 4px solid #4CAF50; }
+        .info { background-color: #1a1a4d; border-left: 4px solid #2196F3; }
+        .system { background-color: #4d1a1a; border-left: 4px solid #FF9800; }
+        .unknown { background-color: #4d4d1a; border-left: 4px solid #FFC107; }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin: 10px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Message Filtering Test</h1>
+        <p>This page demonstrates the intelligent message filtering system for the TripleT Flight Data Visualizer.</p>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #4CAF50;"></div>
+                <span>CSV Data (will be parsed and plotted)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #2196F3;"></div>
+                <span>Info Messages (logged to terminal only)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #FF9800;"></div>
+                <span>System Messages (logged to terminal only)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #FFC107;"></div>
+                <span>Unknown Messages (logged for debugging)</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test Controls</h2>
+            <button onclick="runTestMessages()">Run Test Messages</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Filtering Results</h2>
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script src="js/data_parser.js"></script>
+    <script>
+        // Test messages that represent typical firmware output
+        const testMessages = [
+            // CSV Data Messages (should be parsed)
+            "1,1678886400,3,12,34.0522,-118.2437,150.5,180.0,155.2,152.3,10.2,90.0,1.5,1,1012.5,25.5,0.1,0.2,9.8,0.1,0.2,9.7,0.01,0.02,0.03,0.1,0.2,0.3,22.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.5,0.2,0.1,0.0,0.0,0.0,0.0,0.0,0.0",
+            "2,1678886401,4,12,34.0523,-118.2438,151.2,181.0,156.1,153.0,10.3,91.0,1.6,1,1012.3,25.6,0.2,0.3,9.9,0.2,0.3,9.8,0.02,0.03,0.04,0.2,0.3,0.4,22.1,1.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.6,0.3,0.2,0.1,0.1,0.1,0.1,0.1,0.1",
+            
+            // Info Messages (should be filtered out from parsing)
+            "INFO: Logging to SD card is currently disabled (SD not available or loggingEnabled=false).",
+            "INFO: GPS fix acquired with 12 satellites",
+            "INFO: Barometer calibrated successfully",
+            "INFO: Log file created: DATA_20250125_143022.csv",
+            
+            // System Messages (should be filtered out from parsing)
+            "System Status: All sensors operational",
+            "Sensor Status: ICM20948 ready, KX134 ready, MS5611 ready",
+            "Initialization complete - entering PAD_IDLE state",
+            "Calibration: Waiting for GPS time sync",
+            "Flight State: ARMED - Ready for liftoff detection",
+            "Current State: BOOST (Motor burn detected)",
+            
+            // Command Responses (should be filtered out)
+            "Command received: status_sensors",
+            "Available commands: arm, calibrate, status_sensors, help",
+            "Unknown command: invalid_command",
+            
+            // File System Messages (should be filtered out)
+            "File created: /sd/logs/flight_001.csv",
+            "SD Card space: 15.2 GB available",
+            "Storage available: 98% free space",
+            
+            // Error Messages (should be filtered out from parsing)
+            "ERROR: Failed to initialize KX134 accelerometer",
+            "WARNING: GPS signal weak - only 4 satellites visible",
+            "DEBUG: ICM20948 temperature: 23.5°C",
+            
+            // Configuration Messages (should be filtered out)
+            "Config: Main deploy altitude set to 100m AGL",
+            "Setting: Kalman filter enabled",
+            "Parameter: Boost threshold = 2.0g",
+            
+            // Version Info (should be filtered out)
+            "Version: TripleT Flight Firmware v0.49",
+            "Build: Compiled Jan 25 2025 14:30:22",
+            "Firmware: Beta release ready for test flights",
+            
+            // Unknown/Ambiguous Messages
+            "Random message without clear category",
+            "12345", // Just numbers, but not enough fields for CSV
+            "", // Empty message
+            "Single word"
+        ];
+
+        function runTestMessages() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+            
+            // Initialize parser first (simulate loading)
+            const mockColumnMappings = Array(48).fill().map((_, i) => ({
+                internal_name: `field_${i}`,
+                type: i < 3 ? 'int' : 'float',
+                default_value: 0
+            }));
+            
+            testMessages.forEach((message, index) => {
+                const category = categorizeMessage(message);
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${category.replace('_', '-')}`;
+                
+                let displayMessage = message;
+                if (displayMessage.length > 100) {
+                    displayMessage = displayMessage.substring(0, 100) + '...';
+                }
+                
+                messageDiv.innerHTML = `
+                    <strong>[${category.toUpperCase()}]</strong> ${displayMessage}
+                    ${category === 'csv_data' ? ' <em>(→ Will be parsed and plotted)</em>' : ' <em>(→ Terminal only)</em>'}
+                `;
+                
+                resultsDiv.appendChild(messageDiv);
+            });
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-run test on page load
+        window.addEventListener('load', () => {
+            setTimeout(runTestMessages, 500);
+        });
+    </script>
+</body>
+</html> 

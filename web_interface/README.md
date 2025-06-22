@@ -7,9 +7,16 @@ This web interface provides a real-time visualization of flight data received fr
 ## Features
 
 *   **Web Serial Connection**: Connects directly to USB serial devices using the Web Serial API.
+*   **Intelligent Message Filtering**: Automatically distinguishes between CSV data and informational messages, ensuring only valid data is parsed for visualization while preserving system messages in the terminal log.
 *   **Real-time Data Display**: Shows live numerical values for GPS coordinates, speed, altitude (GPS and barometric), orientation (roll, pitch, yaw), satellite count, pressure, and temperature.
-*   **Altitude Chart**: Plots calibrated altitude against time.
-*   **Acceleration Chart**: Plots X, Y, and Z axis acceleration data against time.
+*   **Multiple Chart Visualizations**: 
+    *   Altitude Chart: Plots calibrated altitude against time
+    *   Acceleration Charts: Multiple accelerometer and gyroscope data streams
+    *   ICM20948 sensor data visualization
+    *   Actuator control outputs
+*   **Serial Terminal Interface**: Built-in terminal for sending commands and viewing system messages
+*   **3D Orientation Visualization**: Real-time 3D representation of vehicle orientation
+*   **Flight State Monitoring**: Displays current flight state with visual indicators
 *   **Dynamic Connection Status**: Clearly indicates whether the interface is connected, disconnected, connecting, or has encountered an error.
 *   **Configurable Data Mapping**: Uses `js/flight_console_data_mapping.json` to define how incoming CSV data is parsed and mapped to internal data fields.
 
@@ -44,6 +51,44 @@ This web interface provides a real-time visualization of flight data received fr
 
 4.  **Disconnect**:
     *   Click the "Disconnect Serial" button to close the connection.
+
+## Message Filtering System
+
+The web interface includes an intelligent message filtering system that automatically categorizes incoming serial messages:
+
+### Message Categories
+
+1. **CSV Data Messages** (Green in test interface)
+   - Parsed and used for data visualization and plotting
+   - Must start with a sequence number and contain expected number of comma-separated fields
+   - Example: `1,1678886400,3,12,34.0522,-118.2437,150.5,180.0,...`
+
+2. **Informational Messages** (Blue in test interface)
+   - Logged to terminal but not parsed for data
+   - Include logging status, GPS fixes, calibration messages
+   - Examples: `INFO: Logging to SD card is currently disabled`, `INFO: GPS fix acquired`
+
+3. **System Messages** (Orange in test interface)
+   - System status, sensor initialization, flight state changes
+   - Examples: `System Status: All sensors operational`, `Flight State: ARMED`
+
+4. **Unknown Messages** (Yellow in test interface)
+   - Messages that don't fit other categories, logged for debugging
+
+### Filtered Message Types
+
+The system automatically filters out these message patterns from data parsing:
+- `INFO:`, `WARNING:`, `ERROR:`, `DEBUG:` prefixed messages
+- Sensor initialization and status messages
+- Command responses and help text
+- File system operations
+- Configuration and parameter messages
+- Version and build information
+- Any message starting with text followed by a colon
+
+### Testing the Filter
+
+Open `test_message_filtering.html` in your browser to see a demonstration of how different message types are categorized and handled.
 
 ## Project Structure
 

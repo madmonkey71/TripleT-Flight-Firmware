@@ -245,6 +245,8 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.println(F("  get_orientation_filter"));
   Serial.println(F("  arm"));
   Serial.println(F("  clear_errors"));
+  Serial.println(F("  clear_to_calibration"));
+  Serial.println(F("  sensor_requirements"));
   Serial.println(F("  scan_i2c"));
 
   Serial.println(F("\nLegacy Commands:"));
@@ -400,7 +402,11 @@ void processCommand(String command,
     else if (command.equalsIgnoreCase("clear_errors")) {
         if (currentFlightState_ref == ERROR) {
             Serial.println(F("Attempting to clear error state..."));
-            bool healthy = isSensorSuiteHealthy(PAD_IDLE, true); // isSensorSuiteHealthy might need context too eventually
+            
+            // First, let's check what specifically is failing
+            Serial.println(F("Checking system health for PAD_IDLE state:"));
+            bool healthy = isSensorSuiteHealthy(PAD_IDLE, true); // Call with verbose=true to see details
+            
             if (healthy) {
                 previousFlightState_ref = currentFlightState_ref;
                 currentFlightState_ref = PAD_IDLE;
@@ -408,7 +414,41 @@ void processCommand(String command,
                 saveStateToEEPROM(); // Assumes saveStateToEEPROM uses the global currentFlightState or is passed the ref
                 Serial.println(F("Error state cleared. System reset to PAD_IDLE. Check sensors."));
             } else {
-                Serial.println(F("Cannot clear error: System health check for PAD_IDLE failed. Please resolve sensor issues."));
+                Serial.println(F("Cannot clear error: System health check for PAD_IDLE failed."));
+                Serial.println(F(""));
+                Serial.println(F("Troubleshooting steps:"));
+                Serial.println(F("1. Check if barometer needs calibration: use 'calibrate' or 'h' command"));
+                Serial.println(F("2. Check sensor status: use 'status_sensors' or 'b' command"));
+                Serial.println(F("3. Verify IMU initialization: at least one of ICM20948 or KX134 must be ready"));
+                Serial.println(F("4. If barometer is the issue, try transitioning to CALIBRATION state first"));
+                Serial.println(F(""));
+                
+                // Offer alternative: clear to CALIBRATION state if barometer is the main issue
+                if (!statusCtx.baroCalibrated && statusCtx.ms5611_initialized_ok) {
+                    Serial.println(F("Alternative: Barometer is initialized but not calibrated."));
+                    Serial.println(F("Would you like to clear to CALIBRATION state instead? (Type 'clear_to_calibration')"));
+                }
+            }
+        } else {
+            Serial.print(F("System is not in ERROR state. Current state: "));
+            Serial.println(getStateName(currentFlightState_ref));
+        }
+    }
+    else if (command.equalsIgnoreCase("clear_to_calibration")) {
+        if (currentFlightState_ref == ERROR) {
+            Serial.println(F("Attempting to clear error state to CALIBRATION..."));
+            
+            // Check minimal requirements for CALIBRATION state (just barometer initialized)
+            if (statusCtx.ms5611_initialized_ok) {
+                previousFlightState_ref = currentFlightState_ref;
+                currentFlightState_ref = CALIBRATION;
+                stateEntryTime_ref = millis();
+                saveStateToEEPROM();
+                Serial.println(F("Error state cleared. System reset to CALIBRATION state."));
+                Serial.println(F("Use 'calibrate' or 'h' command to calibrate barometer with GPS."));
+            } else {
+                Serial.println(F("Cannot clear to CALIBRATION: Barometer (MS5611) not initialized."));
+                Serial.println(F("Check hardware connections and restart system."));
             }
         } else {
             Serial.print(F("System is not in ERROR state. Current state: "));
@@ -476,6 +516,34 @@ void processCommand(String command,
     }
     else if (command.equalsIgnoreCase("scan_i2c")) {
         scan_i2c();
+    }
+    else if (command.equalsIgnoreCase("sensor_requirements")) {
+        Serial.println(F("=== Sensor Requirements by Flight State ==="));
+        Serial.println(F(""));
+        Serial.println(F("STARTUP:"));
+        Serial.println(F("  • No specific sensor requirements"));
+        Serial.println(F(""));
+        Serial.println(F("CALIBRATION:"));
+        Serial.println(F("  • MS5611 Barometer: Must be initialized"));
+        Serial.println(F("  • GPS: Recommended for barometer calibration"));
+        Serial.println(F(""));
+        Serial.println(F("PAD_IDLE:"));
+        Serial.println(F("  • MS5611 Barometer: Must be initialized AND calibrated"));
+        Serial.println(F("  • IMU: Not required (can be armed without IMU)"));
+        Serial.println(F(""));
+        Serial.println(F("ARMED through LANDED:"));
+        Serial.println(F("  • MS5611 Barometer: Must be initialized AND calibrated"));
+        Serial.println(F("  • IMU: At least one of ICM20948 OR KX134 must be ready"));
+        Serial.println(F("  • GPS: Recommended but not required"));
+        Serial.println(F(""));
+        Serial.println(F("RECOVERY:"));
+        Serial.println(F("  • All sensors recommended for data logging"));
+        Serial.println(F(""));
+        Serial.println(F("ERROR:"));
+        Serial.println(F("  • System enters ERROR when critical sensors fail"));
+        Serial.println(F("  • Use 'clear_errors' to attempt recovery to PAD_IDLE"));
+        Serial.println(F("  • Use 'clear_to_calibration' if barometer needs calibration"));
+        Serial.println(F("==========================================="));
     }
     else {
         Serial.print(F("Unknown command: "));

@@ -404,32 +404,78 @@ void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, flo
 // ... other functions ...
 
 bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
+    bool healthy = true;
+    
+    if (verbose) {
+        Serial.println(F("=== Sensor Suite Health Check ==="));
+        Serial.print(F("Target State: "));
+        Serial.println(getStateName(currentState));
+        Serial.println(F(""));
+    }
+    
     // Barometer Health Check (Essential for most states)
     if (!ms5611_initialized_ok) {
-        if (verbose) Serial.println(F("HEALTH_FAIL: MS5611 (Barometer) not initialized."));
-        return false; // Critical failure
+        if (verbose) {
+            Serial.println(F("❌ HEALTH_FAIL: MS5611 (Barometer) not initialized."));
+            Serial.println(F("   → Check I2C connections and power to barometer"));
+        }
+        healthy = false;
+    } else if (verbose) {
+        Serial.println(F("✓ MS5611 (Barometer) initialized successfully"));
     }
+    
     if (currentState > CALIBRATION && !g_baroCalibrated) {
-        if (verbose) Serial.println(F("HEALTH_FAIL: Barometer not calibrated."));
-        return false; // Critical failure
+        if (verbose) {
+            Serial.println(F("❌ HEALTH_FAIL: Barometer not calibrated."));
+            Serial.println(F("   → Use 'calibrate' or 'h' command to calibrate with GPS"));
+            Serial.println(F("   → Calibration requires GPS fix (3D fix with 7+ satellites)"));
+        }
+        healthy = false;
+    } else if (currentState > CALIBRATION && verbose) {
+        Serial.println(F("✓ Barometer calibrated and ready"));
     }
 
     // IMU Health Check (Essential for flight)
     if (currentState >= ARMED && currentState < LANDED) {
         if (!g_icm20948_ready && !g_kx134_initialized_ok) {
-            if (verbose) Serial.println(F("HEALTH_FAIL: No primary or secondary IMU is ready for flight."));
-            return false; // Critical failure
+            if (verbose) {
+                Serial.println(F("❌ HEALTH_FAIL: No primary or secondary IMU is ready for flight."));
+                Serial.println(F("   → ICM20948 status: ") + String(g_icm20948_ready ? "Ready" : "Not Ready"));
+                Serial.println(F("   → KX134 status: ") + String(g_kx134_initialized_ok ? "Ready" : "Not Ready"));
+                Serial.println(F("   → At least one IMU must be working for flight operations"));
+            }
+            healthy = false;
+        } else if (verbose) {
+            Serial.println(F("✓ IMU Health Check Passed:"));
+            if (g_icm20948_ready) Serial.println(F("   → ICM20948: Ready"));
+            if (g_kx134_initialized_ok) Serial.println(F("   → KX134: Ready"));
         }
+    } else if (verbose && (currentState >= ARMED && currentState < LANDED)) {
+        Serial.println(F("ℹ IMU check skipped (not required for current state)"));
     }
     
     // GPS Health Check (Less critical for flight, more for recovery)
     // We can be more lenient here, but log if it's not available.
-    if (myGNSS.getFixType() == 0 && verbose) {
-        Serial.println(F("HEALTH_WARN: No GPS fix."));
+    if (verbose) {
+        int fixType = myGNSS.getFixType();
+        if (fixType == 0) {
+            Serial.println(F("⚠ HEALTH_WARN: No GPS fix."));
+            Serial.println(F("   → GPS is not critical for basic flight operations"));
+            Serial.println(F("   → Required for barometer calibration and recovery operations"));
+        } else {
+            Serial.println(F("✓ GPS: Fix Type ") + String(fixType) + F(" (") + 
+                          String(myGNSS.getSIV()) + F(" satellites)"));
+        }
+    }
+    
+    if (verbose) {
+        Serial.println(F(""));
+        Serial.print(F("Overall Health Status: "));
+        Serial.println(healthy ? F("✓ HEALTHY") : F("❌ UNHEALTHY"));
+        Serial.println(F("================================"));
     }
 
-    // If we passed all critical checks for the current state, return true
-    return true;
+    return healthy;
 }
 
 const char* getStateName(FlightState state) {

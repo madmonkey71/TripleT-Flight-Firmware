@@ -2,6 +2,8 @@
 #include "config.h" // Ensure config.h is included for SD_CONFIG and other hardware defs
 #include "data_structures.h" // Include LogData definition
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
+#include "ms5611_functions.h" // For ms5611_initialized_ok and baroCalibrated
+#include "gps_functions.h" // For myGNSS
 #include <cmath> // Include for sqrt()
 #include <stdio.h> // For snprintf
 // Required for dtostrf typically, though often included by Arduino.h
@@ -14,6 +16,9 @@
 // #include <avr/dtostrf.h> // Fallback for some AVR toolchains
 #endif
 
+// External declarations for global variables not in headers
+extern bool icm20948_ready;
+extern bool kx134_initialized_ok;
 
 // Define the pixels variable
 Adafruit_NeoPixel pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);

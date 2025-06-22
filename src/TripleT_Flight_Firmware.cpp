@@ -670,8 +670,11 @@ void handleInitialStateManagement() {
   }
   
   if (!ms5611_initialized_ok) {
-    Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy."));
-    systemHealthy = false;
+    // Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy.")); // Keep systemHealthy = true
+    // systemHealthy = false; // Allow proceeding to CALIBRATION/PAD_IDLE with a warning
+    if (g_debugFlags.enableSystemDebug) { // Still print a warning if debug is enabled
+        Serial.println(F("INIT_WARNING: MS5611 barometer not initialized. Functionality will be limited."));
+    }
   }
 
   if (g_debugFlags.enableSystemDebug) {

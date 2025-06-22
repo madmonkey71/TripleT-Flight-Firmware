@@ -415,25 +415,44 @@ bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
     
     // Barometer Health Check (Essential for most states)
     if (!ms5611_initialized_ok) {
-        if (verbose) {
-            Serial.println(F("❌ HEALTH_FAIL: MS5611 (Barometer) not initialized."));
-            Serial.println(F("   → Check I2C connections and power to barometer"));
+        if (currentState == CALIBRATION || currentState == PAD_IDLE) {
+            if (verbose) {
+                Serial.println(F("⚠️ HEALTH_WARN: MS5611 (Barometer) not initialized."));
+                Serial.println(F("   → Functionality will be limited. Arming will be prevented."));
+                Serial.println(F("   → Check I2C connections and power to barometer."));
+            }
+            // Do not set healthy = false for CALIBRATION or PAD_IDLE if baro HW init failed
+            // This allows reaching these states for diagnostics or other operations.
+        } else { // For ARMED and other flight states, it's a failure
+            if (verbose) {
+                Serial.println(F("❌ HEALTH_FAIL: MS5611 (Barometer) not initialized. Critical for current state."));
+                Serial.println(F("   → Check I2C connections and power to barometer"));
+            }
+            healthy = false;
         }
-        healthy = false;
     } else if (verbose) {
         Serial.println(F("✓ MS5611 (Barometer) initialized successfully"));
     }
     
-    if (currentState > CALIBRATION && !g_baroCalibrated) {
+    // This check for calibration status remains important,
+    // but only if the barometer hardware itself was initialized.
+    if (ms5611_initialized_ok && currentState > CALIBRATION && !g_baroCalibrated) {
         if (verbose) {
-            Serial.println(F("❌ HEALTH_FAIL: Barometer not calibrated."));
-            Serial.println(F("   → Use 'calibrate' or 'h' command to calibrate with GPS"));
-            Serial.println(F("   → Calibration requires GPS fix (3D fix with 7+ satellites)"));
+            Serial.println(F("❌ HEALTH_FAIL: Barometer is initialized but not calibrated."));
+            Serial.println(F("   → Use 'calibrate' or 'h' command to calibrate with GPS."));
+            Serial.println(F("   → Calibration requires GPS fix (3D fix with 7+ satellites)."));
         }
         healthy = false;
-    } else if (currentState > CALIBRATION && verbose) {
-        Serial.println(F("✓ Barometer calibrated and ready"));
+    } else if (!ms5611_initialized_ok && currentState > CALIBRATION && verbose) {
+        // If baro HW isn't OK, and we are past CALIBRATION, it implies we are trying to operate
+        // in a state that normally requires calibration, but can't calibrate.
+        // The !ms5611_initialized_ok check earlier would have handled warnings/errors for the current state.
+        Serial.println(F("ℹ️ INFO: Barometer hardware not initialized, so calibration status is not applicable/checked. Arming will be prevented."));
+    } else if (ms5611_initialized_ok && currentState > CALIBRATION && g_baroCalibrated && verbose) { // Baro OK, past CALIB, and calibrated
+        Serial.println(F("✓ Barometer initialized and calibrated."));
     }
+    // Note: if !ms5611_initialized_ok, the earlier check handles the verbose output for baro init status.
+    // If ms5611_initialized_ok and currentState <= CALIBRATION, no specific message here about calibration status yet.
 
     // IMU Health Check (Essential for flight)
     if (currentState >= ARMED && currentState < LANDED) {

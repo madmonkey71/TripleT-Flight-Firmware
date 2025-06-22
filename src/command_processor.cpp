@@ -386,13 +386,23 @@ void processCommand(String command,
     else if (command.equalsIgnoreCase("save_mag_cal")) { if(statusCtx.icm20948_ready) icm_20948_save_calibration(); else Serial.println(F("ICM20948 not ready to save mag cal."));}
     else if (command.equalsIgnoreCase("arm")) {
         if (currentFlightState_ref == PAD_IDLE) {
-            previousFlightState_ref = currentFlightState_ref;
-            currentFlightState_ref = ARMED;
-            stateEntryTime_ref = millis();
-            saveStateToEEPROM(); // Assumes saveStateToEEPROM uses the global currentFlightState or is passed the ref
-            Serial.println(F("System ARMED. Ready for launch."));
-            if (!debugFlags.enableSerialCSV) {
-                Serial.println(F("Note: Serial CSV output is off. Web UI will not update until it is enabled ('0')."));
+            Serial.println(F("Attempting to arm system. Checking health for ARMED state..."));
+            // Pass currentFlightState_ref (which is PAD_IDLE) to isSensorSuiteHealthy, but check for ARMED requirements.
+            // The isSensorSuiteHealthy function uses its first argument to determine context for some checks.
+            // However, for critical failures like barometer not initialized, it should fail if ARMED is the target.
+            // Let's explicitly check requirements for ARMED state.
+            if (isSensorSuiteHealthy(ARMED, true)) { // Check health requirements for ARMED state
+                previousFlightState_ref = currentFlightState_ref;
+                currentFlightState_ref = ARMED;
+                stateEntryTime_ref = millis();
+                saveStateToEEPROM(); // Assumes saveStateToEEPROM uses the global currentFlightState or is passed the ref
+                Serial.println(F("System ARMED. Ready for launch."));
+                if (!debugFlags.enableSerialCSV) {
+                    Serial.println(F("Note: Serial CSV output is off. Web UI will not update until it is enabled ('0')."));
+                }
+            } else {
+                Serial.println(F("Cannot arm. System health check failed for ARMED state. See details above."));
+                Serial.println(F("System remains in PAD_IDLE state."));
             }
         } else {
             Serial.print(F("Cannot arm. System is not in PAD_IDLE state. Current state: "));

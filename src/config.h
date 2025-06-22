@@ -9,9 +9,6 @@
 #endif
 #endif
 
-// --- Master Feature Switches ---
-#define ENABLE_WATCHDOG 0                 // Enable/Disable the hardware watchdog timer (1=Enabled, 0=Disabled)
-
 // --- Features & Hardware Presence ---
 // Configure parachute presence. At least MAIN must be present.
 #define DROGUE_PRESENT true // Set to true if drogue deployment is needed

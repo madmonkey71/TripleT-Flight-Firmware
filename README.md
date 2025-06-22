@@ -1,6 +1,8 @@
 # TripleT Flight Firmware
 
-An eventually comprehensive flight controller firmware for Teensy 4.1 microcontrollers, designed for model rockets and high-power rocketry applications with active guidance.
+**Current Version:** v0.48  
+**Current State:** Beta  
+**Last Updated:** January 2025
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
@@ -73,47 +75,62 @@ This project utilizes AI assistance for:
 
 ## Overview
 
-TripleT Flight Firmware is an open-source flight controller software built for the Teensy 4.1. It provides robust sensor integration, data logging, a complete flight state machine, and a PID-based control system framework designed for actively guided rockets.
+This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets. The system manages all phases of flight from launch detection through recovery, with robust sensor fusion, data logging, and safety features.
+
+## Key Features
+
+- **Multi-Phase Flight Management**: Handles all flight phases from pad idle through recovery
+- **Sensor Fusion**: Combines data from multiple sensors (ICM-20948 IMU, KX134 accelerometer, MS5611 barometer, GPS)
+- **Dual Accelerometer Support**: Primary KX134 for high-G events, secondary ICM-20948 for attitude
+- **Advanced Orientation Filtering**: Kalman filter with Madgwick filter fallback option
+- **Redundant Apogee Detection**: Multiple methods including barometric, accelerometer, GPS, and backup timer
+- **Configurable Parachute Deployment**: Support for single or dual-deploy configurations
+- **Comprehensive Data Logging**: Real-time CSV logging to SD card with 50+ data points
+- **Interactive Command Interface**: Serial commands for configuration, calibration, and diagnostics
+- **Visual Status Indicators**: NeoPixel LEDs for flight state indication
+- **Audio Feedback**: Buzzer patterns for different states and alerts
+- **Error Recovery**: Automatic sensor health monitoring and recovery mechanisms
+- **EEPROM State Persistence**: Flight state recovery after power loss
 
 ## Hardware Requirements
 
-- **Microcontroller**: Teensy 4.1
-- **Sensors**:
-  - SparkFun ZOE-M8Q GPS Module (I2C address 0x42)
-  - MS5611 Barometric Pressure Sensor (I2C address 0x77)
-  - SparkFun KX134 Accelerometer (I2C address 0x1F)
-  - SparkFun ICM-20948 9-DOF IMU (I2C address 0x69)
-- **Storage**: Micro SD Card (using the built-in SDIO on Teensy 4.1).
-- **Actuators**: PWM Servo motors for control surfaces or Thrust Vector Control (TVC).
-- **Other Components**:
-  - Pyro channels for recovery system deployment.
-  - Optional: Buzzer, WS2812 LEDs.
+### Core Components
+- **Teensy 4.1** microcontroller
+- **ICM-20948** 9-DOF IMU (gyroscope, accelerometer, magnetometer)
+- **KX134** high-G accelerometer (±64g range)
+- **MS5611** barometric pressure sensor
+- **u-blox GPS module** (e.g., ZOE-M8Q)
+- **SD card** for data logging (built-in Teensy 4.1 slot)
+- **NeoPixel LEDs** (2x for status indication)
+- **Buzzer** for audio feedback
+- **Pyrotechnic channels** for parachute deployment
 
-## Features
-
-- **Multi-sensor Integration**: Fuses data from GPS, barometer, accelerometer, and 9-DOF IMU.
-- **Flight State Machine**: A sophisticated 14-state machine manages the entire flight profile, from `PAD_IDLE` through `BOOST`, `COAST`, `APOGEE`, multiple `DESCENT` phases, and finally to `RECOVERY`. State transitions are handled automatically based on sensor data.
-- **State Persistence & Recovery**: Automatically saves the flight state and critical data (max altitude, launch altitude) to EEPROM. In case of power loss, the firmware attempts to resume the flight in a safe state (e.g., resuming in `DROGUE_DESCENT` if power was lost during ascent).
-- **PID-based Actuator Control**: A full 3-axis PID controller is implemented to manage hardware actuators (e.g., servos). The controller's core logic is in place.
-  - Includes an Attitude Hold mode during the COAST phase, which maintains the orientation captured at motor burnout.
-- **Audible Recovery Aid**: Audible buzzer sequence in RECOVERY state to aid in locating the rocket.
-- **SD Card Logging**: Logs a comprehensive set of data points to a CSV file on the SD card, including sensor readings, flight state, and timestamps.
-- **GPS/Barometer Calibration**: Calibrates the barometric altimeter using GPS data for accurate altitude-above-ground-level (AGL) readings.
-- **Error Handling**: Includes watchdog timers, sensor initialization checks, and in-flight sensor health monitoring integrated with the state machine.
-- **Interactive Serial Interface**: A command-driven system for real-time data monitoring, configuration, and diagnostics.
+### Pin Configuration
+- **NeoPixel**: Pin 2
+- **Buzzer**: Pin 9
+- **Pyro Channel 1** (Drogue): Pin 2
+- **Pyro Channel 2** (Main): Pin 3
+- **I2C**: Pins 18 (SDA), 19 (SCL) - for sensors
+- **GPS Serial**: Hardware serial port
+- **SD Card**: Built-in SDIO interface
 
 ## Installation
 
-1.  **Set up PlatformIO Environment**: Install PlatformIO, clone this repository, and open the project.
-2.  **Libraries**: Ensure all libraries listed in `platformio.ini` are installed.
-3.  **Hardware Connections**: Connect sensors via I2C, servos to their designated PWM pins, and insert an SD card.
-4.  **Compile and Upload**: Select the `teensy41` environment and upload.
+1. **Set up PlatformIO Environment**: Install PlatformIO, clone this repository, and open the project.
+2. **Libraries**: All required libraries are specified in `platformio.ini` and will be automatically installed.
+3. **Hardware Connections**: Connect sensors via I2C, GPS via serial, pyro channels to designated pins, and insert an SD card.
+4. **Compile and Upload**: Select the `teensy41` environment and upload to your Teensy 4.1.
 
 ## Usage
 
 ### Basic Operation
 
-On startup, the firmware initializes all hardware, performs calibrations, creates a new log file, and enters the `PAD_IDLE` state, ready for the `arm` command.
+On startup, the firmware:
+1. Initializes all hardware and sensors
+2. Performs sensor health checks
+3. Waits for GPS time sync and barometer calibration
+4. Creates a new log file with timestamp
+5. Enters `PAD_IDLE` state, ready for the `arm` command
 
 ### Serial Commands
 
@@ -129,157 +146,131 @@ The firmware supports a rich set of serial commands for interaction:
 | `0` | Toggles continuous CSV data output over serial. |
 | `1-9` | Toggle various debug output levels (system, IMU, GPS, etc.). |
 | `help` / `a` | Shows the full list of available commands. |
+| `set_orientation_filter [madgwick\|kalman]` | Sets the orientation filter type. |
+| `clear_errors` | Manually clears error state if sensors have recovered. |
 
 ### Data Logging
 
-Data is logged to the SD card in CSV format. The log includes:
-- Timestamp, Flight State (integer), GPS data, Barometric data, Accelerometer data, IMU data.
-- Includes logging for the PID guidance system: target orientation, PID integral values, and final actuator outputs.
+Data is logged to the SD card in CSV format with timestamps. The log includes:
+- **Flight State Information**: Current state, timestamps, state durations
+- **Sensor Data**: All accelerometer, gyroscope, magnetometer, barometer, and GPS readings
+- **Orientation Data**: Quaternions, Euler angles from both Kalman and Madgwick filters
+- **Flight Metrics**: Altitude AGL, velocity, maximum altitude reached
+- **System Status**: Sensor health, calibration status, error flags
+- **Control Outputs**: Servo commands for attitude control (if enabled)
 
-### Configuration
+### Flight States
 
-Key parameters are configured via `#define` statements in `src/config.h`:
-- **Flight Logic**: `MAIN_DEPLOY_ALTITUDE`, `BOOST_ACCEL_THRESHOLD`, `COAST_ACCEL_THRESHOLD`, `APOGEE_CONFIRMATION_COUNT`.
-- **Hardware Presence**: `DROGUE_PRESENT`, `MAIN_PRESENT`, `USE_KX134`.
-- **PID Gains**: `PID_ROLL_KP`, `PID_ROLL_KI`, `PID_ROLL_KD` (and for Pitch/Yaw).
-- **Actuator Pins**: `ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`.
-- **Servo Throws**: `SERVO_MIN_PULSE_WIDTH`, `SERVO_MAX_PULSE_WIDTH`.
+The firmware manages the following flight states:
 
-## Documentation
+1. **STARTUP**: Initial power-on and hardware initialization
+2. **CALIBRATION**: Waiting for barometer calibration with GPS
+3. **PAD_IDLE**: Ready state, waiting for arm command
+4. **ARMED**: Armed and ready, monitoring for liftoff
+5. **BOOST**: Motor burn phase, detecting burnout
+6. **COAST**: Coasting to apogee, monitoring for peak altitude
+7. **APOGEE**: Peak altitude reached, preparing for deployment
+8. **DROGUE_DEPLOY**: Deploying drogue parachute
+9. **DROGUE_DESCENT**: Descending under drogue
+10. **MAIN_DEPLOY**: Deploying main parachute
+11. **MAIN_DESCENT**: Descending under main parachute
+12. **LANDED**: Touchdown confirmed
+13. **RECOVERY**: Post-flight recovery mode with location beeper
+14. **ERROR**: Error state with diagnostic information
 
-For more detailed design information, please refer to:
-- [System Documentation](docs/TripleT_Flight_Firmware_Documentation.md)
-- [State Machine Design](State Machine.md)
-- [Original Gap Analysis](GAP_ANALYSIS.md)
-- [Updated Gap Analysis & Roadmap](UPDATED_GAP_ANALYSIS_2025.md) ⭐ **Current**
+## Configuration
 
-## Recent Changes
+Key configuration parameters can be modified in `src/config.h`:
 
-### Compilation Fixes (Latest)
-Fixed several critical compilation errors that were preventing the firmware from building:
+### Flight Parameters
+- `BOOST_ACCEL_THRESHOLD`: Liftoff detection threshold (default: 2.0g)
+- `COAST_ACCEL_THRESHOLD`: Motor burnout detection (default: 0.5g)
+- `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M`: Main parachute deployment altitude (default: 100m AGL)
+- `APOGEE_CONFIRMATION_COUNT`: Readings required to confirm apogee (default: 5)
 
-1. **Reference vs Pointer Error**: Fixed incorrect usage of address operator (&) when calling guidance functions. The functions expect references (`float&`) but were being passed pointers (`float*`). Changed:
-   - `guidance_get_target_euler_angles(&logEntry.target_roll, ...)` → `guidance_get_target_euler_angles(logEntry.target_roll, ...)`
-   - Similar fixes for `guidance_get_pid_integrals()` and `guidance_get_actuator_outputs()`
+### Hardware Configuration
+- `DROGUE_PRESENT` / `MAIN_PRESENT`: Configure parachute deployment type
+- `USE_KX134`: Enable/disable KX134 high-G accelerometer
+- `BUZZER_OUTPUT`: Enable/disable buzzer functionality
+- `NEOPIXEL_COUNT`: Number of status LEDs
 
-2. **Function Name Error**: Corrected the ICM-20948 initialization function call from `icm_20948_init()` to `ICM_20948_init()` to match the actual function declaration in the header file.
+### Safety Parameters
+- `MAX_SENSOR_FAILURES`: Sensor failure threshold before error state
+- `ERROR_RECOVERY_ATTEMPT_MS`: Time before attempting error recovery
+- `BACKUP_APOGEE_TIME_MS`: Failsafe apogee detection timer
 
-3. **Missing Closing Braces**: Added missing closing braces at the end of the `loop()` function that were causing syntax errors.
+## Safety Features
 
-4. **Linker Error**: Implemented missing `icm_20948_get_mag()` function in `icm_20948_functions.cpp` that was declared in the header but not defined, causing a linker error.
+- **Sensor Health Monitoring**: Continuous monitoring of all critical sensors
+- **Redundant Apogee Detection**: Multiple independent methods to ensure reliable deployment
+- **Error Recovery**: Automatic recovery from transient sensor failures
+- **State Persistence**: Flight state saved to EEPROM for power-loss recovery
+- **Backup Timers**: Failsafe mechanisms if primary detection methods fail
+- **Comprehensive Logging**: Detailed data logging for post-flight analysis
 
-5. **Unused Variable Warnings**: Cleaned up unused variables in the `loop()` function (`lastDisplayTime`, `lastDetailedTime`, `lastAccelReadTime`, `lastGPSCheckTime`, `lastStorageCheckTime`, `lastGuidanceUpdateTime`) that were causing compiler warnings.
+## Development
 
-6. **ERROR State Management Fixes**: 
-   - **Missing Command Implementation**: Added the `clear_errors` command that was documented in help but not implemented
-   - **Automatic Error Clearing**: Added logic to automatically clear ERROR state during startup if all systems are healthy
-   - **State Persistence**: Both manual and automatic error clearing now save the cleared state to EEPROM
-   - **Web Interface Sync**: Fixed issue where recovered ERROR state wasn't properly reflected in web interface state display
+### Project Structure
+```
+src/
+├── TripleT_Flight_Firmware.cpp    # Main firmware file
+├── config.h                       # Configuration parameters
+├── flight_logic.cpp               # Flight state machine
+├── command_processor.cpp          # Serial command handling
+├── sensor functions/              # Individual sensor modules
+├── utility_functions.cpp          # Helper functions
+└── data_structures.h              # Data type definitions
+```
 
-7. **CRITICAL: Serial CSV Output Fix**: 
-   - **Root Cause**: The `loop()` function was never calling `WriteLogData()`, so no CSV data was being output even when `enableSerialCSV` was true
-   - **Solution**: Added call to `WriteLogData()` when sensors are updated in the main loop
-   - **Additional Fix**: Added call to `ProcessFlightState()` for proper flight state machine operation
-   - **Impact**: Serial CSV output now works correctly and can be used with the web interface
+### Adding New Features
+1. Update configuration in `config.h` if needed
+2. Implement functionality in appropriate module
+3. Add command interface in `command_processor.cpp` if required
+4. Update logging format in `log_format_definition.h` if adding new data
+5. Test thoroughly with hardware-in-the-loop
 
-8. **3D Visualization Not Updating**: Fixed critical issue where 3D position visualization in web interface wasn't updating:
-   - **Root Cause**: When using Kalman filter (default), quaternions were never populated, causing web interface to show static orientation
-   - **Solution**: Added `convertEulerToQuaternion()` function to convert Kalman filter Euler angles back to quaternions for logging and visualization
-   - **Web Interface Mapping**: Updated CSV header mapping to match firmware output (`TgtRoll` vs `TargetRoll_rad`, `ActuatorOutRoll` vs `ActuatorX`)
-   - **Filter Management**: Ensured Madgwick filter remains disabled (as requested) while Kalman filter provides proper orientation data
-   - **Data Flow**: Now when `useKalmanFilter=true`, Euler angles come from Kalman filter and quaternions are calculated from those angles
+## Troubleshooting
 
-9. **Compilation Warning Fixes**: Fixed remaining compiler warnings:
-   - **Unused Variable**: Removed unused `systemHealthy` variable in `clear_errors` command implementation
-   - **EEPROM Signature Overflow**: Changed `EEPROM_SIGNATURE_VALUE` from `0xDEADBEEF` (32-bit) to `0xBEEF` (16-bit) to match the `uint16_t` signature field in `FlightStateData` structure
+### Common Issues
+- **Sensor Initialization Failures**: Check I2C connections and power supply
+- **GPS Not Getting Fix**: Ensure clear sky view and allow time for cold start
+- **SD Card Issues**: Verify card is formatted as FAT32 and has sufficient free space
+- **Compilation Errors**: Ensure all libraries are installed via PlatformIO
 
-These fixes ensure the firmware can now compile successfully for the Teensy 4.1 platform without errors or warnings, properly manage error state recovery and clearing, and most critically, the data logging/CSV output functionality now works properly.
-
-### KX134 Sensor & 3D Visualization Fixes (Latest)
-Fixed critical issues with KX134 high-G accelerometer data logging and 3D visualization:
-
-1. **KX134 Data Logging Issue**: 
-   - **Root Cause**: While `kx134_init()` was called during setup, `kx134_read()` was never called in the main loop, so KX134 data was never actually read or logged
-   - **Solution**: Added `kx134_read()` call in the main loop when `kx134_initialized_ok` is true
-   - **Flag Management**: Fixed `kx134_initialized_ok` flag to properly reflect initialization status based on `kx134_init()` return value
-
-2. **3D Visualization Not Working**: 
-   - **Root Cause**: Kalman filter was enabled by default but never initialized, so orientation data (Euler angles) remained at zero values
-   - **Solution**: Added Kalman filter initialization in `setup()` function when `useKalmanFilter` is true and ICM-20948 is ready
-   - **Impact**: 3D visualization now properly displays rocket orientation in real-time
-
-3. **CRITICAL FIX: 3D Visualization Still Not Working (Follow-up)**
-   - **Root Cause**: A follow-up investigation revealed that the `icm20948_ready` flag, which the Kalman filter depends on, was never set to `true`. Additionally, the `dt` (delta-time) calculation was misplaced, preventing the filter from updating.
-   - **Solution**:
-     - Set `icm20948_ready = true;` immediately after the ICM-20948 sensor is initialized.
-     - Moved the `dt` calculation to the correct position within the main loop, right before the `kalman_predict` call.
-   - **Impact**: The Kalman filter is now correctly initialized **and** updated every cycle, providing accurate, real-time orientation data and fully enabling the 3D visualization.
-
-4. **Web Interface State Display Fix**:
-   - **Root Cause**: The flight state enum (e.g., `PAD_IDLE`, `COAST`, `ERROR`) was hardcoded in a JavaScript file, which had become out of sync with the authoritative C++ enum in the firmware. This caused the web interface to display the wrong state (e.g., showing "STARTUP" when the firmware was in `DEBUG_MODE`).
-   - **Solution**: Refactored the web interface to load its configuration from a single, centralized `flight_console_data_mapping.json` file. The flight state map was removed from the JavaScript and added to this JSON file. The application now dynamically fetches this configuration on startup.
-   - **Impact**: The web interface now **always** displays the correct flight state, as it uses the same source of truth as the data parser. This makes the UI more robust and easier to update in the future.
-
-5. **Sensor Fusion Integration**: 
-   - **KX134 Availability**: High-G accelerometer data is now properly logged and available for sensor fusion during high-G phases
-   - **Orientation Data**: Both Kalman filter quaternions and Euler angles are now properly generated and logged
-   - **Web Interface**: 3D visualizer now receives valid orientation data for real-time rocket attitude display
-
-6. **Firmware Stuck in ERROR State on Boot**:
-   - **Root Cause**: A bug in the `setup()` function's health check for recovering from an `ERROR` state was causing the check to always fail. It was incorrectly calling `baro.begin()` on a non-existent object instead of checking a valid initialization flag.
-   - **Solution**:
-     - Introduced a new global flag, `ms5611_initialized_ok`.
-     - Modified the `ms5611_init()` function to set this flag to `true` on successful initialization and `false` on failure.
-     - Updated the health check in `setup()` to use the new `ms5611_initialized_ok` flag instead of the erroneous `baro.begin()` call.
-   - **Impact**: The firmware can now correctly assess sensor health upon booting into an `ERROR` state. If all systems are nominal, it will automatically transition to `PAD_IDLE`, allowing the system to recover from transient errors without user intervention.
-
-7. **Flight State Logic Fix**:
-   - **Root Cause**: The flight state was being immediately set back to `ERROR` after being cleared due to an aggressive, unconditional health check at the start of the main processing loop. The check didn't allow time for a manual `clear_errors` command to take effect before re-evaluating the system's health.
-   - **Solution**:
-     - The health check within `ProcessFlightState()` is now deferred by one second, preventing it from immediately overriding a manually cleared state.
-     - The health check logic in `isSensorSuiteHealthy()` was relaxed for the `PAD_IDLE` state, requiring only the essential barometer to be initialized. This allows for easier debugging of other sensors without being locked out.
-     - Added a `verbose` flag to the health check function to provide detailed reports on which sensor is failing, improving diagnostics.
-   - **Impact**: The flight controller is now more resilient and easier to debug. It no longer gets stuck in an `ERROR` state after a manual clear and provides more precise feedback when a sensor issue is detected.
-
-These fixes ensure that all sensor data is properly read, logged, and visualized, providing complete situational awareness for flight operations.
-
-## Development Roadmap (Priority-Based)
-
-### 🔴 Phase 1: Critical Flight Operations (1-2 months)
-- [ ] **Live Telemetry System**: Implement radio communication for real-time flight monitoring (LoRa/XBee)
-- [ ] **Advanced Guidance Algorithms**: Gravity turn maneuvers, trajectory following, wind compensation
-- [ ] **Complete Sensor Fusion**: Finish Kalman filter implementation for improved orientation accuracy
-
-### 🟡 Phase 2: System Enhancement (2-3 months)  
-- [ ] **Enhanced Recovery System**: GPS beacon transmission, audio locator, LED strobe patterns
-- [ ] **Persistent Calibration**: Save/load magnetometer calibration to EEPROM/SD card
-- [ ] **Expanded Error Handling**: Specific error codes, recovery procedures, comprehensive health monitoring
-
-### 🟢 Phase 3: Quality & Performance (Ongoing)
-- [ ] **User Interface Improvements**: Command validation, configuration management, simulation mode
-- [ ] **Documentation & Testing**: Complete API docs, automated testing, user manual
-- [ ] **Performance Optimization**: Intelligent logging, memory optimization, profiling capabilities
-
-### ✅ Recently Completed Major Features
-- [x] **Critical Safety Systems**: Sensor health integration, redundant apogee detection with backup timer
-- [x] **State-Based Guidance Control**: PID controllers active only during appropriate flight phases
-- [x] **Enhanced Data Logging**: Complete GNC data logging for post-flight analysis and tuning
-- [x] **Web Interface**: Real-time data visualization with Web Serial API integration
-- [x] **Sensor Fusion & Calibration**: Kalman filter with dynamic accelerometer switching and persistent magnetometer calibration is complete.
-- [x] **Compilation Fixes**: Resolved pointer/reference errors, function naming issues, and missing braces in main loop
-
-**Estimated Timeline to Production-Ready**: 4-6 months  
-**Current Status**: Ready for controlled test flights with basic guidance functionality
-
-## Acknowledgements
-
-This project was inspired by the work of Joe Barnard at BPS.Space.
+### Debug Commands
+- Use `status_sensors` to check sensor health
+- Enable debug flags with numeric commands (1-9) for detailed output
+- Check storage with `f` command
+- Use `scan_i2c` to verify sensor connections
 
 ## License
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0).
 
-## Contributing
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## Acknowledgments
+
+- Original inspiration from BPS.Space flight computer projects
+- SparkFun and Adafruit for excellent sensor libraries
+- PJRC for the powerful Teensy 4.1 platform
+- PlatformIO for the excellent development environment
+
+## Support
+
+For issues, questions, or contributions, please use the GitHub repository's issue tracker and pull request system.
+
+## Recent Changes (Latest)
+
+### Watchdog Timer Removal and Compilation Fixes
+- **Removed all watchdog timer functionality** as requested
+- **Disabled ENABLE_WATCHDOG** in `src/config.h` 
+- **Deleted Watchdog_t4 library** from `lib/` directory
+- **Fixed multiple compilation errors** including:
+  - Missing global variable declarations (`g_pixels`, `g_ms5611Sensor`)
+  - SystemStatusContext member access issues
+  - Function signature mismatches
+  - Jump to case label errors in switch statements
+  - Missing function parameters for `kalman_init()`
+- **Re-enabled Madgwick filter configuration** macros in config.h
+- **Updated command processor** to use correct pointer syntax for SystemStatusContext
 
 

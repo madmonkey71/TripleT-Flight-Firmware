@@ -87,7 +87,7 @@ void ProcessFlightState() {
     if (g_currentFlightState != LANDED && g_currentFlightState != RECOVERY && g_currentFlightState != ERROR) {
         if (millis() - lastErrorCheckTime > errorCheckInterval) {
             lastErrorCheckTime = millis();
-            if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, g_myGNSS
+            if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, myGNSS
                 // Log detailed sensor status before transitioning to ERROR
                 if (g_debugFlags.enableSystemDebug) {
                     Serial.println(F("--- Sensor Suite Health Report (Pre-ERROR) ---"));

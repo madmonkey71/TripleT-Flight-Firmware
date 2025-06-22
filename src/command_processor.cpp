@@ -325,11 +325,7 @@ void processCommand(String command,
     if (command.length() == 0) return;
 
     // extern Adafruit_NeoPixel pixels; // No longer needed, passed as pixels_ref_param
-    extern MS5611 ms5611Sensor;     // Used by performCalibration, which is called by processCommand.
-                                    // performCalibration should ideally get this via params too.
-                                    // For now, this extern remains if performCalibration isn't changed.
-                                    // However, performCalibration's signature in .h takes MS5611&.
-                                    // This implies ms5611Sensor should be passed from processCommand.
+    // extern MS5611 ms5611Sensor;  // No longer needed, passed as baro_ref parameter
 
     // Make command case-insensitive for main processing
     command.toLowerCase();

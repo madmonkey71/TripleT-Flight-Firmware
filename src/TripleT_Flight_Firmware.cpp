@@ -88,12 +88,31 @@ float g_kalmanYaw = 0.0f;
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
 // External declarations for sensor data
-extern SFE_UBLOX_GNSS g_myGNSS;  // GPS object (assuming definition is here, or rename at definition)
-                                // If myGNSS is defined in gps_functions.cpp, this should remain 'extern SFE_UBLOX_GNSS myGNSS;'
-                                // For now, assuming it's defined in this file or needs renaming at definition.
 extern float pressure; // Definition likely in sensor_functions.cpp
 extern float temperature; // Definition likely in sensor_functions.cpp
 // extern float kx134_accel[3]; // This is often a global in the KX134 driver itself.
+
+// Add missing global variable definitions
+bool g_baroCalibrated = false;
+FlightState g_currentFlightState = STARTUP;
+FlightState g_previousFlightState = STARTUP;
+float g_launchAltitude = 0.0f;
+float g_maxAltitudeReached = 0.0f;
+float g_currentAltitude = 0.0f;
+
+// Add debug flag definitions
+volatile bool enableGPSDebug = false;
+volatile bool enableSensorDebug = false;
+volatile bool enableICMRawDebug = false;
+
+// Add variables needed by state_management.cpp
+FlightState currentFlightState = STARTUP;  // Alias for g_currentFlightState
+float launchAltitude = 0.0f;               // Alias for g_launchAltitude  
+float maxAltitudeReached = 0.0f;           // Alias for g_maxAltitudeReached
+float currentAltitude = 0.0f;              // Alias for g_currentAltitude
+
+// Add variable needed by ms5611_functions.cpp
+bool baroCalibrated = false;               // Alias for g_baroCalibrated
 
 // Define sensor objects
 SparkFun_KX134 g_kx134Accel;  // Add KX134 accelerometer object definition
@@ -262,15 +281,10 @@ bool createNewLogFile(SdFat& sd_obj, SFE_UBLOX_GNSS& gnss, FsFile& logFile_obj_r
 // This function still uses the global LogDataFile. If it needs to be more generic,
 // it should take an FsFile reference.
 void closeAllFiles(FsFile& logFile_obj_to_close) {
-  if (logFile_obj_to_close) {
-    Serial.println(F("Closing log file (via closeAllFiles)"));
-    logFile_obj_to_close.flush(); // Ensure data is written
+  // Close any open log files
+  if (logFile_obj_to_close.isOpen()) {
     logFile_obj_to_close.close();
-    
-    // The caller is responsible for what happens to the FsFile object itself.
-    // If it was a global like LogDataFile, it's now closed.
-    // If it needs to be reset (e.g., LogDataFile = FsFile();), the caller should do that
-    // if logFile_obj_to_close was a reference to that global.
+    Serial.println(F("Log file closed."));
   }
 }
 
@@ -308,7 +322,7 @@ void WriteLogData(bool forceLog) {
   logEntry.seqNum = g_logSequenceNumber++; // Increment and assign sequence number
   logEntry.timestamp = millis(); // Use current millis() for timestamp
   logEntry.flightState = static_cast<uint8_t>(g_currentFlightState); // Add current flight state
-  logEntry.fixType = GPS_fixType; // These GPS_ variables are assumed to be populated by gps_read() from g_myGNSS
+  logEntry.fixType = GPS_fixType; // These GPS_ variables are assumed to be populated by gps_read() from myGNSS
   logEntry.sats = SIV;            // and are typically global or static within gps_functions.cpp.
                                   // If they are truly global in *this* file, they need g_ prefix.
                                   // For now, assuming they are from gps_functions.cpp context.
@@ -407,7 +421,7 @@ void WriteLogData(bool forceLog) {
     if (millis() - lastLogWriteErrorTime > LOG_WRITE_RETRY_DELAY_MS) { // Rate limit attempts to reopen
       Serial.println(F("INFO: Log file is not open. Attempting to create a new log file..."));
       // Call the new createNewLogFile, passing global objects/buffers
-      if (createNewLogFile(g_SD, g_myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
+      if (createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
         g_loggingEnabled = true; // Set global on success
         Serial.println(F("INFO: New log file created successfully."));
       } else {
@@ -439,7 +453,7 @@ void WriteLogData(bool forceLog) {
     }
     
     // Attempt to create a new log file immediately
-    if (createNewLogFile(g_SD, g_myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
+    if (createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
       g_loggingEnabled = true; // Set global on success
       Serial.println(F("INFO: Successfully created a new log file. Retrying write for the current log entry."));
       // Retry writing the same log entry to the new file
@@ -481,7 +495,7 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
   // GPS section
   if (g_debugFlags.enableGPSDebug) {
     Serial.println("\n--- GPS Status ---");
-    if (GPS_fixType > 0) { // Assuming GPS_fixType etc. are updated by gps_read() from g_myGNSS
+    if (GPS_fixType > 0) { // Assuming GPS_fixType etc. are updated by gps_read() from myGNSS
       Serial.printf("Position: %.6f, %.6f, Alt: %.2fm, Sat: %d, Fix: %d\n", 
                   GPS_latitude / 10000000.0, GPS_longitude / 10000000.0, GPS_altitude / 1000.0, SIV, GPS_fixType);
       Serial.printf("Speed: %.2f km/h, Course: %.2f°\n", GPS_speed / 1000.0 * 3.6, GPS_heading / 100000.0);
@@ -568,27 +582,6 @@ void setup() {
   Wire.setClock(400000); // Ensure I2C is up for EEPROM
   SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
 
-  // --- Initialize Watchdog Timer ---
-#if ENABLE_WATCHDOG
-  Serial.println(F("Initializing Watchdog Timer..."));
-  WDT_timings_t config;
-  config.timeout = WATCHDOG_TIMEOUT_MS; // WATCHDOG_TIMEOUT_MS from config.h (in ms)
-  // config.window = 0; // Optional: window mode, 0 for simple timeout
-  // config.callback = nullptr; // Optional: callback function on first timeout (before reset)
-  // config.pin = 0; // Optional: pin to toggle for watchdog activity
-  // config.prescaler = 0; // Optional: set prescaler if needed, 0 for default
-  if (!wdt.begin(config)) {
-    Serial.println(F("ERROR: Failed to initialize Watchdog Timer!"));
-    // Potentially indicate this error via LED or other means, though system might hang if WDT was critical
-  } else {
-    Serial.print(F("Watchdog Timer initialized with timeout: "));
-    Serial.print(WATCHDOG_TIMEOUT_MS);
-    Serial.println(F(" ms"));
-  }
-#else
-  Serial.println(F("Watchdog Timer is disabled by configuration."));
-#endif
-
   // --- Recover Flight State ---
   Serial.println(F("Checking for flight state recovery..."));
   recoverFromPowerLoss(); // This function will update g_currentFlightState
@@ -665,7 +658,7 @@ void setup() {
     gps_read();
     
     // Check if we have a valid year (2025 or later)
-    if (g_myGNSS.getYear() >= 2025) {
+          if (myGNSS.getYear() >= 2025) {
       gpsTimeValid = true;
       // Set LED to cyan to indicate valid GPS time
       g_pixels.setPixelColor(0, g_pixels.Color(0, 50, 50));
@@ -697,17 +690,17 @@ void setup() {
     Serial.print(F("GPS time sync timeout. Current time: "));
   }
   
-  Serial.print(g_myGNSS.getYear());
+  Serial.print(myGNSS.getYear());
   Serial.print(F("-"));
-  Serial.print(g_myGNSS.getMonth());
+  Serial.print(myGNSS.getMonth());
   Serial.print(F("-"));
-  Serial.print(g_myGNSS.getDay());
+  Serial.print(myGNSS.getDay());
   Serial.print(F(" "));
-  Serial.print(g_myGNSS.getHour());
+  Serial.print(myGNSS.getHour());
   Serial.print(F(":"));
-  Serial.print(g_myGNSS.getMinute());
+  Serial.print(myGNSS.getMinute());
   Serial.print(F(":"));
-  Serial.println(g_myGNSS.getSecond());
+  Serial.println(myGNSS.getSecond());
   
   // Change LED to purple for other sensor initialization
   g_pixels.setPixelColor(0, g_pixels.Color(25, 0, 25));
@@ -766,7 +759,7 @@ void setup() {
   if (g_sdCardAvailable) {
     // Only try to create a log file if SD card is available
     Serial.println(F("Creating new log file..."));
-    if (createNewLogFile(g_SD, g_myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
+    if (createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
       Serial.println(F("Data logging ready."));
       g_loggingEnabled = true; // Set global on success
     } else {
@@ -793,7 +786,7 @@ void setup() {
   // Barometric calibration is now done via command OR if state is CALIBRATION
   if (g_currentFlightState == CALIBRATION) {
     Serial.println(F("State is CALIBRATION. Attempting barometric calibration if not already done."));
-    // performCalibration(); // This would need to take g_baroCalibrated, g_pixels, g_ms5611Sensor, g_myGNSS
+    // performCalibration(); // This would need to take g_baroCalibrated, g_pixels, g_ms5611Sensor, myGNSS
                            // or use globals directly if not refactored yet.
                            // For now, assume calibration is initiated here or handled by main loop if state is CALIBRATION
   } else {
@@ -935,7 +928,7 @@ void loop() {
         g_kx134_initialized_ok,
         &g_useMadgwickFilter,
         &g_useKalmanFilter,
-        g_myGNSS,
+        myGNSS,
         g_ms5611Sensor       // Assuming g_ms5611Sensor is the global instance
     };
 
@@ -946,7 +939,7 @@ void loop() {
                    statusCtx,
                    g_debugFlags,
                    g_SD,
-                   g_myGNSS,
+                   myGNSS,
                    g_LogDataFile,
                    g_logFileName,
                    sizeof(g_logFileName),
@@ -1114,7 +1107,26 @@ void loop() {
   
   // Note: The rest of the loop function implementation should be added here
   // based on the flight state machine and other system requirements
-#if ENABLE_WATCHDOG
-  wdt.feed();
-#endif
+
+}
+
+// Implementation of initSDCard function
+bool initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out) {
+  Serial.println(F("Initializing SD card..."));
+  
+  // Reset output parameters
+  sdCardMounted_out = false;
+  sdCardPresent_out = false;
+  
+  // Try to initialize the SD card
+  if (!sd_obj.begin(SdioConfig(FIFO_SDIO))) {
+    Serial.println(F("SD Card initialization failed!"));
+    return false;
+  }
+  
+  Serial.println(F("SD Card initialized successfully."));
+  sdCardPresent_out = true;
+  sdCardMounted_out = true;
+  
+  return true;
 }

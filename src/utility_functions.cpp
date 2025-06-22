@@ -20,7 +20,7 @@ extern bool ms5611_initialized_ok;
 extern bool g_baroCalibrated;
 extern bool g_icm20948_ready;
 extern bool g_kx134_initialized_ok;
-extern SFE_UBLOX_GNSS g_myGNSS;
+extern SFE_UBLOX_GNSS myGNSS;
 extern SdFat g_SD;
 
 // Removed global Adafruit_NeoPixel pixels object definition from here.
@@ -424,7 +424,7 @@ bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
     
     // GPS Health Check (Less critical for flight, more for recovery)
     // We can be more lenient here, but log if it's not available.
-    if (g_myGNSS.getFixType() == 0 && verbose) {
+    if (myGNSS.getFixType() == 0 && verbose) {
         Serial.println(F("HEALTH_WARN: No GPS fix."));
     }
 

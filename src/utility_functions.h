@@ -27,7 +27,7 @@
 void initNeoPixel(Adafruit_NeoPixel& pixels_obj); // Updated signature
 void scan_i2c();     // Definition in utility_functions.cpp
 // bool createNewLogFile(); // Moved to command_processor.h as extern, defined in main
-// void WriteLogData(bool forceLog = false); // Defined in main
+void WriteLogData(bool forceLog = false); // Defined in main
 // void formatNumber(float input, byte columns, byte places); // Removed
 // void printStatusSummary(); // Defined in main
 // void printHelpMessage(); // Defined in command_processor.cpp

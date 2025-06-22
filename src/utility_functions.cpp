@@ -4,6 +4,8 @@
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
 #include <cmath> // Include for sqrt()
 #include <stdio.h> // For snprintf
+#include <SdFat.h>
+#include "gps_functions.h"
 // Required for dtostrf typically, though often included by Arduino.h
 #if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_TEENSY)
 #include <stdlib.h> 
@@ -14,6 +16,12 @@
 // #include <avr/dtostrf.h> // Fallback for some AVR toolchains
 #endif
 
+extern bool ms5611_initialized_ok;
+extern bool g_baroCalibrated;
+extern bool g_icm20948_ready;
+extern bool g_kx134_initialized_ok;
+extern SFE_UBLOX_GNSS g_myGNSS;
+extern SdFat g_SD;
 
 // Removed global Adafruit_NeoPixel pixels object definition from here.
 // It should be defined once in TripleT_Flight_Firmware.cpp as g_pixels.
@@ -68,8 +76,8 @@ void scan_i2c() {
 void listRootDirectory() {
   Serial.println(F("\n--- Files in root directory ---"));
   
-  FsFile root;
-  if (!root.open("/")) {
+  FsFile root = g_SD.open("/");
+  if (!root) {
     Serial.println(F("Failed to open root directory"));
     return;
   }
@@ -396,40 +404,32 @@ void convertEulerToQuaternion(float roll, float pitch, float yaw, float& q0, flo
 // ... other functions ...
 
 bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
-    bool isHealthy = true;
-
     // Barometer Health Check (Essential for most states)
     if (!ms5611_initialized_ok) {
         if (verbose) Serial.println(F("HEALTH_FAIL: MS5611 (Barometer) not initialized."));
-        isHealthy = false;
+        return false; // Critical failure
     }
-    if (currentState > CALIBRATION && !baroCalibrated) {
+    if (currentState > CALIBRATION && !g_baroCalibrated) {
         if (verbose) Serial.println(F("HEALTH_FAIL: Barometer not calibrated."));
-        isHealthy = false;
+        return false; // Critical failure
     }
 
     // IMU Health Check (Essential for flight)
     if (currentState >= ARMED && currentState < LANDED) {
-        if (!icm20948_ready && !kx134_initialized_ok) {
+        if (!g_icm20948_ready && !g_kx134_initialized_ok) {
             if (verbose) Serial.println(F("HEALTH_FAIL: No primary or secondary IMU is ready for flight."));
-            isHealthy = false;
+            return false; // Critical failure
         }
     }
     
     // GPS Health Check (Less critical for flight, more for recovery)
     // We can be more lenient here, but log if it's not available.
-    if (myGNSS.getFixType() == 0 && verbose) {
+    if (g_myGNSS.getFixType() == 0 && verbose) {
         Serial.println(F("HEALTH_WARN: No GPS fix."));
     }
 
-    // Special case for PAD_IDLE: only require the barometer to be initialized.
-    // This allows the user to debug other sensors without being locked in ERROR.
-    if (currentState == PAD_IDLE) {
-        if (verbose) Serial.println(F("HEALTH_CHECK: In PAD_IDLE, only checking barometer initialization."));
-        return ms5611_initialized_ok;
-    }
-
-    return isHealthy;
+    // If we passed all critical checks for the current state, return true
+    return true;
 }
 
 const char* getStateName(FlightState state) {

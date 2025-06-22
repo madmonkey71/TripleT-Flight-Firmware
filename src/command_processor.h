@@ -41,7 +41,7 @@ void processCommand(String command,
                     FlightState& currentFlightState_ref,
                     FlightState& previousFlightState_ref,
                     unsigned long& stateEntryTime_ref,
-                    const SystemStatusContext& statusCtx,
+                    SystemStatusContext& statusCtx,
                     DebugFlags& debugFlags,
                     // Objects/refs for functions called by processCommand:
                     SdFat& sd_obj_ref_param,
@@ -54,7 +54,9 @@ void processCommand(String command,
                     bool& sd_mounted_global_ref_param,     // For attemptToStartLogging
                     bool& sd_present_global_ref_param,     // For attemptToStartLogging
                     uint64_t& available_space_global_ref_param, // For printSDCardStatus to refresh
-                    Adafruit_NeoPixel& pixels_ref_param // Added
+                    Adafruit_NeoPixel& pixels_ref_param,
+                    bool& baroCalibrated_ref,
+                    MS5611& baro_ref
                     );
 
 void printHelpMessage(const DebugFlags& debugFlags); // Stays same

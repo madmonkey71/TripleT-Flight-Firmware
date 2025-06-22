@@ -61,7 +61,6 @@
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
-#include <Watchdog_t4.h>    // For Watchdog timer
 
 // Define variables declared as extern in utility_functions.h
 String g_FileDateString = ""; // Assuming this should also be global
@@ -105,6 +104,12 @@ PWMServo g_servo_pitch;
 PWMServo g_servo_roll;
 PWMServo g_servo_yaw;
 
+// NeoPixel object
+Adafruit_NeoPixel g_pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+// MS5611 sensor object
+MS5611 g_ms5611Sensor;
+
 // Storage configuration
 // #define SD_CARD_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space - REMOVED, defined in config.h
 #define EXTERNAL_FLASH_MIN_FREE_SPACE 1024 * 1024  // 1MB minimum free space
@@ -147,8 +152,6 @@ const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
 // class SdFat;
 // class FsFile;
 // It's generally better to ensure includes are ordered correctly. flight_context.h includes SdFat.h.
-
-Watchdog_t4 wdt; // Global Watchdog object
 
 DebugFlags g_debugFlags = {
   .enableSerialCSV = false,
@@ -952,8 +955,11 @@ void loop() {
                    g_sdCardMounted,
                    g_sdCardPresent,
                    g_availableSpace,
-                   g_pixels              // Added global Adafruit_NeoPixel object
+                   g_pixels,
+                   g_baroCalibrated,
+                   g_ms5611Sensor
                    );
+    command = ""; // Clear the command string after processing
   }
 
   // --- Sensor Data Reads ---

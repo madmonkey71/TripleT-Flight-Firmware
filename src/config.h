@@ -10,7 +10,7 @@
 #endif
 
 // --- Master Feature Switches ---
-#define ENABLE_WATCHDOG 1                 // Enable/Disable the hardware watchdog timer (1=Enabled, 0=Disabled)
+#define ENABLE_WATCHDOG 0                 // Enable/Disable the hardware watchdog timer (1=Enabled, 0=Disabled)
 
 // --- Features & Hardware Presence ---
 // Configure parachute presence. At least MAIN must be present.
@@ -126,10 +126,10 @@
 #define EEPROM_SIGNATURE_VALUE 0xBEEF      // Signature to validate EEPROM data (16-bit), used within FlightStateData
 
 // --- Madgwick Filter Configuration --- (REMOVED as Madgwick is no longer an option)
-// #define MADGWICK_BETA_INIT 0.05f
-// #define MADGWICK_BETA_STATIONARY 0.02f
-// #define MADGWICK_BETA_MOTION 0.1f
-// #define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f
+#define MADGWICK_BETA_INIT 0.05f
+#define MADGWICK_BETA_STATIONARY 0.02f
+#define MADGWICK_BETA_MOTION 0.1f
+#define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f
 
 // --- Orientation System Configuration ---
 // Determines which orientation system is active at startup.

@@ -268,29 +268,22 @@ void prepareForShutdown(Adafruit_NeoPixel& pixels_ref, FsFile& logFile_to_close_
 }
 
 void setOrientationFilter(String filterType, SystemStatusContext& statusCtx) {
-    // filterType is now passed as a parameter.
     filterType.trim(); // Ensure no leading/trailing whitespace
 
     if (filterType.equalsIgnoreCase("madgwick")) {
-        if (statusCtx.useMadgwickFilter_ptr) *statusCtx.useMadgwickFilter_ptr = true;
-        if (statusCtx.useKalmanFilter_ptr) *statusCtx.useKalmanFilter_ptr = false;
+        *statusCtx.useMadgwickFilter_ptr = true;
+        *statusCtx.useKalmanFilter_ptr = false;
         Serial.println(F("Orientation filter set to Madgwick."));
     } else if (filterType.equalsIgnoreCase("kalman")) {
-        if (statusCtx.icm20948_ready) { // Check status via context
-            if (statusCtx.useMadgwickFilter_ptr) *statusCtx.useMadgwickFilter_ptr = false;
-            if (statusCtx.useKalmanFilter_ptr) *statusCtx.useKalmanFilter_ptr = true;
-            float initial_roll = 0.0f, initial_pitch = 0.0f, initial_yaw = 0.0f;
-            kalman_init(initial_roll, initial_pitch, initial_yaw);
-            Serial.println(F("Orientation filter set to Kalman. Initialized/Re-initialized."));
-        } else {
-            Serial.println(F("Cannot switch to Kalman filter: ICM20948 not ready."));
-        }
-    } else if (!filterType.isEmpty()){ // Only print if a filter type was actually given
+        *statusCtx.useMadgwickFilter_ptr = false;
+        *statusCtx.useKalmanFilter_ptr = true;
+        kalman_init(0.0f, 0.0f, 0.0f); // Re-initialize Kalman filter with zero initial angles
+        Serial.println(F("Orientation filter set to Kalman."));
+    } else if (filterType.length() > 0){ // Only print if a filter type was actually given
         Serial.print(F("Unknown filter type: "));
         Serial.println(filterType);
     }
 }
-
 
 void getOrientationFilterStatus(const SystemStatusContext& statusCtx) {
     Serial.print(F("Current orientation filter: "));
@@ -307,12 +300,11 @@ void getOrientationFilterStatus(const SystemStatusContext& statusCtx) {
     Serial.println((statusCtx.useMadgwickFilter_ptr && *statusCtx.useMadgwickFilter_ptr) ? "true" : "false");
 }
 
-
 void processCommand(String command,
                     FlightState& currentFlightState_ref,
                     FlightState& previousFlightState_ref,
                     unsigned long& stateEntryTime_ref,
-                    const SystemStatusContext& statusCtx,
+                    SystemStatusContext& statusCtx,  // Remove const qualifier
                     DebugFlags& debugFlags,
                     // Objects/refs for functions called by processCommand:
                     SdFat& sd_obj_ref_param,
@@ -325,7 +317,9 @@ void processCommand(String command,
                     bool& sd_mounted_global_ref_param,
                     bool& sd_present_global_ref_param,
                     uint64_t& available_space_global_ref_param,
-                    Adafruit_NeoPixel& pixels_ref_param // Added
+                    Adafruit_NeoPixel& pixels_ref_param,
+                    bool& baroCalibrated_ref,
+                    MS5611& baro_ref
                     ) {
     command.trim();
     if (command.length() == 0) return;
@@ -336,6 +330,9 @@ void processCommand(String command,
                                     // For now, this extern remains if performCalibration isn't changed.
                                     // However, performCalibration's signature in .h takes MS5611&.
                                     // This implies ms5611Sensor should be passed from processCommand.
+
+    // Make command case-insensitive for main processing
+    command.toLowerCase();
 
     if (command.length() == 1) {
         char cmd = command.charAt(0);
@@ -371,12 +368,9 @@ void processCommand(String command,
                 case 'e': Serial.println(F("List logs command (Flash - Not Implemented)")); break;
                 case 'f': printStorageStatistics(statusCtx, sd_obj_ref_param); break;
                 case 'g': toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial); break;
-                case 'h': {
-                    bool localBaroCalibrated = statusCtx.baroCalibrated;
-                    // Pass pixels_ref_param, and gnss_obj_ref_param. ms5611Sensor is still extern for now.
-                    performCalibration(localBaroCalibrated, pixels_ref_param, ms5611Sensor, gnss_obj_ref_param);
-                }
-                break;
+                case 'h': 
+                    performCalibration(baroCalibrated_ref, pixels_ref_param, baro_ref, gnss_obj_ref_param);
+                    break;
                 case 'i': if(statusCtx.icm20948_ready) ICM_20948_print(); else Serial.println(F("ICM20948 not ready.")); break;
                 case 'j': toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial); break;
                 default: Serial.println(F("Unknown alphabetic command.")); break;
@@ -387,9 +381,7 @@ void processCommand(String command,
 
     if (command.equalsIgnoreCase("help")) printHelpMessage(debugFlags);
     else if (command.equalsIgnoreCase("calibrate")) {
-        bool localBaroCalibrated = statusCtx.baroCalibrated; // Make a local copy
-        performCalibration(localBaroCalibrated, pixels, ms5611Sensor, gnss_ref);
-        // See note in case 'h' about updating global g_baroCalibrated
+        performCalibration(baroCalibrated_ref, pixels_ref_param, baro_ref, gnss_obj_ref_param);
     }
     else if (command.equalsIgnoreCase("calibrate_mag")) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_mag_interactive(); else Serial.println(F("ICM20948 not ready for mag cal.")); }
     else if (command.equalsIgnoreCase("calibrate_gyro")) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_gyro_bias(2000, 1); else Serial.println(F("ICM20948 not ready for gyro cal."));}
@@ -479,13 +471,9 @@ void processCommand(String command,
         } else { Serial.print(F("Unknown debug flag: ")); Serial.println(flagIdentifier); }
     }
     else if (command.startsWith("set_orientation_filter ")) {
-        // Create a mutable copy of statusCtx to pass to setOrientationFilter
-        // This is because setOrientationFilter expects SystemStatusContext& not const SystemStatusContext&
-        // And its string argument is currently missing. This part needs more refactoring later.
-        // The string part of the command needs to be passed to setOrientationFilter.
-        String filterType = command.substring(23); // Length of "set_orientation_filter "
-        SystemStatusContext mutableStatusCtx = statusCtx; // Make a mutable copy for pointer access
-        setOrientationFilter(filterType, mutableStatusCtx);
+        String filterType = command.substring(23);
+        filterType.trim();
+        setOrientationFilter(filterType, statusCtx);
     }
     else if (command.equalsIgnoreCase("get_orientation_filter")) {
         getOrientationFilterStatus(statusCtx);

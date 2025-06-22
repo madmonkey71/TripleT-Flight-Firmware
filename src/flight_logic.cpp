@@ -12,6 +12,8 @@
 #include <Adafruit_NeoPixel.h>
 #include <MS5611.h>
 #include "debug_flags.h" // For g_debugFlags
+#include "kx134_functions.h"
+#include "icm_20948_functions.h"
 
 // Externs for variables globally defined in TripleT_Flight_Firmware.cpp
 extern FlightState g_currentFlightState;
@@ -226,8 +228,33 @@ void ProcessFlightState() {
             case RECOVERY:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("RECOVERY: System in post-flight recovery mode."));
                 break;
-            case ERROR:
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("ERROR: System has entered error state."));
+            case ERROR: {
+                // Simple error buzzer pattern
+                static unsigned long lastErrorBuzzerTime = 0;
+                static bool errorBeepState = false;
+                unsigned long currentTime = millis();
+
+                // Simple fast beeping for error state
+                if (currentTime - lastErrorBuzzerTime > 200) {
+                    lastErrorBuzzerTime = currentTime;
+                    errorBeepState = !errorBeepState;
+                    if (errorBeepState && BUZZER_OUTPUT) {
+                        tone(BUZZER_PIN, 2500);
+                    } else if (BUZZER_OUTPUT) {
+                        noTone(BUZZER_PIN);
+                    }
+                }
+
+                // Check for recovery
+                if (currentTime - g_stateEntryTime > ERROR_RECOVERY_ATTEMPT_MS) {
+                    if (isSensorSuiteHealthy(g_currentFlightState)) {
+                        g_currentFlightState = PAD_IDLE;
+                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
+                    } else {
+                        g_stateEntryTime = currentTime; // Reset timer for next recovery attempt
+                    }
+                }
+            }
                 break;
             default:
                 break;
@@ -371,111 +398,6 @@ void ProcessFlightState() {
                 }
             }
             break;
-        case ERROR:
-            // Buzzer pattern for ERROR state
-            static unsigned long lastErrorBuzzerTime = 0;
-            static int errorBeepCount = 0;
-            unsigned long currentErrorTime = millis();
-
-            if (errorBeepCount < 3) { // Three short beeps
-                if (currentErrorTime - lastErrorBuzzerTime > 100) { // Beep or silence duration
-                    if (errorBeepCount % 2 == 0) { // Beep states (0, 2, 4 -> effectively 0, 1, 2 beeps)
-                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500); // Start beep
-                    } else {
-                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN); // Stop beep (silence)
-                    }
-                    lastErrorBuzzerTime = currentErrorTime;
-                    if (errorBeepCount % 2 != 0 || errorBeepCount == 2) { // Increment after silence or after last short beep sound
-                         // This logic is a bit tricky to get exactly 3 beeps then pause.
-                         // Let's rethink state for buzzer.
-                    }
-                    // This needs a state machine for the buzzer itself or simpler logic.
-                    // For now, let's just do a continuous fast beep for error to simplify.
-                    // TODO: Implement more complex SOS-like pattern if desired.
-                    // The following is a simpler continuous fast beep for error:
-                    if (currentErrorTime - lastErrorBuzzerTime > 200) { // Fast beep on/off
-                        lastErrorBuzzerTime = currentErrorTime;
-                        static bool error_beep_on = false;
-                        error_beep_on = !error_beep_on;
-                        if (error_beep_on && BUZZER_OUTPUT) {
-                            tone(BUZZER_PIN, 2500);
-                        } else {
-                            if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                        }
-                    }
-                }
-            } // This simple fast beep is not the SOS pattern. Reverting to attempt the requested pattern.
-
-            // Refined 3 short beeps + pause pattern for ERROR state:
-            // Beep (100ms) - Silence (100ms) - Beep (100ms) - Silence (100ms) - Beep (100ms) - Silence (1000ms)
-            // Total cycle: 100+100+100+100+100+1000 = 1500ms
-            // States: 0 (Beep1), 1 (Silence1), 2 (Beep2), 3 (Silence2), 4 (Beep3), 5 (SilenceLong)
-            static uint8_t errorBuzzerPhase = 0;
-            // Removed `errorBeepCount` as it was part of a previous, more complex/buggy logic.
-            // `lastErrorBuzzerTime` is still static and used.
-            // `currentErrorTime` is local and updated each call.
-
-            currentErrorTime = millis(); // Ensure currentErrorTime is up-to-date for this iteration
-
-            switch (errorBuzzerPhase) {
-                case 0: // Beep 1
-                    if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                    lastErrorBuzzerTime = currentErrorTime;
-                    errorBuzzerPhase = 1;
-                    break;
-                case 1: // Silence 1
-                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
-                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                        lastErrorBuzzerTime = currentErrorTime;
-                        errorBuzzerPhase = 2;
-                    }
-                    break;
-                case 2: // Beep 2
-                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
-                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                        lastErrorBuzzerTime = currentErrorTime;
-                        errorBuzzerPhase = 3;
-                    }
-                    break;
-                case 3: // Silence 2
-                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
-                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                        lastErrorBuzzerTime = currentErrorTime;
-                        errorBuzzerPhase = 4;
-                    }
-                    break;
-                case 4: // Beep 3
-                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
-                        if (BUZZER_OUTPUT) tone(BUZZER_PIN, 2500);
-                        lastErrorBuzzerTime = currentErrorTime;
-                        errorBuzzerPhase = 5;
-                    }
-                    break;
-                case 5: // Silence Long
-                    if (currentErrorTime - lastErrorBuzzerTime >= 100) {
-                        if (BUZZER_OUTPUT) noTone(BUZZER_PIN);
-                        lastErrorBuzzerTime = currentErrorTime;
-                        errorBuzzerPhase = 6;
-                    }
-                    break;
-                case 6: // Wait for end of long silence
-                    if (currentErrorTime - lastErrorBuzzerTime >= 1000) {
-                        errorBuzzerPhase = 0; // Reset to start next cycle
-                        // lastErrorBuzzerTime will be updated when phase 0 starts the beep
-                    }
-                    break;
-            }
-
-            if (millis() - g_stateEntryTime > ERROR_RECOVERY_ATTEMPT_MS) {
-                if (isSensorSuiteHealthy(g_currentFlightState)) {
-                    g_currentFlightState = PAD_IDLE;
-                    if(BUZZER_OUTPUT) noTone(BUZZER_PIN); // Ensure buzzer is off when exiting error state
-                    errorBuzzerPhase = 0; // Reset buzzer phase
-                } else {
-                    g_stateEntryTime = millis(); // Reset timer for next recovery attempt
-                }
-            }
-            break;
         default:
             g_currentFlightState = ERROR;
             break;
@@ -483,10 +405,11 @@ void ProcessFlightState() {
 }
 
 void detectBoostEnd() {
-    // Assumes kx134_accel and icm_accel are available via extern from their respective .h files
+    if (g_currentFlightState != BOOST) return;
+
     if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
         boostEndTime = millis();
-        if (g_debugFlags.enableSystemDebug) Serial.println(F("BOOST_END detected by accelerometer."));
+        g_currentFlightState = COAST;
     }
 }
 
@@ -555,29 +478,40 @@ bool detectApogee() {
 }
 
 bool detectLanding() {
-    static unsigned long firstStableTime = 0;
+    if (g_currentFlightState != DROGUE_DESCENT && g_currentFlightState != MAIN_DESCENT) return false;
 
-    if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentAgl = ms5611_get_altitude() - g_launchAltitude;
-        float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
-
-        // Check if we're close to ground with low, stable acceleration
-        if (currentAgl < 50.0f && accelMag > LANDING_ACCEL_MIN_G && accelMag < LANDING_ACCEL_MAX_G) {
-            if (firstStableTime == 0) {
-                firstStableTime = millis();
-            }
-        } else {
-            firstStableTime = 0;
-        }
-        
-        // Confirm landing if stable conditions persist
-        if (firstStableTime > 0 && millis() - firstStableTime > LANDING_CONFIRMATION_TIME_MS) {
-            if (g_debugFlags.enableSystemDebug) {
-                Serial.println(F("Landing detected"));
-            }
-            return true;
-        }
+    // Use a moving average of altitude to smooth out readings
+    const int numReadings = 10;
+    static float altReadings[numReadings];
+    static int readIndex = 0;
+    static float total = 0;
+    static bool firstRun = true;
+    if (firstRun) {
+        for (int i = 0; i < numReadings; i++) altReadings[i] = 0;
+        firstRun = false;
     }
+
+    total -= altReadings[readIndex];
+    altReadings[readIndex] = ms5611_get_altitude();
+    total += altReadings[readIndex];
+    readIndex = (readIndex + 1) % numReadings;
+    float avgAlt = total / numReadings;
+
+    // Check for landing conditions
+    if (fabs(avgAlt - g_launchAltitude) < LANDING_ALTITUDE_STABLE_THRESHOLD) {
+        float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
+        if (accelMag >= LANDING_ACCEL_MIN_G && accelMag <= LANDING_ACCEL_MAX_G) {
+            static unsigned long firstLandedTime = 0;
+            if (firstLandedTime == 0) firstLandedTime = millis();
+            if (millis() - firstLandedTime >= LANDING_CONFIRMATION_TIME_MS) {
+                return true;
+            }
+        }
+    } else {
+        // Reset landing timer if altitude condition is not met
+        // firstLandedTime = 0;
+    }
+
     return false;
 }
 

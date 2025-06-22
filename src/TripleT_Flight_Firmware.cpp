@@ -561,6 +561,12 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
 // - getOrientationFilterStatus (part of processCommand)
 
 void setup() {
+  // Static flag to ensure setup logic only runs once
+  static bool setupCompleted = false;
+  if (setupCompleted) {
+    return; // Skip setup if it has already been completed
+  }
+
   // Wait for the Serial monitor to be opened.
   Serial.begin(115200);
   delay(500); // Give the serial port time to initialize
@@ -843,8 +849,30 @@ void setup() {
   // Add more checks for critical sensors to set systemHealthy = false if they fail init.
   // For example:
   // if (!ms5611Sensor.isConnected()) systemHealthy = false; // Assuming ms5611_init updates this
-  if (!g_kx134_initialized_ok && !g_icm20948_ready) systemHealthy = false; // If no IMU is good.
-  if (!ms5611_initialized_ok) systemHealthy = false; // Check extern var
+  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
+    Serial.println(F("SETUP: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
+    systemHealthy = false; // If no IMU is good.
+  }
+  if (!ms5611_initialized_ok) {
+    Serial.println(F("SETUP: MS5611 barometer not initialized. System unhealthy."));
+    systemHealthy = false; // Check extern var
+  }
+
+  if (g_debugFlags.enableSystemDebug) {
+    Serial.print(F("SETUP: System health check results:"));
+    Serial.print(F(" g_sdCardAvailable="));
+    Serial.print(g_sdCardAvailable);
+    Serial.print(F(" g_loggingEnabled="));
+    Serial.print(g_loggingEnabled);
+    Serial.print(F(" g_kx134_initialized_ok="));
+    Serial.print(g_kx134_initialized_ok);
+    Serial.print(F(" g_icm20948_ready="));
+    Serial.print(g_icm20948_ready);
+    Serial.print(F(" ms5611_initialized_ok="));
+    Serial.print(ms5611_initialized_ok);
+    Serial.print(F(" systemHealthy="));
+    Serial.println(systemHealthy);
+  }
 
   // Check if we recovered into an ERROR state
   if (g_currentFlightState == ERROR) {
@@ -891,6 +919,8 @@ void setup() {
   else if (g_currentFlightState == CALIBRATION) g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 0)); // Yellow
   // Other states will be handled by ProcessFlightState's display logic in the main loop.
   g_pixels.show();
+
+  setupCompleted = true; // Mark setup as completed
 }
 
 void loop() {

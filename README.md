@@ -286,8 +286,12 @@ For issues, questions, or contributions, please use the GitHub repository's issu
   - Enhanced diagnostic output always shows detailed sensor health on failures
   - System debug enabled by default for better troubleshooting
   - Improved timing and frequency of health check messages
-  - **CRITICAL FIX**: Fixed setup() function running repeatedly causing ERROR state loop
-  - Added static flag to ensure setup() only runs once as intended
+  - **CRITICAL ARCHITECTURAL FIX**: Properly restructured setup() function
+    - Removed state transition logic from setup() (Arduino setup should only run once)
+    - Created `handleInitialStateManagement()` for state decisions
+    - setup() now only handles true hardware initialization as intended
+    - State management runs once at start of loop() instead of repeatedly
+    - Fixed servo pin definitions and cleaned up initialization sequence
   
 - **User Experience Enhancements**
   - Clear guidance when error clearing fails due to sensor issues

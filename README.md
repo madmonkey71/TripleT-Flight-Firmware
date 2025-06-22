@@ -286,6 +286,8 @@ For issues, questions, or contributions, please use the GitHub repository's issu
   - Enhanced diagnostic output always shows detailed sensor health on failures
   - System debug enabled by default for better troubleshooting
   - Improved timing and frequency of health check messages
+  - **CRITICAL FIX**: Fixed setup() function running repeatedly causing ERROR state loop
+  - Added static flag to ensure setup() only runs once as intended
   
 - **User Experience Enhancements**
   - Clear guidance when error clearing fails due to sensor issues

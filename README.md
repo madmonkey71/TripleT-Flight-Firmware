@@ -281,10 +281,17 @@ For issues, questions, or contributions, please use the GitHub repository's issu
   - Clear explanation of state transition requirements
   - Alternative recovery paths when standard error clearing fails
   
+- **ERROR State Recovery Improvements** 
+  - Added 5-second grace period after `clear_errors` to prevent immediate re-triggering
+  - Enhanced diagnostic output always shows detailed sensor health on failures
+  - System debug enabled by default for better troubleshooting
+  - Improved timing and frequency of health check messages
+  
 - **User Experience Enhancements**
   - Clear guidance when error clearing fails due to sensor issues
   - Better understanding of barometer calibration requirements
   - Actionable troubleshooting steps for common problems
+  - Reduced console spam with optimized message timing
 
 ### Final Compilation Fixes - January 2025
 - **Fixed duplicate variable definitions** in `TripleT_Flight_Firmware.cpp`

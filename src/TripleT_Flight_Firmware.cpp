@@ -561,369 +561,98 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
 // - getOrientationFilterStatus (part of processCommand)
 
 void setup() {
-  // Static flag to ensure setup logic only runs once
-  static bool setupCompleted = false;
-  if (setupCompleted) {
-    return; // Skip setup if it has already been completed
-  }
-
   // Wait for the Serial monitor to be opened.
   Serial.begin(115200);
-  delay(500); // Give the serial port time to initialize
-
-  // Initialize NeoPixel first for visual feedback
-  initNeoPixel(g_pixels); // Call modified initNeoPixel with the global g_pixels object
-  g_pixels.setPixelColor(0, g_pixels.Color(20, 0, 0)); // Red during startup
-  g_pixels.setPixelColor(1, g_pixels.Color(20, 0, 0)); // Red during startup
-  g_pixels.show();
-
-  // --- Initialize Core Hardware ---
-  Wire.begin();
-  Wire.setClock(400000); // Ensure I2C is up for EEPROM
-  SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
-
-  // --- Recover Flight State ---
-  Serial.println(F("Checking for flight state recovery..."));
-  recoverFromPowerLoss(); // This function will update g_currentFlightState
-
-  Serial.print(F("Flight state after recovery attempt: "));
-  Serial.println(getStateName(g_currentFlightState)); // Assumes getStateName is available via utility_functions.h
-
-  // --- Initialize Debug Systems ---
-  // Important: Disable all debugging immediately at startup (unless recovery dictates otherwise, though not typical)
-  Wire.begin();
-  Wire.setClock(400000); // Ensure I2C is up for EEPROM
-  SPI.begin(); // Ensure SPI is up if EEPROM uses it (though typical EEPROM is I2C)
-
-  Serial.println(F("Checking for flight state recovery..."));
-  recoverFromPowerLoss(); // This function will update g_currentFlightState
-
-  Serial.print(F("Flight state after recovery attempt: "));
-  Serial.println(getStateName(g_currentFlightState)); // Assumes getStateName is available via utility_functions.h
-  
-  // Important: Disable all debugging immediately at startup (unless recovery dictates otherwise, though not typical)
-  // All flags are initialized to false (or their defaults) in the g_debugFlags declaration.
-  // For clarity, explicitly set them here if needed, or rely on the struct initialization.
-  // For instance, to ensure all are off:
-  // g_debugFlags = {false}; // This would reset all to false, uncomment if this is desired behavior.
-  // Individual flags can be set if needed:
-  // g_debugFlags.enableGPSDebug = false; // Example
-  
-  // Startup Tone (after initial pixel setup and recovery message)
-  delay(500);
-  tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN); delay(75);
-  noTone(BUZZER_PIN);
-  
-  // Change LED to orange to indicate waiting for serial
-  g_pixels.setPixelColor(0, g_pixels.Color(25, 12, 0)); // Orange during serial init
-  g_pixels.show();
-  
-  // Wait for serial connection with timeout
-  unsigned long serialWaitStart = millis();
-  while (!Serial && (millis() - serialWaitStart < 5000)) {
-    // Wait up to 5 seconds for serial connection
-    delay(100);
+  while (!Serial && millis() < 3000) {
+    // Wait for Serial to connect, but don't wait forever
   }
-  
-  Serial.print("TripleT Flight Firmware Alpha ");
+
+  Serial.println(F("TripleT Flight Firmware Starting..."));
+  Serial.print(F("Version: "));
   Serial.println(TRIPLET_FLIGHT_VERSION);
-  Serial.print("Board: ");
+  Serial.print(F("Board: "));
   Serial.println(BOARD_NAME);
-  
-  // Change LED to yellow during initialization
-  g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 0)); // Yellow during init
-  g_pixels.show();
 
-  // Scan the I2C bus for devices (can be after recovery attempt)
-  scan_i2c();
+  // Initialize I2C
+  Wire.begin();
+  Wire.setClock(400000); // 400kHz I2C clock
 
-  // Initialize GPS first to get accurate time (essential for logging and potentially calibration)
-  Serial.println(F("Initializing GPS module..."));
-  g_debugFlags.enableGPSDebug = false; // Disable GPS library debug output via its own mechanism if setGPSDebugging uses this
-  setGPSDebugging(false); // Explicitly call the function that controls the GPS library's internal debugging
-  gps_init();
-  Serial.println(F("GPS module initialized"));
-  
-  // Wait for GPS to have valid date/time if possible
-  // Uses a blue "breathing" pattern on the LED to show it's waiting
-  Serial.println(F("Waiting for GPS time sync..."));
-  bool gpsTimeValid = false;
-  unsigned long gpsWaitStart = millis();
-  unsigned long lastLedUpdate = 0;
-  int brightness = 0;
-  int step = 5;
-  
-  while (!gpsTimeValid && (millis() - gpsWaitStart < 30000)) {  // Wait up to 30 seconds
-    // Update GPS data
-    gps_read();
-    
-    // Check if we have a valid year (2025 or later)
-          if (myGNSS.getYear() >= 2025) {
-      gpsTimeValid = true;
-      // Set LED to cyan to indicate valid GPS time
-      g_pixels.setPixelColor(0, g_pixels.Color(0, 50, 50));
-      g_pixels.show();
-      break;
-    }
-    
-    // Update "breathing" LED effect every 50ms
-    if (millis() - lastLedUpdate > 50) {
-      lastLedUpdate = millis();
-      brightness += step;
-      if (brightness >= 50) {
-        brightness = 50;
-        step = -step;
-      } else if (brightness <= 0) {
-        brightness = 0;
-        step = -step;
-      }
-      g_pixels.setPixelColor(0, g_pixels.Color(0, 0, brightness));
-      g_pixels.show();
-    }
-    
-    delay(100);
-  }
-  
-  if (gpsTimeValid) {
-    Serial.print(F("GPS time synced: "));
-  } else {
-    Serial.print(F("GPS time sync timeout. Current time: "));
-  }
-  
-  Serial.print(myGNSS.getYear());
-  Serial.print(F("-"));
-  Serial.print(myGNSS.getMonth());
-  Serial.print(F("-"));
-  Serial.print(myGNSS.getDay());
-  Serial.print(F(" "));
-  Serial.print(myGNSS.getHour());
-  Serial.print(F(":"));
-  Serial.print(myGNSS.getMinute());
-  Serial.print(F(":"));
-  Serial.println(myGNSS.getSecond());
-  
-  // Change LED to purple for other sensor initialization
-  g_pixels.setPixelColor(0, g_pixels.Color(25, 0, 25));
-  g_pixels.show();
+  // Initialize NeoPixel
+  initNeoPixel(g_pixels);
 
-  // Now initialize other sensors
-  Serial.println(F("\nInitializing sensors..."));
-  if (!kx134_init()) { // kx134_init likely sets g_kx134_initialized_ok internally or this file's kx134_initialized_ok
-    Serial.println(F("WARNING: KX134 accelerometer initialization failed"));
-    g_kx134_initialized_ok = false;
-  } else {
-    Serial.println(F("KX134 accelerometer initialized"));
-    g_kx134_initialized_ok = true;
-  }
-  
-  // Initialize ICM-20948
-  ICM_20948_init(); // This likely sets g_icm20948_ready internally
-  Serial.println(F("ICM-20948 initialized."));
-  g_icm20948_ready = true; // Set the flag to true after initialization
-  // Attempt to load magnetometer calibration from EEPROM
-  if (!icm_20948_load_calibration()) {
-      Serial.println(F("Magnetometer calibration not found. Please run 'cal_mag' command."));
-  }
-  
-  // Initialize orientation filters based on configuration
-  if (g_useKalmanFilter && g_icm20948_ready) {
-    Serial.println(F("Initializing Kalman filter..."));
-    float initial_roll = 0.0f;
-    float initial_pitch = 0.0f;
-    float initial_yaw = 0.0f;
-    kalman_init(initial_roll, initial_pitch, initial_yaw); // kalman_init might use g_kalmanRoll etc.
-    Serial.println(F("Kalman filter initialized."));
-  } else if (g_useMadgwickFilter) {
-    Serial.println(F("Using Madgwick filter (default, no explicit initialization needed)."));
-  }
-  
-  ms5611_init(); // This likely sets ms5611_initialized_ok (extern)
-  Serial.println(F("MS5611 initialized"));
-  
-  // Change LED to white before storage initialization
-  g_pixels.setPixelColor(0, g_pixels.Color(25, 25, 25));
-  g_pixels.show();
-  
-  // Give extra time for SD card to stabilize
-  delay(500);
-  
-#if !DISABLE_SDCARD_LOGGING
-  // Initialize storage only if logging is enabled
-  Serial.println(F("Initializing storage..."));
-  
-  // Initialize SD card
-  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
-  Serial.print(F("SD Card: "));
-  Serial.println(g_sdCardAvailable ? F("Available") : F("Not available"));
-    
-  if (g_sdCardAvailable) {
-    // Only try to create a log file if SD card is available
-    Serial.println(F("Creating new log file..."));
-    if (createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName))) {
-      Serial.println(F("Data logging ready."));
-      g_loggingEnabled = true; // Set global on success
-    } else {
-      Serial.println(F("Failed to create log file, logging will be disabled."));
-      g_loggingEnabled = false;
-    }
-  } else {
-    // This case handles if initSDCard() failed even though logging is enabled
-    Serial.println(F("WARNING: Storage initialization failed! Logging disabled."));
-    g_loggingEnabled = false;
-  }
-#else // DISABLE_SDCARD_LOGGING is true
-  // Ensure logging is explicitly disabled if the flag is set
-  Serial.println(F("SD Card logging disabled by configuration."));
-  g_sdCardAvailable = false;
-  g_loggingEnabled = false;
-  g_sdCardPresent = false;
-  g_sdCardMounted = false;
-#endif // !DISABLE_SDCARD_LOGGING
-  // Change LED to green to indicate successful initialization (regardless of SD status) - This might be too early, state-dependent now.
-  // g_pixels.setPixelColor(0, g_pixels.Color(0, 50, 0)); // Green
-  // g_pixels.show();
-  
-  // Barometric calibration is now done via command OR if state is CALIBRATION
-  if (g_currentFlightState == CALIBRATION) {
-    Serial.println(F("State is CALIBRATION. Attempting barometric calibration if not already done."));
-    // performCalibration(); // This would need to take g_baroCalibrated, g_pixels, g_ms5611Sensor, myGNSS
-                           // or use globals directly if not refactored yet.
-                           // For now, assume calibration is initiated here or handled by main loop if state is CALIBRATION
-  } else {
-    Serial.println(F("Barometric calibration can be initiated via 'calibrate' command if needed."));
-  }
+  // Initialize pyro channels (safety first - ensure they're off)
+  pinMode(PYRO_CHANNEL_1, OUTPUT);
+  digitalWrite(PYRO_CHANNEL_1, LOW);
+  pinMode(PYRO_CHANNEL_2, OUTPUT);
+  digitalWrite(PYRO_CHANNEL_2, LOW);
 
-  // Initialize Guidance Control System
-  guidance_init();
-  Serial.println(F("Guidance control system initialized."));
+  // Initialize servo objects
+  g_servo_pitch.attach(ACTUATOR_PITCH_PIN);
+  g_servo_roll.attach(ACTUATOR_ROLL_PIN);
+  g_servo_yaw.attach(ACTUATOR_YAW_PIN);
 
-  // Initialize Actuators
-  Serial.println(F("Initializing Actuators..."));
-  g_servo_pitch.attach(ACTUATOR_PITCH_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
-  g_servo_roll.attach(ACTUATOR_ROLL_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
-  g_servo_yaw.attach(ACTUATOR_YAW_PIN, SERVO_MIN_PULSE_WIDTH, SERVO_MAX_PULSE_WIDTH);
-
-  // Set servos to a neutral/default position
+  // Set servos to default positions
   g_servo_pitch.write(SERVO_DEFAULT_ANGLE);
   g_servo_roll.write(SERVO_DEFAULT_ANGLE);
   g_servo_yaw.write(SERVO_DEFAULT_ANGLE);
-  Serial.println(F("Actuators initialized and set to default positions."));
 
-  // --- State-based setup adjustments after all hardware init ---
+  // Initialize buzzer pin
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
-  // Initialize Pyro Pins (as per State Machine.md setup)
-  // This should be done regardless of state to ensure pins are in a known safe state.
-  pinMode(PYRO_CHANNEL_1, OUTPUT);
-  pinMode(PYRO_CHANNEL_2, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_1, LOW);
-  digitalWrite(PYRO_CHANNEL_2, LOW);
-  Serial.println(F("Pyro channels initialized to LOW."));
+  // Load flight state from EEPROM (for power-loss recovery)
+  recoverFromPowerLoss(); // This sets g_currentFlightState appropriately
 
-  // Conditional transition to CALIBRATION or other states
-  if (g_currentFlightState == STARTUP) { // Only transition if starting fresh (recovery didn't set a later state)
-    Serial.println(F("Fresh start detected, proceeding to CALIBRATION state."));
-    g_currentFlightState = CALIBRATION;
-    g_stateEntryTime = millis();
-    g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 0)); // Yellow during calibration
-    g_pixels.show();
-    // updateLoggingRate(g_currentFlightState); // To be handled by ProcessFlightState or main loop
-    // setStateTimeout(CALIBRATION);         // To be handled by ProcessFlightState or main loop
+  // Initialize SD card
+  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
+  if (g_sdCardAvailable) {
+    checkStorageSpace(g_SD, g_availableSpace);
+    Serial.println(F("SD Card initialization successful."));
   } else {
-    Serial.print(F("Resuming operation in state: "));
-    Serial.println(getStateName(g_currentFlightState));
-    // If resuming directly into a state that expects certain hardware to be active (e.g. pyro channels for deployment states)
-    // The actual deployment actions should be part of ProcessFlightState to ensure consistency.
-    // For setup(), just ensuring pyro pins are initialized (done above) is sufficient.
+    Serial.println(F("SD Card initialization failed."));
   }
 
-  // Final state assignment before loop()
-  // This needs to be careful not to override a recovered state if it's valid.
-  bool systemHealthy = true; // Placeholder for actual health check. 
-                            // TODO: Implement isSensorSuiteHealthy() or similar.
-                            // This function should check GPS, IMU, Baro, SD card status.
+  // Initialize GPS
+  gps_init(); // This should set up the GPS module
+
+  // Initialize sensors
+  ms5611_init(); // This sets ms5611_initialized_ok
+  ICM_20948_init(); // This sets g_icm20948_ready
+  if (USE_KX134) {
+    kx134_init(); // This sets g_kx134_initialized_ok
+  }
+
+  // Initialize Kalman filter
+  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
+
+  // Initialize guidance system
+  guidance_init(); // Reset PID controllers and guidance state
+
+  // Create initial log file
+  if (g_sdCardAvailable) {
+    createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName));
+  }
+
+  Serial.println(F("Hardware initialization complete."));
   
-  if (!g_sdCardAvailable && g_loggingEnabled) { // Example check: if logging is on but SD fails, system is not healthy.
-      Serial.println(F("ERROR: Logging enabled but SD card not available. System unhealthy."));
-      systemHealthy = false;
-  }
-  // Add more checks for critical sensors to set systemHealthy = false if they fail init.
-  // For example:
-  // if (!ms5611Sensor.isConnected()) systemHealthy = false; // Assuming ms5611_init updates this
-  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
-    Serial.println(F("SETUP: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
-    systemHealthy = false; // If no IMU is good.
-  }
-  if (!ms5611_initialized_ok) {
-    Serial.println(F("SETUP: MS5611 barometer not initialized. System unhealthy."));
-    systemHealthy = false; // Check extern var
-  }
-
+  // Print initial sensor status
   if (g_debugFlags.enableSystemDebug) {
-    Serial.print(F("SETUP: System health check results:"));
-    Serial.print(F(" g_sdCardAvailable="));
-    Serial.print(g_sdCardAvailable);
-    Serial.print(F(" g_loggingEnabled="));
-    Serial.print(g_loggingEnabled);
-    Serial.print(F(" g_kx134_initialized_ok="));
-    Serial.print(g_kx134_initialized_ok);
-    Serial.print(F(" g_icm20948_ready="));
-    Serial.print(g_icm20948_ready);
-    Serial.print(F(" ms5611_initialized_ok="));
-    Serial.print(ms5611_initialized_ok);
-    Serial.print(F(" systemHealthy="));
-    Serial.println(systemHealthy);
+    Serial.println(F("=== Initial Sensor Status ==="));
+    Serial.print(F("MS5611 Barometer: ")); Serial.println(ms5611_initialized_ok ? F("OK") : F("FAILED"));
+    Serial.print(F("ICM-20948 IMU: ")); Serial.println(g_icm20948_ready ? F("OK") : F("FAILED"));
+    Serial.print(F("KX134 Accelerometer: ")); Serial.println(g_kx134_initialized_ok ? F("OK") : F("FAILED"));
+    Serial.print(F("SD Card: ")); Serial.println(g_sdCardAvailable ? F("OK") : F("FAILED"));
+    Serial.print(F("Initial Flight State: ")); Serial.println(getStateName(g_currentFlightState));
+    Serial.println(F("============================="));
   }
 
-  // Check if we recovered into an ERROR state
-  if (g_currentFlightState == ERROR) {
-    Serial.println(F("Recovered into ERROR state. Checking system health..."));
-    // Add logic here to check if the error condition is still present
-    // For now, we'll assume if all hardware initialized, we can transition to PAD_IDLE
-    if (g_sdCardMounted && g_kx134_initialized_ok && g_icm20948_ready && ms5611_initialized_ok) {
-      Serial.println(F("All systems appear healthy. Transitioning from ERROR to PAD_IDLE."));
-      g_currentFlightState = PAD_IDLE;
-      if (!g_sdCardMounted) Serial.println(F("- SD Card not mounted."));
-      if (!g_kx134_initialized_ok) Serial.println(F("- KX134 failed to initialize."));
-      if (!g_icm20948_ready) Serial.println(F("- ICM-20948 not ready."));
-      if (!ms5611_initialized_ok) Serial.println(F("- MS5611 (Baro) failed to initialize."));
-    }
-  }
-
-  // Final check - if still in STARTUP, move to CALIBRATION or PAD_IDLE
-  if (g_currentFlightState == STARTUP && systemHealthy) {
-    Serial.println(F("Fresh start, system healthy, proceeding to PAD_IDLE state."));
-    g_currentFlightState = PAD_IDLE;
-    g_stateEntryTime = millis();
-  } else if (g_currentFlightState == ERROR && systemHealthy) {
-    // If we recovered an ERROR state but all systems are now healthy, automatically clear it
-    Serial.println(F("ERROR state recovered but all systems are healthy. Automatically clearing error and transitioning to PAD_IDLE."));
-    g_currentFlightState = PAD_IDLE;
-    g_stateEntryTime = millis();
-    // Save the cleared state to EEPROM
-    saveStateToEEPROM(); // This function should use g_currentFlightState
-  } else if (!systemHealthy && g_currentFlightState != ERROR) {
-    // If system is not healthy and not already in ERROR state (e.g. recovered into a flight state but sensors now fail during setup)
-    Serial.println(F("System became unhealthy during setup, transitioning to ERROR state."));
-    g_currentFlightState = ERROR;
-    g_stateEntryTime = millis();
-  }
-  // If g_currentFlightState is already a later flight state (e.g., DROGUE_DESCENT) and system is healthy,
-  // it will remain in that state. If system becomes unhealthy during its specific setup/checks, it transitions to ERROR.
-
-  Serial.print(F("Setup complete. Initial flight state for loop(): "));
-  Serial.println(getStateName(g_currentFlightState));
-  
-  // Final LED indication based on state
-  if (g_currentFlightState == PAD_IDLE) g_pixels.setPixelColor(0, g_pixels.Color(0, 50, 0)); // Green
-  else if (g_currentFlightState == ERROR) g_pixels.setPixelColor(0, g_pixels.Color(50, 0, 0)); // Red
-  else if (g_currentFlightState == CALIBRATION) g_pixels.setPixelColor(0, g_pixels.Color(50, 50, 0)); // Yellow
-  // Other states will be handled by ProcessFlightState's display logic in the main loop.
-  g_pixels.show();
-
-  setupCompleted = true; // Mark setup as completed
+  Serial.println(F("Setup complete. Starting main loop..."));
 }
 
 void loop() {
+  // Handle initial state management (runs once after setup)
+  handleInitialStateManagement();
+
   // --- Timekeeping and Sensor Update Flags ---
   static unsigned long lastGPSReadTime = 0;
   static unsigned long lastIMUReadTime = 0;   // For ICM20948 IMU
@@ -1132,6 +861,8 @@ void loop() {
   // Note: The rest of the loop function implementation should be added here
   // based on the flight state machine and other system requirements
 
+  // Function to handle initial state management after setup
+  handleInitialStateManagement();
 }
 
 // Implementation of initSDCard function
@@ -1153,4 +884,65 @@ bool initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out)
   sdCardMounted_out = true;
   
   return true;
+}
+
+// Function to handle initial state management after setup
+void handleInitialStateManagement() {
+  static bool initialStateHandled = false;
+  if (initialStateHandled) {
+    return; // Only run this logic once
+  }
+
+  // Check system health using the same criteria as the setup function used to
+  bool systemHealthy = true;
+  
+  if (!g_sdCardAvailable && g_loggingEnabled) {
+    Serial.println(F("INIT: Logging enabled but SD card not available. System unhealthy."));
+    systemHealthy = false;
+  }
+  
+  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
+    Serial.println(F("INIT: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
+    systemHealthy = false;
+  }
+  
+  if (!ms5611_initialized_ok) {
+    Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy."));
+    systemHealthy = false;
+  }
+
+  if (g_debugFlags.enableSystemDebug) {
+    Serial.println(F("=== Initial State Management ==="));
+    Serial.print(F("System Health: ")); Serial.println(systemHealthy ? F("HEALTHY") : F("UNHEALTHY"));
+    Serial.print(F("Current State: ")); Serial.println(getStateName(g_currentFlightState));
+  }
+
+  // Handle state transitions based on current state and system health
+  if (g_currentFlightState == STARTUP) {
+    if (systemHealthy) {
+      Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
+      g_currentFlightState = CALIBRATION;
+      g_stateEntryTime = millis();
+    } else {
+      Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
+      g_currentFlightState = ERROR;
+      g_stateEntryTime = millis();
+    }
+  } else if (g_currentFlightState == ERROR && systemHealthy) {
+    Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
+    g_currentFlightState = CALIBRATION;
+    g_stateEntryTime = millis();
+    saveStateToEEPROM();
+  } else if (!systemHealthy && g_currentFlightState != ERROR) {
+    Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
+    g_currentFlightState = ERROR;
+    g_stateEntryTime = millis();
+  }
+
+  if (g_debugFlags.enableSystemDebug) {
+    Serial.print(F("Final State: ")); Serial.println(getStateName(g_currentFlightState));
+    Serial.println(F("=============================="));
+  }
+
+  initialStateHandled = true;
 }

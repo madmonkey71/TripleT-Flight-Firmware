@@ -649,6 +649,67 @@ void setup() {
   Serial.println(F("Setup complete. Starting main loop..."));
 }
 
+// Function to handle initial state management after setup
+void handleInitialStateManagement() {
+  static bool initialStateHandled = false;
+  if (initialStateHandled) {
+    return; // Only run this logic once
+  }
+
+  // Check system health using the same criteria as the setup function used to
+  bool systemHealthy = true;
+  
+  if (!g_sdCardAvailable && g_loggingEnabled) {
+    Serial.println(F("INIT: Logging enabled but SD card not available. System unhealthy."));
+    systemHealthy = false;
+  }
+  
+  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
+    Serial.println(F("INIT: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
+    systemHealthy = false;
+  }
+  
+  if (!ms5611_initialized_ok) {
+    Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy."));
+    systemHealthy = false;
+  }
+
+  if (g_debugFlags.enableSystemDebug) {
+    Serial.println(F("=== Initial State Management ==="));
+    Serial.print(F("System Health: ")); Serial.println(systemHealthy ? F("HEALTHY") : F("UNHEALTHY"));
+    Serial.print(F("Current State: ")); Serial.println(getStateName(g_currentFlightState));
+  }
+
+  // Handle state transitions based on current state and system health
+  if (g_currentFlightState == STARTUP) {
+    if (systemHealthy) {
+      Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
+      g_currentFlightState = CALIBRATION;
+      g_stateEntryTime = millis();
+    } else {
+      Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
+      g_currentFlightState = ERROR;
+      g_stateEntryTime = millis();
+    }
+  } else if (g_currentFlightState == ERROR && systemHealthy) {
+    Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
+    g_currentFlightState = CALIBRATION;
+    g_stateEntryTime = millis();
+    saveStateToEEPROM();
+  } else if (!systemHealthy && g_currentFlightState != ERROR) {
+    Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
+    g_currentFlightState = ERROR;
+    g_stateEntryTime = millis();
+  }
+
+  if (g_debugFlags.enableSystemDebug) {
+    Serial.print(F("Final State: ")); Serial.println(getStateName(g_currentFlightState));
+    Serial.println(F("=============================="));
+  }
+
+  initialStateHandled = true;
+}
+
 void loop() {
   // Handle initial state management (runs once after setup)
   handleInitialStateManagement();
@@ -884,65 +945,4 @@ bool initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out)
   sdCardMounted_out = true;
   
   return true;
-}
-
-// Function to handle initial state management after setup
-void handleInitialStateManagement() {
-  static bool initialStateHandled = false;
-  if (initialStateHandled) {
-    return; // Only run this logic once
-  }
-
-  // Check system health using the same criteria as the setup function used to
-  bool systemHealthy = true;
-  
-  if (!g_sdCardAvailable && g_loggingEnabled) {
-    Serial.println(F("INIT: Logging enabled but SD card not available. System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
-    Serial.println(F("INIT: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!ms5611_initialized_ok) {
-    Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy."));
-    systemHealthy = false;
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.println(F("=== Initial State Management ==="));
-    Serial.print(F("System Health: ")); Serial.println(systemHealthy ? F("HEALTHY") : F("UNHEALTHY"));
-    Serial.print(F("Current State: ")); Serial.println(getStateName(g_currentFlightState));
-  }
-
-  // Handle state transitions based on current state and system health
-  if (g_currentFlightState == STARTUP) {
-    if (systemHealthy) {
-      Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
-      g_currentFlightState = CALIBRATION;
-      g_stateEntryTime = millis();
-    } else {
-      Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
-      g_currentFlightState = ERROR;
-      g_stateEntryTime = millis();
-    }
-  } else if (g_currentFlightState == ERROR && systemHealthy) {
-    Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
-    g_currentFlightState = CALIBRATION;
-    g_stateEntryTime = millis();
-    saveStateToEEPROM();
-  } else if (!systemHealthy && g_currentFlightState != ERROR) {
-    Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
-    g_currentFlightState = ERROR;
-    g_stateEntryTime = millis();
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.print(F("Final State: ")); Serial.println(getStateName(g_currentFlightState));
-    Serial.println(F("=============================="));
-  }
-
-  initialStateHandled = true;
 }

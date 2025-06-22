@@ -100,9 +100,13 @@ void ProcessFlightState() {
                 Serial.print(F("Time since last error clear: "));
                 Serial.print((millis() - lastErrorClearTime) / 1000.0, 1);
                 Serial.println(F(" seconds"));
+                Serial.print(F("Grace period remaining: "));
+                Serial.print((errorClearGracePeriod - (millis() - lastErrorClearTime)) / 1000.0, 1);
+                Serial.println(F(" seconds"));
                 Serial.println(F(""));
                 isSensorSuiteHealthy(g_currentFlightState, true); // Call with verbose=true
                 Serial.println(F(""));
+                Serial.println(F("REASON: Periodic health check failed during normal operation"));
                 Serial.println(F("Transitioning to ERROR state..."));
                 Serial.println(F("Use 'clear_errors' command to attempt recovery."));
                 Serial.println(F("--------------------------------------------------"));
@@ -426,6 +430,9 @@ void ProcessFlightState() {
             }
             break;
         default:
+            Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));
+            Serial.println(static_cast<int>(g_currentFlightState));
+            Serial.println(F("Transitioning to ERROR state for safety."));
             g_currentFlightState = ERROR;
             break;
     }

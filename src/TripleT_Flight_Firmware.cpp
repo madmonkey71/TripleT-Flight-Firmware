@@ -683,18 +683,33 @@ void handleInitialStateManagement() {
   // Handle state transitions based on current state and system health
   if (g_currentFlightState == STARTUP) {
     if (systemHealthy) {
-      Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
-      g_currentFlightState = CALIBRATION;
-      g_stateEntryTime = millis();
+      // Check if barometer is already calibrated to skip CALIBRATION state
+      if (g_baroCalibrated) {
+        Serial.println(F("Fresh start, system healthy and barometer calibrated, proceeding to PAD_IDLE state."));
+        g_currentFlightState = PAD_IDLE;
+        g_stateEntryTime = millis();
+      } else {
+        Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
+        g_currentFlightState = CALIBRATION;
+        g_stateEntryTime = millis();
+      }
     } else {
       Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
       g_currentFlightState = ERROR;
       g_stateEntryTime = millis();
     }
   } else if (g_currentFlightState == ERROR && systemHealthy) {
-    Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
-    g_currentFlightState = CALIBRATION;
-    g_stateEntryTime = millis();
+    // Check if barometer is already calibrated to skip CALIBRATION state
+    if (g_baroCalibrated) {
+      Serial.println(F("ERROR state recovered, all systems healthy and barometer calibrated, transitioning to PAD_IDLE."));
+      g_currentFlightState = PAD_IDLE;
+      g_stateEntryTime = millis();
+    } else {
+      Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
+      g_currentFlightState = CALIBRATION;
+      g_stateEntryTime = millis();
+    }
+    Serial.println(F("ERROR state cleared - starting grace period for health checks"));
     saveStateToEEPROM();
   } else if (!systemHealthy && g_currentFlightState != ERROR) {
     Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));

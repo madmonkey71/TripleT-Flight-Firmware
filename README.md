@@ -148,6 +148,8 @@ The firmware supports a rich set of serial commands for interaction:
 | `help` / `a` | Shows the full list of available commands. |
 | `set_orientation_filter [madgwick\|kalman]` | Sets the orientation filter type. |
 | `clear_errors` | Manually clears error state if sensors have recovered. |
+| `clear_to_calibration` | Clears error state to CALIBRATION for barometer issues. |
+| `sensor_requirements` | Shows sensor requirements for each flight state. |
 
 ### Data Logging
 
@@ -259,6 +261,30 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 For issues, questions, or contributions, please use the GitHub repository's issue tracker and pull request system.
 
 ## Recent Changes (Latest)
+
+### Enhanced Error Recovery & Web Interface Improvements - January 2025
+- **Intelligent Web Interface Message Filtering**
+  - Added smart message categorization (CSV data vs. informational messages)
+  - Prevents INFO messages from interfering with data visualization
+  - CSV data now shows condensed format in terminal: `CSV: 1,1678886400,3... (48 fields)`
+  - Comprehensive pattern matching for 25+ message types
+  
+- **Comprehensive Error State Recovery System**
+  - Enhanced `clear_errors` command with detailed diagnostic feedback
+  - Added `clear_to_calibration` for barometer calibration issues
+  - New `sensor_requirements` command shows needs for each flight state
+  - Visual status indicators (✓, ❌, ⚠) for easy problem identification
+  - Specific troubleshooting steps for each sensor failure type
+  
+- **Improved Sensor Health Diagnostics**
+  - Detailed verbose output from `isSensorSuiteHealthy()` function
+  - Clear explanation of state transition requirements
+  - Alternative recovery paths when standard error clearing fails
+  
+- **User Experience Enhancements**
+  - Clear guidance when error clearing fails due to sensor issues
+  - Better understanding of barometer calibration requirements
+  - Actionable troubleshooting steps for common problems
 
 ### Final Compilation Fixes - January 2025
 - **Fixed duplicate variable definitions** in `TripleT_Flight_Firmware.cpp`

@@ -260,7 +260,16 @@ For issues, questions, or contributions, please use the GitHub repository's issu
 
 ## Recent Changes (Latest)
 
-### Watchdog Timer Removal and Compilation Fixes
+### Final Compilation Fixes - January 2025
+- **Fixed duplicate variable definitions** in `TripleT_Flight_Firmware.cpp`
+  - Removed duplicate declarations of `g_baroCalibrated`, `g_currentFlightState`, `g_previousFlightState`
+  - Removed duplicate declarations of `g_launchAltitude`, `g_maxAltitudeReached`, `g_currentAltitude`
+- **Compilation now fully successful** with no errors or warnings
+- **All linker errors resolved** from previous session
+- **Firmware ready for upload** to Teensy 4.1 hardware
+
+### Previous Major Changes
+#### Watchdog Timer Removal and Compilation Fixes
 - **Removed all watchdog timer functionality** as requested
 - **Disabled ENABLE_WATCHDOG** in `src/config.h` 
 - **Deleted Watchdog_t4 library** from `lib/` directory
@@ -272,5 +281,8 @@ For issues, questions, or contributions, please use the GitHub repository's issu
   - Missing function parameters for `kalman_init()`
 - **Re-enabled Madgwick filter configuration** macros in config.h
 - **Updated command processor** to use correct pointer syntax for SystemStatusContext
+- **Fixed GPS object naming inconsistencies** (changed `g_myGNSS` to `myGNSS`)
+- **Implemented missing SD card initialization** function
+- **Added all required global variable definitions** for cross-module dependencies
 
 

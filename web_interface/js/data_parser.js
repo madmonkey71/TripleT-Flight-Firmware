@@ -5,6 +5,187 @@ let csvDelimiter = ','; // Default delimiter
 let flightStateMappings = null; // To store flight state mappings
 
 /**
+ * Determines if a message should be ignored for data parsing/plotting.
+ * @param {string} message - The incoming message to evaluate
+ * @returns {boolean} True if the message should be ignored for data parsing
+ */
+function shouldIgnoreMessage(message) {
+    if (!message || typeof message !== 'string') {
+        return true;
+    }
+    
+    const trimmedMessage = message.trim();
+    
+    // Ignore empty messages
+    if (trimmedMessage.length === 0) {
+        return true;
+    }
+    
+    // Define patterns for messages that should be ignored for data parsing
+    const ignorePatterns = [
+        // Informational messages
+        /^INFO:/i,
+        /^WARNING:/i,
+        /^ERROR:/i,
+        /^DEBUG:/i,
+        
+        // Specific logging messages
+        /logging to sd card is currently disabled/i,
+        /sd card.*not available/i,
+        /loggingEnabled=false/i,
+        /log file.*created/i,
+        /log file.*closed/i,
+        
+        // System status messages
+        /^system status:/i,
+        /^sensor status:/i,
+        /^connection status:/i,
+        /^initialization/i,
+        /^calibration/i,
+        
+        // Command responses
+        /^command received:/i,
+        /^unknown command:/i,
+        /^help:/i,
+        /^available commands:/i,
+        
+        // Sensor initialization messages
+        /sensor.*initialized/i,
+        /sensor.*failed/i,
+        /^gps.*fix/i,
+        /^barometer.*calibrated/i,
+        /icm.*ready/i,
+        /kx134.*ready/i,
+        /ms5611.*ready/i,
+        
+        // Flight state messages (descriptive, not data)
+        /^flight state:/i,
+        /^entering.*state/i,
+        /^state changed/i,
+        /^current state:/i,
+        
+        // General system messages
+        /^ready/i,
+        /^waiting/i,
+        /^armed/i,
+        /^disarmed/i,
+        /^startup/i,
+        /^shutdown/i,
+        
+        // File system messages
+        /^file.*created/i,
+        /^file.*closed/i,
+        /^sd card.*space/i,
+        /^storage.*available/i,
+        /^free space:/i,
+        
+        // Memory and performance messages
+        /^memory usage:/i,
+        /^free ram:/i,
+        /^loop time:/i,
+        /^frequency:/i,
+        
+        // Configuration messages
+        /^config:/i,
+        /^setting:/i,
+        /^parameter:/i,
+        
+        // Firmware version and build info
+        /^version:/i,
+        /^build:/i,
+        /^firmware:/i,
+        /^compiled:/i,
+        
+        // Any message that starts with text followed by colon (likely status message)
+        /^[a-zA-Z][a-zA-Z\s]*:/
+    ];
+    
+    // Check if message matches any ignore pattern
+    for (const pattern of ignorePatterns) {
+        if (pattern.test(trimmedMessage)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Determines if a message is likely CSV data that should be parsed.
+ * @param {string} message - The incoming message to evaluate
+ * @returns {boolean} True if the message appears to be CSV data
+ */
+function isCSVDataMessage(message) {
+    if (!message || typeof message !== 'string') {
+        return false;
+    }
+    
+    const trimmedMessage = message.trim();
+    
+    // CSV data messages should:
+    // 1. Start with a number (sequence number)
+    // 2. Contain multiple comma-separated values
+    // 3. Have approximately the expected number of fields
+    
+    // Check if it starts with a number
+    if (!/^\d+/.test(trimmedMessage)) {
+        return false;
+    }
+    
+    // Count comma-separated fields
+    const fields = trimmedMessage.split(csvDelimiter);
+    
+    // Expect at least 10 fields for valid data (conservative estimate)
+    if (fields.length < 10) {
+        return false;
+    }
+    
+    // If we have column mappings loaded, check against expected count
+    if (columnMappings && Math.abs(fields.length - columnMappings.length) > 5) {
+        // Allow some tolerance, but not too much difference
+        return false;
+    }
+    
+    // Additional validation: check if first few fields are numeric
+    for (let i = 0; i < Math.min(3, fields.length); i++) {
+        const field = fields[i].trim();
+        if (!/^-?\d*\.?\d+$/.test(field)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+/**
+ * Categorizes a message type for appropriate handling.
+ * @param {string} message - The incoming message to categorize
+ * @returns {string} Message category: 'csv_data', 'info', 'system', 'unknown'
+ */
+function categorizeMessage(message) {
+    if (!message || typeof message !== 'string') {
+        return 'unknown';
+    }
+    
+    if (isCSVDataMessage(message)) {
+        return 'csv_data';
+    }
+    
+    if (shouldIgnoreMessage(message)) {
+        // Further categorize informational messages
+        const trimmedMessage = message.trim().toLowerCase();
+        if (trimmedMessage.includes('info:') || 
+            trimmedMessage.includes('logging') || 
+            trimmedMessage.includes('sd card')) {
+            return 'info';
+        }
+        return 'system';
+    }
+    
+    return 'unknown';
+}
+
+/**
  * Initializes the data parser by fetching the column mapping configuration.
  * @param {function} callback - Optional callback to execute after successful initialization.
  * @param {function} errorCallback - Optional callback to execute if initialization fails.

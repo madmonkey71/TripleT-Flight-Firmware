@@ -81,14 +81,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleReceivedData(data) {
         if (!parserInitialized) return;
-        logToTerminal(data, 'received'); // Log raw received data to terminal
-        const parsedData = parseSerialData(data);
-        if (parsedData) {
-            if (typeof updateUI === 'function') {
-                updateUI(parsedData);
-            } else {
-                console.error("updateUI function is not defined.");
+        
+        // Categorize the incoming message
+        const messageCategory = categorizeMessage(data);
+        
+        // Always log to terminal, but with different styling based on category
+        switch (messageCategory) {
+            case 'csv_data':
+                // For CSV data, we might want to log less verbosely or not at all
+                // to avoid cluttering the terminal with data points
+                // logToTerminal(data, 'received'); // Uncomment if you want to see all data
+                break;
+            case 'info':
+                logToTerminal(data, 'received'); // Log informational messages
+                break;
+            case 'system':
+                logToTerminal(data, 'received'); // Log system messages
+                break;
+            case 'unknown':
+                logToTerminal(data, 'received'); // Log unknown messages for debugging
+                break;
+        }
+        
+        // Only attempt to parse and update UI for CSV data messages
+        if (messageCategory === 'csv_data') {
+            const parsedData = parseSerialData(data);
+            if (parsedData) {
+                if (typeof updateUI === 'function') {
+                    updateUI(parsedData);
+                } else {
+                    console.error("updateUI function is not defined.");
+                }
             }
+        }
+        // For non-CSV messages, we could potentially trigger other UI updates
+        // For example, system status messages could update a status panel
+        else if (messageCategory === 'info' || messageCategory === 'system') {
+            // Optionally update a system status display
+            // updateSystemStatus(data);
         }
     }
 

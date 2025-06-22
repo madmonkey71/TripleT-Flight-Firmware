@@ -1,6 +1,6 @@
 # TripleT Flight Firmware
 
-**Current Version:** v0.48  
+**Current Version:** v0.49  
 **Current State:** Beta  
 **Last Updated:** January 2025
 
@@ -8,8 +8,8 @@
 **Matthew Thom** - Project Lead and Primary Developer
 
 ## Project Status - Beta (Ready for Controlled Test Flights)
-**Current Version**: v0.48  
-**Branch**: Beta
+**Current Version**: v0.49  
+**Branch**: beta-0.49
 
 ### Development Status Assessment (Based on Updated Gap Analysis)
 

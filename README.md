@@ -1,6 +1,6 @@
 # TripleT Flight Firmware
 
-**Current Version:** v0.49  
+**Current Version:** v0.50  
 **Current State:** Beta  
 **Last Updated:** January 2025
 
@@ -8,8 +8,13 @@
 **Matthew Thom** - Project Lead and Primary Developer
 
 ## Project Status - Beta (Ready for Controlled Test Flights)
-**Current Version**: v0.49  
-**Branch**: beta-0.49
+**Current Version**: v0.50  
+**Branch**: fix/state-machine-error-pad-idle
+
+### Recent Updates (v0.50)
+- ✅ **FIXED: Automatic Error Recovery** - System now automatically recovers from ERROR state when sensors become healthy
+- ✅ **Enhanced State Management** - Improved continuous health monitoring with automatic transitions
+- ✅ **Web Interface Synchronization** - Fixed issue where web interface would stay in ERROR state after sensor recovery
 
 ### Development Status Assessment (Based on Updated Gap Analysis)
 
@@ -198,6 +203,40 @@ Key configuration parameters can be modified in `src/config.h`:
 
 ### Safety Parameters
 - `MAX_SENSOR_FAILURES`: Sensor failure threshold before error state
+
+## Error Recovery System
+
+The firmware includes comprehensive automatic sensor health monitoring and recovery mechanisms:
+
+- **Automatic Health Checks**: Continuous monitoring of all critical sensors every 1 second during normal operation
+- **Graceful Degradation**: System continues operation with reduced capability when non-critical sensors fail
+- **Automatic Error Recovery**: System automatically recovers from ERROR state when sensors become healthy again
+  - Checks every 2 seconds if system health is restored while in ERROR state
+  - Automatically transitions to PAD_IDLE if barometer is calibrated and all systems are healthy
+  - Automatically transitions to CALIBRATION if barometer is initialized but needs calibration
+  - Prevents recovery if critical hardware (e.g., barometer) is not initialized
+- **Manual Recovery Options**: Backup recovery via `clear_errors` and `clear_to_calibration` commands
+- **Grace Period Protection**: 5-second grace period after error clearance to prevent immediate re-entry to ERROR state
+- **State Persistence**: EEPROM-based state saving survives power cycles and supports recovery scenarios
+- **Diagnostic Tools**: Comprehensive status reporting with `isSensorSuiteHealthy()` verbose mode for troubleshooting
+
+### Error State Behavior
+
+When in ERROR state:
+- System performs continuous health monitoring
+- LED shows red error indication
+- Buzzer emits fast beeping pattern (if enabled)
+- Web interface displays ERROR status
+- Serial output provides detailed diagnostic information
+- System automatically attempts recovery every 2 seconds
+
+### Recovery Process
+
+1. **Automatic Detection**: System detects when sensors become healthy
+2. **State Decision**: Determines target state based on sensor calibration status
+3. **Transition**: Automatically transitions to appropriate state (PAD_IDLE or CALIBRATION)
+4. **Grace Period**: Starts 5-second grace period to prevent immediate error re-entry
+5. **Confirmation**: System confirms successful recovery and updates all interfaces
 - `ERROR_RECOVERY_ATTEMPT_MS`: Time before attempting error recovery
 - `BACKUP_APOGEE_TIME_MS`: Failsafe apogee detection timer
 

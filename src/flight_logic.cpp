@@ -33,6 +33,7 @@ extern bool g_icm20948_ready;
 extern bool g_useKalmanFilter;
 extern DebugFlags g_debugFlags; // To access g_debugFlags.enableSystemDebug
 extern float g_main_deploy_altitude_m_agl;
+extern bool ms5611_initialized_ok; // Declared extern for isSensorSuiteHealthy function
 
 // Externs from TripleT_Flight_Firmware.cpp for attitude hold logic
 extern float g_kalmanRoll;
@@ -138,16 +139,56 @@ void ProcessFlightState() {
                 Serial.println(F(" seconds remaining"));
             }
         }
-    } else if (g_currentFlightState == ERROR && g_debugFlags.enableSystemDebug) {
-        // Add periodic debugging for ERROR state
-        static unsigned long lastErrorDebugTime = 0;
-        if (millis() - lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
-            lastErrorDebugTime = millis();
-            Serial.println(F("--- Currently in ERROR state ---"));
-            Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
-            Serial.println(F("Or check sensor health with detailed report:"));
-            isSensorSuiteHealthy(PAD_IDLE, true);
-            Serial.println(F("--------------------------------"));
+    } else if (g_currentFlightState == ERROR) {
+        // Add automatic error recovery logic - check if system has become healthy
+        static unsigned long lastAutoRecoveryCheckTime = 0;
+        const unsigned long autoRecoveryCheckInterval = 2000; // Check every 2 seconds
+        
+        if (millis() - lastAutoRecoveryCheckTime > autoRecoveryCheckInterval) {
+            lastAutoRecoveryCheckTime = millis();
+            
+            // Check if we can recover to PAD_IDLE state
+            if (isSensorSuiteHealthy(PAD_IDLE)) {
+                Serial.println(F("--- AUTOMATIC ERROR RECOVERY ---"));
+                Serial.println(F("System health has been restored. Automatically clearing ERROR state."));
+                
+                // Determine target state based on barometer calibration status
+                if (g_baroCalibrated) {
+                    Serial.println(F("All systems healthy and barometer calibrated, transitioning to PAD_IDLE."));
+                    g_currentFlightState = PAD_IDLE;
+                } else if (ms5611_initialized_ok) {
+                    Serial.println(F("Systems healthy but barometer needs calibration, transitioning to CALIBRATION."));
+                    g_currentFlightState = CALIBRATION;
+                } else {
+                    Serial.println(F("Systems partially healthy but barometer not initialized, remaining in ERROR."));
+                    // Don't transition out of ERROR if barometer isn't even initialized
+                    if (g_debugFlags.enableSystemDebug) {
+                        Serial.println(F("Manual intervention may be required for barometer initialization."));
+                    }
+                    return; // Don't transition out of ERROR
+                }
+                
+                lastErrorClearTime = millis(); // Set grace period for future health checks
+                g_stateEntryTime = millis();
+                Serial.println(F("ERROR state automatically cleared - starting grace period for health checks"));
+                saveStateToEEPROM();
+                setFlightStateLED(g_currentFlightState);
+                Serial.println(F("--------------------------------"));
+                return; // Exit early to avoid the debug message below
+            }
+        }
+        
+        // Add periodic debugging for ERROR state (only if we didn't auto-recover)
+        if (g_debugFlags.enableSystemDebug) {
+            static unsigned long lastErrorDebugTime = 0;
+            if (millis() - lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
+                lastErrorDebugTime = millis();
+                Serial.println(F("--- Currently in ERROR state ---"));
+                Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
+                Serial.println(F("Or check sensor health with detailed report:"));
+                isSensorSuiteHealthy(PAD_IDLE, true);
+                Serial.println(F("--------------------------------"));
+            }
         }
     }
 
@@ -276,11 +317,15 @@ void ProcessFlightState() {
                     }
                 }
 
-                // ERROR recovery is now handled by handleInitialStateManagement() and clear_errors command
-                // No automatic recovery here to prevent conflicts
+                // ERROR recovery is now handled by automatic recovery logic above
+                // and clear_errors command as backup
             }
                 break;
             default:
+                Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));
+                Serial.println(static_cast<int>(g_currentFlightState));
+                Serial.println(F("Transitioning to ERROR state for safety."));
+                g_currentFlightState = ERROR;
                 break;
         }
     }

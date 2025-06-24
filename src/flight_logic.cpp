@@ -384,6 +384,7 @@ void ProcessFlightState() {
                 } else if (g_icm20948_ready) {
                     convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad);
                     if (g_debugFlags.enableSystemDebug) {
+                        // Is this needed any more ? Do we need to do something similar with the Kalman filter ?
                         Serial.println(F("ATT_HOLD: Using Madgwick/ICM quaternion conversion for target at BOOST->COAST."));
                     }
                 } else {

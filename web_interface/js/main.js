@@ -85,8 +85,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const fields = data.substring(4).split(',');
-        const condensed = fields.slice(0, 3).join(',') + `... (${fields.length} fields)`;
+        const parts = data.trim().split(',');
+        const condensed = parts.slice(0, 3).join(',') + `... (${parts.length} fields)`;
         logToTerminal(`CSV: ${condensed}`, 'received');
         
         if (typeof updateUI === 'function') {

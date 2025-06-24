@@ -232,33 +232,31 @@ function parseData(line) {
         try {
             const stateData = JSON.parse(trimmedLine);
             if (stateData && typeof stateData.state_name !== 'undefined') {
-                // Return an object that is compatible with the UI updater.
                 return { 
-                    isStateUpdate: true, // Flag to identify this special message type
+                    isStateUpdate: true,
                     FlightState: stateData.state_name 
                 };
             }
         } catch (e) {
-            return null; // Invalid JSON, ignore.
+            return null;
         }
     }
 
-    // 2. Handle CSV data lines: "CSV:data,data,data..."
-    if (trimmedLine.startsWith("CSV:")) {
-        const parts = trimmedLine.substring(4).split(',');
-        
+    // 2. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
+    // We identify them by checking if the first part is a number (sequence number).
+    const parts = trimmedLine.split(',');
+    if (parts.length > 1 && !isNaN(parts[0])) {
         // Ensure headers are loaded and the data has the correct number of fields
         if (config.csvHeaders.length === 0 || parts.length !== config.csvHeaders.length) {
+            console.warn(`CSV mismatch: Expected ${config.csvHeaders.length}, got ${parts.length}.`);
             return null;
         }
 
         const dataObject = {};
         config.csvHeaders.forEach((header, index) => {
-            const value = parts[index] ? parts[index].trim() : '';
-            dataObject[header] = value;
+            dataObject[header] = parts[index] ? parts[index].trim() : '';
         });
 
-        // The flight state from CSV is a number, so we look up the name.
         if (dataObject.FlightState !== undefined) {
             dataObject.FlightState = config.flightStateMap[dataObject.FlightState] || 'UNKNOWN';
         }
@@ -266,7 +264,6 @@ function parseData(line) {
         return dataObject;
     }
 
-    // Return null for any other line type.
     return null;
 }
 

@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <EEPROM.h>
-#include "config.h" // For Madgwick filter parameters
+#include "config.h" 
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
 #include "ICM_20948.h"
 #include "data_structures.h"
@@ -39,14 +39,8 @@ int stationaryCounter = 0;
 int movingCounter = 0;
 const int STATE_CHANGE_THRESHOLD = 5;   // Increased from 3 for more stable stationary detection
 
-// Madgwick filter parameters
-float beta = MADGWICK_BETA_INIT;       // Initialized from config.h
-// const float BETA_STATIONARY = 0.02f; // Now use MADGWICK_BETA_STATIONARY from config.h directly
-// const float BETA_MOTION = 0.1f;      // Now use MADGWICK_BETA_MOTION from config.h directly
-
 // Add gyro bias estimation
 float gyroBias[3] = {0.0f, 0.0f, 0.0f}; // Estimated gyro bias
-// const float GYRO_BIAS_LEARN_RATE = 0.0005f; // Now use MADGWICK_GYRO_BIAS_LEARN_RATE from config.h directly
 
 // Previous quaternion values for drift compensation
 float q0_prev = 1.0f, q1_prev = 0.0f, q2_prev = 0.0f, q3_prev = 0.0f;
@@ -68,8 +62,6 @@ float magScale[3][3] = { // Soft iron correction matrix from calibrate3.py outpu
   {-0.02487542f, 1.07100769f, -0.00649950f},
   {0.01539642f, -0.00649950f,  1.13008801f}
 };
-
-// Function to update quaternion using 9-axis Madgwick filter - REMOVED as unused / disabled
 
 // Function to perform static gyro bias calibration
 void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
@@ -100,6 +92,7 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
         if (myICM.dataReady()) {
             myICM.getAGMT();
             // Gyro data is in dps, convert to rad/s for consistency with Madgwick input and gyroBias storage
+            // Is this needed any more ?
             temp_gyro_sum[0] += myICM.gyrX() * DEG_TO_RAD;
             temp_gyro_sum[1] += myICM.gyrY() * DEG_TO_RAD;
             temp_gyro_sum[2] += myICM.gyrZ() * DEG_TO_RAD;
@@ -328,20 +321,9 @@ void ICM_20948_read() {
             movingCounter = STATE_CHANGE_THRESHOLD; // Prevent overflow
         }
     }
-
-    // --- Dynamic Beta Adjustment --- REMOVED as beta was only for Madgwick
-    // if (isStationary) {
-    //     beta = MADGWICK_BETA_STATIONARY;
-    // } else {
-    //     beta = MADGWICK_BETA_MOTION;
-    // }
-    // --- End Motion Detection & Dynamic Beta ---
-
-    // --- Madgwick AHRS MARG Update --- REMOVED
-
-    // --- Online Gyro Bias Estimation --- REMOVED
     
     // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
+    // Is this needed any more ?
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
       lastDetailedDebugTime = millis();
       
@@ -367,12 +349,11 @@ void ICM_20948_read() {
       Serial.print(isStationary ? "YES" : "NO");
       Serial.print(", Counter: ");
       Serial.print(isStationary ? stationaryCounter : movingCounter);
-      // Serial.print(", Beta: "); // Beta removed
-      // Serial.println(beta, 4); // Beta removed
       Serial.println();
 
 
       // --- Temporary Madgwick Euler Angle Debug Print ---
+      // Is this needed any more ?
       float roll_deg, pitch_deg, yaw_deg;
       convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_deg, pitch_deg, yaw_deg);
 
@@ -381,7 +362,8 @@ void ICM_20948_read() {
       pitch_deg *= (180.0f / PI);
       yaw_deg *= (180.0f / PI);
 
-      Serial.print("Madgwick Euler (deg) - R: "); Serial.print(roll_deg, 1);
+      // Is this needed any more ?
+      Serial.print("Euler (deg) - R: "); Serial.print(roll_deg, 1);
       Serial.print(" P: "); Serial.print(pitch_deg, 1);
       Serial.print(" Y: "); Serial.println(yaw_deg, 1);
       // --- End Temporary Madgwick Euler Angle Debug Print ---

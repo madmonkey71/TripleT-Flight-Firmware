@@ -86,60 +86,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleReceivedData(data) {
         if (!parserInitialized) return;
         
-        // Add debugging for incoming data
-        console.log('Received data:', data.substring(0, 100) + (data.length > 100 ? '...' : ''));
-        
-        // Categorize the incoming message
-        const messageCategory = categorizeMessage(data);
-        console.log('Message category:', messageCategory);
-        
-        // Always log to terminal, but with different styling based on category
-        switch (messageCategory) {
-            case 'csv_data':
-                // Log CSV data to terminal - condensed version by default
-                if (logCSVDataToTerminal) {
-                    if (verboseCSVLogging) {
-                        logToTerminal(data, 'received');
-                    } else {
-                        // Show condensed version: first few fields + field count
-                        const fields = data.split(',');
-                        const condensed = fields.slice(0, 3).join(',') + `... (${fields.length} fields)`;
-                        logToTerminal(`CSV: ${condensed}`, 'received');
-                    }
-                }
-                break;
-            case 'info':
-                logToTerminal(data, 'received'); // Log informational messages
-                break;
-            case 'system':
-                logToTerminal(data, 'received'); // Log system messages
-                break;
-            case 'unknown':
-                logToTerminal(data, 'received'); // Log unknown messages for debugging
-                break;
-        }
-        
-        // Only attempt to parse and update UI for CSV data messages
-        if (messageCategory === 'csv_data') {
-            console.log('Attempting to parse CSV data...');
-            const parsedData = parseSerialData(data);
-            if (parsedData) {
-                console.log('CSV data parsed successfully:', parsedData);
-                if (typeof updateUI === 'function') {
-                    updateUI(parsedData);
-                } else {
-                    console.error("updateUI function is not defined.");
-                }
+        // Always log the raw data to the terminal for debugging
+        logToTerminal(data.trim(), 'received');
+
+        // Attempt to parse the data regardless of its apparent type
+        const parsedData = parseData(data);
+
+        // If parsing is successful, update the UI
+        if (parsedData) {
+            if (typeof updateUI === 'function') {
+                updateUI(parsedData);
             } else {
-                console.log('CSV data parsing failed');
+                console.error("updateUI function is not defined.");
             }
         }
-        // For non-CSV messages, we could potentially trigger other UI updates
-        // For example, system status messages could update a status panel
-        else if (messageCategory === 'info' || messageCategory === 'system') {
-            // Optionally update a system status display
-            // updateSystemStatus(data);
-        }
+        // If parsing fails, it's treated as a non-data message and just logged.
     }
 
     function handleSerialDisconnect(reason, isActiveDisconnect) {

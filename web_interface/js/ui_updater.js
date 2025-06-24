@@ -134,7 +134,17 @@ function updateUI(parsedData) {
 
     // --- Update Flight State Display ---
     if (parsedData.FlightState !== undefined && currentFlightStateValueElement) {
-        currentFlightStateValueElement.textContent = getFlightStateString(parsedData.FlightState);
+        // The parser now provides the state name directly for both JSON and CSV.
+        // For CSV, it's a number that needs to be looked up.
+        // For JSON, it's already the correct string.
+        const stateValue = parsedData.FlightState;
+        if (isNaN(stateValue)) {
+            // It's a string from our JSON object, use it directly
+            currentFlightStateValueElement.textContent = stateValue;
+        } else {
+            // It's a number from CSV, convert it
+            currentFlightStateValueElement.textContent = getFlightStateString(stateValue);
+        }
     }
 
     // --- Update Charts ---

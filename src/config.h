@@ -122,11 +122,7 @@
 // #define EEPROM_SIGNATURE_ADDR 12           // REMOVED - Part of FlightStateData struct
 #define EEPROM_SIGNATURE_VALUE 0xBEEF      // Signature to validate EEPROM data (16-bit), used within FlightStateData
 
-// --- Madgwick Filter Configuration --- (REMOVED as Madgwick is no longer an option)
-#define MADGWICK_BETA_INIT 0.05f
-#define MADGWICK_BETA_STATIONARY 0.02f
-#define MADGWICK_BETA_MOTION 0.1f
-#define MADGWICK_GYRO_BIAS_LEARN_RATE 0.002f
+// --- Madgwick Filter Configuration --- (REMOVED: Madgwick filter no longer supported)
 
 // --- Orientation System Configuration ---
 // Determines which orientation system is active at startup.

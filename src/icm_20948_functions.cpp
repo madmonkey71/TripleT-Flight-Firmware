@@ -91,8 +91,7 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
     for (int i = 0; i < num_samples; ++i) {
         if (myICM.dataReady()) {
             myICM.getAGMT();
-            // Gyro data is in dps, convert to rad/s for consistency with Madgwick input and gyroBias storage
-            // Is this needed any more ?
+            // Gyro data is in dps, convert to rad/s for consistency with Kalman filter and gyroBias storage
             temp_gyro_sum[0] += myICM.gyrX() * DEG_TO_RAD;
             temp_gyro_sum[1] += myICM.gyrY() * DEG_TO_RAD;
             temp_gyro_sum[2] += myICM.gyrZ() * DEG_TO_RAD;
@@ -322,8 +321,7 @@ void ICM_20948_read() {
         }
     }
     
-    // Print detailed raw sensor data and Madgwick Euler angles every second for debugging
-    // Is this needed any more ?
+    // Print detailed raw sensor data and ICM debug info every second for debugging
     if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
       lastDetailedDebugTime = millis();
       
@@ -352,21 +350,8 @@ void ICM_20948_read() {
       Serial.println();
 
 
-      // --- Temporary Madgwick Euler Angle Debug Print ---
-      // Is this needed any more ?
-      float roll_deg, pitch_deg, yaw_deg;
-      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, roll_deg, pitch_deg, yaw_deg);
-
-      // Convert radians to degrees for printing
-      roll_deg *= (180.0f / PI);
-      pitch_deg *= (180.0f / PI);
-      yaw_deg *= (180.0f / PI);
-
-      // Is this needed any more ?
-      Serial.print("Euler (deg) - R: "); Serial.print(roll_deg, 1);
-      Serial.print(" P: "); Serial.print(pitch_deg, 1);
-      Serial.print(" Y: "); Serial.println(yaw_deg, 1);
-      // --- End Temporary Madgwick Euler Angle Debug Print ---
+      // Note: ICM quaternion values (icm_q0, icm_q1, icm_q2, icm_q3) are still maintained
+      // for compatibility but Kalman filter is the primary orientation source
     }
       icm_data_available = true;
   } else {

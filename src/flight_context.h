@@ -26,7 +26,6 @@ typedef struct {
     bool kx134_initialized_ok;
 
     // Pointers to allow modification of these specific flags by command_processor
-    bool* useMadgwickFilter_ptr;
     bool* useKalmanFilter_ptr;
 
     // References to global objects needed by some status commands (e.g. printSystemStatus)

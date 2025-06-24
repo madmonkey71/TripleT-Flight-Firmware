@@ -34,7 +34,7 @@
 // extern bool ms5611_initialized_ok; // Now in SystemStatusContext
 // extern bool kx134_initialized_ok; // Now in SystemStatusContext
 // extern SFE_UBLOX_GNSS myGNSS; // Now in SystemStatusContext
-// extern bool useMadgwickFilter; // Now in SystemStatusContext
+// Madgwick filter references removed - only Kalman filter is supported
 // extern bool useKalmanFilter; // Now in SystemStatusContext
 
 
@@ -273,33 +273,28 @@ void setOrientationFilter(String filterType, SystemStatusContext& statusCtx) {
     filterType.trim(); // Ensure no leading/trailing whitespace
 
     if (filterType.equalsIgnoreCase("madgwick")) {
-        *statusCtx.useMadgwickFilter_ptr = true;
-        *statusCtx.useKalmanFilter_ptr = false;
-        Serial.println(F("Orientation filter set to Madgwick."));
+        Serial.println(F("WARNING: Madgwick filter no longer available. Kalman filter is the only option."));
+        *statusCtx.useKalmanFilter_ptr = true;
     } else if (filterType.equalsIgnoreCase("kalman")) {
-        *statusCtx.useMadgwickFilter_ptr = false;
         *statusCtx.useKalmanFilter_ptr = true;
         kalman_init(0.0f, 0.0f, 0.0f); // Re-initialize Kalman filter with zero initial angles
-        Serial.println(F("Orientation filter set to Kalman."));
+        Serial.println(F("Kalman filter enabled (default and only option)."));
     } else if (filterType.length() > 0){ // Only print if a filter type was actually given
         Serial.print(F("Unknown filter type: "));
         Serial.println(filterType);
+        Serial.println(F("Only 'kalman' is supported."));
     }
 }
 
 void getOrientationFilterStatus(const SystemStatusContext& statusCtx) {
     Serial.print(F("Current orientation filter: "));
     if (statusCtx.useKalmanFilter_ptr && *statusCtx.useKalmanFilter_ptr) {
-        Serial.println(F("Kalman"));
-    } else if (statusCtx.useMadgwickFilter_ptr && *statusCtx.useMadgwickFilter_ptr) {
-        Serial.println(F("Madgwick"));
+        Serial.println(F("Kalman (only option)"));
     } else {
-        Serial.println(F("None (Madgwick is default if Kalman is false)"));
+        Serial.println(F("Disabled (not recommended - Kalman is the only filter available)"));
     }
     Serial.print(F("  useKalmanFilter flag: "));
     Serial.println((statusCtx.useKalmanFilter_ptr && *statusCtx.useKalmanFilter_ptr) ? "true" : "false");
-    Serial.print(F("  useMadgwickFilter flag: "));
-    Serial.println((statusCtx.useMadgwickFilter_ptr && *statusCtx.useMadgwickFilter_ptr) ? "true" : "false");
 }
 
 void processCommand(String command,

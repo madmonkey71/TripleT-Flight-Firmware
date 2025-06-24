@@ -79,10 +79,8 @@ float g_main_deploy_altitude_m_agl = 0.0f;
 
 const char* BOARD_NAME = "Teensy 4.1"; // This is a const, often uppercased, g_ prefix is optional by convention
 
-// Orientation Filter Selection
-// Is this needed any more ?
-bool g_useMadgwickFilter = !KALMAN_FILTER_ACTIVE_BY_DEFAULT;
-bool g_useKalmanFilter = KALMAN_FILTER_ACTIVE_BY_DEFAULT;
+// Orientation Filter Selection - Always use Kalman filter
+bool g_useKalmanFilter = true; // Always true - Kalman is the only orientation filter
 float g_kalmanRoll = 0.0f;
 float g_kalmanPitch = 0.0f;
 float g_kalmanYaw = 0.0f;
@@ -350,30 +348,17 @@ void WriteLogData(bool forceLog) {
   memcpy(logEntry.icm_mag, icm_mag, sizeof(icm_mag));          // icm_mag is global from icm_20948_functions.cpp (needs g_ if defined here)
   logEntry.icm_temp = icm_temp;                                 // icm_temp is global from icm_20948_functions.cpp (needs g_ if defined here)
 
-  if (g_useKalmanFilter) {
-      // Use Kalman filter Euler angles
-      logEntry.euler_roll = g_kalmanRoll;
-      logEntry.euler_pitch = g_kalmanPitch;
-      logEntry.euler_yaw = g_kalmanYaw;
-      
-      // Convert Kalman Euler angles back to quaternions for logging and visualization
-      // This ensures quaternion fields are populated even when using Kalman filter
-      convertEulerToQuaternion(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
-                               logEntry.q0, logEntry.q1, logEntry.q2, logEntry.q3);
-  } else { // Default to Madgwick if Kalman is not active (g_useMadgwickFilter can also be checked)
-      // Use quaternions from Madgwick filter (if available)
-      // Is this needed any more ?
-      logEntry.q0 = icm_q0; // icm_q0 etc are globals from icm_20948_functions.cpp (Madgwick part)
-      logEntry.q1 = icm_q1;
-      logEntry.q2 = icm_q2;
-      logEntry.q3 = icm_q3;
-      
-      convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
-                               logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
-  }
-  // Is this needed any more ?
-  logEntry.gyro_bias_x = gyroBias[0]; // gyroBias is likely global from sensor fusion/Madgwick
-  logEntry.gyro_bias_y = gyroBias[1]; // (needs g_ if defined here)
+  // Always use Kalman filter orientation data
+  logEntry.euler_roll = g_kalmanRoll;
+  logEntry.euler_pitch = g_kalmanPitch;
+  logEntry.euler_yaw = g_kalmanYaw;
+  
+  // Convert Kalman Euler angles to quaternion for logging
+  convertEulerToQuaternion(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
+                           logEntry.q0, logEntry.q1, logEntry.q2, logEntry.q3);
+  // Get gyro bias from ICM (still useful for diagnostics)
+  logEntry.gyro_bias_x = gyroBias[0];
+  logEntry.gyro_bias_y = gyroBias[1];
   logEntry.gyro_bias_z = gyroBias[2];
 
   // Populate Guidance Control Data
@@ -760,8 +745,6 @@ void loop() {
         g_icm20948_ready,
         ms5611_initialized_ok, // extern, not prefixed with g_ unless defined here
         g_kx134_initialized_ok,
-        // Is this needed any more ? 
-        &g_useMadgwickFilter,
         &g_useKalmanFilter,
         myGNSS,
         g_ms5611Sensor       // Assuming g_ms5611Sensor is the global instance

@@ -1,9 +1,10 @@
 // JavaScript file for parsing incoming data from the serial port
 
-let columnMappings = null;
-let csvDelimiter = ','; // Default delimiter
-let flightStateMappings = null; // To store flight state mappings
-let csvHeaders = [];
+// This module will hold the configuration once loaded.
+let config = {
+    csvHeaders: [],
+    flightStateMap: {}
+};
 
 /**
  * Determines if a message should be ignored for data parsing/plotting.
@@ -133,7 +134,7 @@ function isCSVDataMessage(message) {
     }
     
     // Count comma-separated fields
-    const fields = trimmedMessage.split(csvDelimiter);
+    const fields = trimmedMessage.split(',');
     console.log(`CSV Detection: Found ${fields.length} fields`);
     
     // Much more lenient - just need a few fields
@@ -188,118 +189,87 @@ function categorizeMessage(message) {
 }
 
 /**
- * Initializes the data parser by fetching the column mapping configuration.
- * @param {function} callback - Optional callback to execute after successful initialization.
- * @param {function} errorCallback - Optional callback to execute if initialization fails.
+ * Initializes the parser by fetching the configuration file.
+ * This must be called before the main application starts trying to parse data.
+ * @returns {Promise<void>} A promise that resolves when the config is loaded.
  */
-async function initDataParser(callback, errorCallback) {
+async function initDataParser() {
     try {
-        console.log("Fetching data mapping configuration...");
-        const response = await fetch('./js/flight_console_data_mapping.json');
+        const response = await fetch('js/flight_console_data_mapping.json');
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status} while fetching mapping json`);
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const mappingConfig = await response.json();
+        const mapping = await response.json();
         
-        if (!mappingConfig.column_mappings || !mappingConfig.csv_settings || !mappingConfig.flight_states) {
-            throw new Error("Invalid mapping configuration file format. Missing column_mappings, csv_settings, or flight_states.");
+        // Validate the structure of the loaded JSON
+        if (!mapping.csv_headers || !mapping.flight_states) {
+            throw new Error("Invalid mapping file format. Missing 'csv_headers' or 'flight_states'.");
         }
-
-        columnMappings = mappingConfig.column_mappings;
-        csvDelimiter = mappingConfig.csv_settings.delimiter || ',';
-        flightStateMappings = mappingConfig.flight_states; // Load flight states
         
-        console.log("Data mapping configuration loaded successfully.");
-        console.log(`Using delimiter: '${csvDelimiter}'`);
-        console.log(`Number of column mappings: ${columnMappings.length}`);
-        console.log(`Number of flight state mappings: ${Object.keys(flightStateMappings).length}`);
+        config.csvHeaders = mapping.csv_headers;
+        config.flightStateMap = mapping.flight_states;
+        
+        console.log("Data parser initialized successfully.");
+        console.log(`Loaded ${config.csvHeaders.length} CSV headers.`);
+        console.log(`Loaded ${Object.keys(config.flightStateMap).length} flight state mappings.`);
 
-        if (callback) callback(flightStateMappings); // Pass mappings to the callback
     } catch (error) {
-        console.error("Error initializing data parser:", error);
-        columnMappings = null; // Ensure mappings are null if loading fails
-        if (errorCallback) errorCallback(error);
+        console.error("Failed to initialize data parser:", error);
+        // Re-throw the error so the main application knows initialization failed.
+        throw error; 
     }
 }
 
 /**
- * Parses a single line of CSV data based on the loaded column mappings.
- * @param {string} csvString - A string representing a single line of CSV data.
- * @returns {object|null} A JavaScript object with internal_name as keys and parsed values, 
- *                        or null if parsing fails or mappings are not loaded.
+ * Parses a single line of text from the serial port.
+ * It can handle both full CSV lines and the special JSON state messages.
+ * @param {string} line - The raw line of text from the serial port.
+ * @returns {object|null} A structured data object or null if the line is not valid data.
  */
-function parseSerialData(csvString) {
-    if (!columnMappings) {
-        console.error("Data parser not initialized or mapping not loaded. Call initDataParser first.");
-        return null;
-    }
-    if (typeof csvString !== 'string') {
-        console.error("Invalid input: csvString must be a string.");
-        return null;
-    }
+function parseData(line) {
+    const trimmedLine = line.trim();
 
-    const values = csvString.split(csvDelimiter);
-    const expectedNumValues = columnMappings.length;
-
-    // Basic check for the number of fields, could be made more robust
-    // For now, we'll allow parsing even if field count is slightly off,
-    // relying on default values for missing fields.
-    if (values.length !== expectedNumValues) {
-        console.warn(`CSV field count mismatch: expected ${expectedNumValues}, got ${values.length}. Data: "${csvString}"`);
-        // Potentially, one could decide to return null here if strict matching is required.
-    }
-
-    const parsedObject = {};
-
-    for (let i = 0; i < columnMappings.length; i++) {
-        const mapping = columnMappings[i];
-        let value = values[i]; // Value from CSV string at the current index
-
-        // If the value from CSV is undefined (e.g., fewer columns than expected),
-        // or if it's an empty string for a type that expects a value, use default.
-        if (value === undefined || (value === "" && mapping.type !== "string")) { // Assuming empty string is not valid for int/float
-            if (mapping.default_value !== undefined) {
-                value = mapping.default_value;
-                // console.log(`Using default value for ${mapping.internal_name}: ${value}`);
-            } else {
-                console.warn(`No value and no default for ${mapping.internal_name} at index ${i}. Setting to null.`);
-                parsedObject[mapping.internal_name] = null;
-                continue;
-            }
-        } else if (typeof value === 'string') {
-             value = value.trim(); // Trim whitespace
-        }
-
-
+    // 1. Handle JSON state messages: {"state_id":3,"state_name":"ARMED"}
+    if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
         try {
-            switch (mapping.type) {
-                case "int":
-                    parsedObject[mapping.internal_name] = parseInt(value, 10);
-                    if (isNaN(parsedObject[mapping.internal_name])) {
-                        // console.warn(`Failed to parse int for ${mapping.internal_name} from value '${values[i]}'. Using default: ${mapping.default_value}`);
-                        parsedObject[mapping.internal_name] = mapping.default_value;
-                    }
-                    break;
-                case "float":
-                    parsedObject[mapping.internal_name] = parseFloat(value);
-                    if (isNaN(parsedObject[mapping.internal_name])) {
-                        // console.warn(`Failed to parse float for ${mapping.internal_name} from value '${values[i]}'. Using default: ${mapping.default_value}`);
-                        parsedObject[mapping.internal_name] = mapping.default_value;
-                    }
-                    break;
-                case "string": // Though not in the current JSON, good to have
-                    parsedObject[mapping.internal_name] = value;
-                    break;
-                default:
-                    console.warn(`Unknown data type '${mapping.type}' for ${mapping.internal_name}. Storing as string or using default.`);
-                    parsedObject[mapping.internal_name] = (mapping.default_value !== undefined) ? mapping.default_value : value;
+            const stateData = JSON.parse(trimmedLine);
+            if (stateData && typeof stateData.state_name !== 'undefined') {
+                // Return an object that is compatible with the UI updater.
+                return { 
+                    isStateUpdate: true, // Flag to identify this special message type
+                    FlightState: stateData.state_name 
+                };
             }
-        } catch (conversionError) {
-            console.error(`Error converting value for ${mapping.internal_name} (value: '${value}'):`, conversionError);
-            parsedObject[mapping.internal_name] = mapping.default_value;
+        } catch (e) {
+            return null; // Invalid JSON, ignore.
         }
     }
-    return parsedObject;
+
+    // 2. Handle CSV data lines: "CSV:data,data,data..."
+    if (trimmedLine.startsWith("CSV:")) {
+        const parts = trimmedLine.substring(4).split(',');
+        
+        // Ensure headers are loaded and the data has the correct number of fields
+        if (config.csvHeaders.length === 0 || parts.length !== config.csvHeaders.length) {
+            return null;
+        }
+
+        const dataObject = {};
+        config.csvHeaders.forEach((header, index) => {
+            const value = parts[index] ? parts[index].trim() : '';
+            dataObject[header] = value;
+        });
+
+        // The flight state from CSV is a number, so we look up the name.
+        if (dataObject.FlightState !== undefined) {
+            dataObject.FlightState = config.flightStateMap[dataObject.FlightState] || 'UNKNOWN';
+        }
+        
+        return dataObject;
+    }
+
+    // Return null for any other line type.
+    return null;
 }
 
 // Example of how main.js might use this:
@@ -319,8 +289,8 @@ async function loadCsvHeaders() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const mapping = await response.json();
-        csvHeaders = mapping.csv_headers;
-        console.log("CSV headers loaded successfully:", csvHeaders);
+        config.csvHeaders = mapping.csv_headers;
+        console.log("CSV headers loaded successfully:", config.csvHeaders);
     } catch (error) {
         console.error("Failed to load CSV headers:", error);
     }
@@ -328,50 +298,3 @@ async function loadCsvHeaders() {
 
 // Ensure headers are loaded before any parsing is attempted
 loadCsvHeaders();
-
-// This function will parse a line of text from the serial port
-// and return a data object.
-function parseData(line) {
-    // Trim the line to remove any leading/trailing whitespace
-    const trimmedLine = line.trim();
-
-    // Check for our new JSON state message format
-    if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
-        try {
-            const stateData = JSON.parse(trimmedLine);
-            // Check if it's a valid state object with the expected property
-            if (stateData && typeof stateData.state_name !== 'undefined') {
-                // Return an object that mirrors the structure of a parsed CSV row
-                // This makes it compatible with the existing UI updater logic
-                return {
-                    FlightState: stateData.state_name
-                };
-            }
-        } catch (e) {
-            // This can happen if a non-JSON line contains braces. Ignore it.
-            // console.error("Error parsing potential JSON line:", trimmedLine, e);
-            return null;
-        }
-    }
-
-    // Handle existing CSV data
-    if (trimmedLine.startsWith("CSV:")) {
-        const parts = trimmedLine.substring(4).split(',');
-        if (parts.length !== csvHeaders.length) {
-            // console.warn(`CSV data length (${parts.length}) does not match headers length (${csvHeaders.length}). Line: ${line}`);
-            return null; // Skip mismatched lines
-        }
-
-        const dataObject = {};
-        csvHeaders.forEach((header, index) => {
-            // Trim each part to handle potential whitespace
-            const value = parts[index] ? parts[index].trim() : '';
-            dataObject[header] = value;
-        });
-
-        return dataObject;
-    }
-
-    // Return null for any line that is not a valid CSV or state message
-    return null;
-}

@@ -619,7 +619,7 @@ void setup() {
   ms5611_init(); // This sets ms5611_initialized_ok
   ICM_20948_init(); // This sets g_icm20948_ready
   if (USE_KX134) {
-    kx134_init(); // This sets g_kx134_initialized_ok
+    g_kx134_initialized_ok = kx134_init(); // This sets g_kx134_initialized_ok
   }
 
   // Initialize Kalman filter

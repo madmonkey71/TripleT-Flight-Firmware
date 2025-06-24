@@ -10,6 +10,7 @@
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
 extern bool enableICMRawDebug; // New flag to control ICM raw data output
+extern bool g_icm20948_ready; // To set the global ready flag
 
 // Initialize ICM_20948 variables
 float icm_accel[3] = {0.0f, 0.0f, 0.0f};  // Accelerometer data (g)
@@ -204,8 +205,8 @@ void ICM_20948_init() {
     Serial.println("Failed to enable accel DLPF");
   }
   
-  // Set accel full scale range to +/- 4g
-  myFSS.a = 1; // 4g
+  // Set accel full scale range to +/- 16g
+  myFSS.a = 3; // 16g
   
   result = myICM.setFullScale(ICM_20948_Internal_Acc, myFSS);
   if (result != ICM_20948_Stat_Ok) {
@@ -218,7 +219,16 @@ void ICM_20948_init() {
     Serial.println("Failed to start magnetometer");
   }
   
-  Serial.println("ICM-20948 initialized successfully");
+  // If we get here, all configuration was successful.
+  g_icm20948_ready = true;
+  Serial.println("ICM-20948 initialization successful.");
+  
+  // Load existing magnetometer calibration from EEPROM if available
+  if(icm_20948_load_calibration()){
+      Serial.println("Loaded existing ICM20948 magnetometer calibration from EEPROM.");
+  } else {
+      Serial.println("No existing ICM20948 magnetometer calibration found in EEPROM.");
+  }
   
   // Initialize variables
   isStationary = true;

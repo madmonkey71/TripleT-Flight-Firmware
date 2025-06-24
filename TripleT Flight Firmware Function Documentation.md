@@ -1,4 +1,4 @@
-fff# TripleT Flight Firmware Function Documentation
+# TripleT Flight Firmware Function Documentation
 ## Version 0.40
 
 ## Flow Diagram

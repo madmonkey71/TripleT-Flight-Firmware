@@ -210,8 +210,6 @@ async function initDataParser() {
         config.flightStateMap = mapping.flight_states;
         
         console.log("Data parser initialized successfully.");
-        console.log(`Loaded ${config.csvHeaders.length} CSV headers.`);
-        console.log(`Loaded ${Object.keys(config.flightStateMap).length} flight state mappings.`);
 
     } catch (error) {
         console.error("Failed to initialize data parser:", error);

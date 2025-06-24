@@ -10,32 +10,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serialCommandInput = document.getElementById('serialCommandInput');
     const serialSendCommandButton = document.getElementById('serialSendCommandButton');
     
-    // --- Initialize Data Parser and UI ---
-    try {
-        // Disable connect button until everything is ready
-        if (connectButton) connectButton.disabled = true;
-
-        // Initialize the parser first
-        await initDataParser();
-        
-        // Then initialize the UI
-        if (typeof initUI === 'function') {
-            initUI(); // initUI no longer needs flight states passed, it gets them from the parser module
-        }
-
-        // Enable the connect button now that initialization is complete
-        updateConnectionStatus("Ready to connect", "disconnected");
-        if (connectButton) connectButton.disabled = false;
-
-    } catch (error) {
-        console.error("Initialization failed:", error);
-        updateConnectionStatus("Initialization Error. Check console.", "error");
-        if (connectButton) {
-            connectButton.disabled = true;
-            connectButton.title = "Application failed to initialize.";
-        }
-    }
-
     // --- Serial Terminal Logging Function ---
     function logToTerminal(message, type = 'info') {
         if (serialTerminalOutput) {
@@ -63,8 +37,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         logToTerminal(`Connection status: ${message}`, statusClass === 'error' ? 'error' : 'info');
     }
-    // Set initial status, which will be updated on successful init
-    updateConnectionStatus("Initializing...", "disconnected");
+    
+    // --- Initialize Data Parser and UI ---
+    try {
+        if (connectButton) connectButton.disabled = true;
+        updateConnectionStatus("Initializing...", "disconnected");
+
+        await initDataParser();
+        
+        if (typeof initUI === 'function') {
+            initUI();
+        }
+
+        updateConnectionStatus("Ready to connect", "disconnected");
+        if (connectButton) connectButton.disabled = false;
+
+    } catch (error) {
+        console.error("Initialization failed:", error);
+        updateConnectionStatus("Initialization Error. Check console.", "error");
+        if (connectButton) {
+            connectButton.disabled = true;
+            connectButton.title = "Application failed to initialize.";
+        }
+    }
 
     // --- Serial Handler Callbacks ---
     function handleSerialConnect(connectionInfo) {
@@ -78,14 +73,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     function handleReceivedData(data) {
         const parsedData = parseData(data);
 
-        // If parsing fails, it's a regular text message for the terminal.
         if (!parsedData) {
             logToTerminal(data.trim(), 'received');
             return;
         }
         
-        // If it's a state-only update, do not log it to the terminal.
-        // Just update the UI and exit.
         if (parsedData.isStateUpdate) {
             if (typeof updateUI === 'function') {
                 updateUI(parsedData);
@@ -93,7 +85,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        // If it's a full CSV data packet, log a summary and update the UI.
         const fields = data.substring(4).split(',');
         const condensed = fields.slice(0, 3).join(',') + `... (${fields.length} fields)`;
         logToTerminal(`CSV: ${condensed}`, 'received');

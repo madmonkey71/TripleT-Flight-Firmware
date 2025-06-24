@@ -15,40 +15,26 @@ let valPressure, valTemp, valAltBaro;
 let currentFlightStateValueElement; // Added for flight state
 
 /**
- * Initializes the UI components and flight state mappings.
- * This function is called by main.js after the data parser is ready.
+ * Initializes the UI components. This function is called by main.js
+ * once the data parser has successfully loaded its configuration.
  */
 function initUI() {
-    // FlightState is now managed by the data_parser module.
     console.log("UI Initializing...");
     
-    // The rest of the DOMContentLoaded logic can be moved here
     // Initialize chart contexts
     const altitudeChartCtx = document.getElementById('altitudeChart')?.getContext('2d');
     const accelerationChartCtx = document.getElementById('accelerationChart')?.getContext('2d');
-    const icmAccelChartCtx = document.getElementById('icmAccelChart')?.getContext('2d'); // Added for ICM Accel
-    const icmGyroChartCtx = document.getElementById('icmGyroChart')?.getContext('2d');   // Added for ICM Gyro
-    const icmMagChartCtx = document.getElementById('icmMagChart')?.getContext('2d');     // Added for ICM Mag
-    const actuatorChartCtx = document.getElementById('actuatorChart')?.getContext('2d'); // Added for Actuator chart
+    const icmAccelChartCtx = document.getElementById('icmAccelChart')?.getContext('2d');
+    const icmGyroChartCtx = document.getElementById('icmGyroChart')?.getContext('2d');
+    const icmMagChartCtx = document.getElementById('icmMagChart')?.getContext('2d');
+    const actuatorChartCtx = document.getElementById('actuatorChart')?.getContext('2d');
 
-    if (altitudeChartCtx && typeof initAltitudeChart === 'function') {
-        altitudeChartInstance = initAltitudeChart(altitudeChartCtx);
-    }
-    if (accelerationChartCtx && typeof initAccelerationChart === 'function') {
-        accelerationChartInstance = initAccelerationChart(accelerationChartCtx);
-    }
-    if (icmAccelChartCtx && typeof initICMAccelChart === 'function') {
-        icmAccelChartInstance = initICMAccelChart(icmAccelChartCtx);
-    }
-    if (icmGyroChartCtx && typeof initICMGyroChart === 'function') {
-        icmGyroChartInstance = initICMGyroChart(icmGyroChartCtx);
-    }
-    if (icmMagChartCtx && typeof initICMMagChart === 'function') {
-        icmMagChartInstance = initICMMagChart(icmMagChartCtx);
-    }
-    if (actuatorChartCtx && typeof initActuatorChart === 'function') {
-        actuatorChartInstance = initActuatorChart(actuatorChartCtx);
-    }
+    if (altitudeChartCtx) altitudeChartInstance = initAltitudeChart(altitudeChartCtx);
+    if (accelerationChartCtx) accelerationChartInstance = initAccelerationChart(accelerationChartCtx);
+    if (icmAccelChartCtx) icmAccelChartInstance = initICMAccelChart(icmAccelChartCtx);
+    if (icmGyroChartCtx) icmGyroChartInstance = initICMGyroChart(icmGyroChartCtx);
+    if (icmMagChartCtx) icmMagChartInstance = initICMMagChart(icmMagChartCtx);
+    if (actuatorChartCtx) actuatorChartInstance = initActuatorChart(actuatorChartCtx);
 
     // Get references to numerical display elements
     valLat = document.getElementById('valLat');
@@ -56,17 +42,14 @@ function initUI() {
     valSpeed = document.getElementById('valSpeed');
     valSats = document.getElementById('valSats');
     valAltGps = document.getElementById('valAltGps');
-
     valRoll = document.getElementById('valRoll');
     valPitch = document.getElementById('valPitch');
     valYaw = document.getElementById('valYaw');
-    
     valPressure = document.getElementById('valPressure');
     valTemp = document.getElementById('valTemp');
     valAltBaro = document.getElementById('valAltBaro');
     currentFlightStateValueElement = document.getElementById('currentFlightStateValue');
 
-    // Initialize 3D Visualizer
     if (typeof init3DVisualizer === 'function') {
         init3DVisualizer();
     }
@@ -81,12 +64,10 @@ function updateUI(parsedData) {
     if (!parsedData) return;
 
     // --- Update Flight State Display ---
-    // The parser now consistently provides the state name in the FlightState field.
     if (parsedData.FlightState && currentFlightStateValueElement) {
         currentFlightStateValueElement.textContent = parsedData.FlightState;
     }
 
-    // If this is a state-only update, do not process other fields.
     if (parsedData.isStateUpdate) {
         return;
     }
@@ -96,30 +77,31 @@ function updateUI(parsedData) {
     const toDegrees = (radians) => (radians * 180 / Math.PI);
 
     if (altitudeChartInstance && parsedData.CalibratedAltitude !== undefined && parsedData.Alt !== undefined) {
-        updateChart(altitudeChartInstance, { timestamp, values: [parsedData.CalibratedAltitude, parsedData.Alt] });
+        updateChart(altitudeChartInstance, { timestamp, values: [parseFloat(parsedData.CalibratedAltitude), parseFloat(parsedData.Alt)] });
     }
     if (accelerationChartInstance && parsedData.KX134_AccelX !== undefined) {
-        updateChart(accelerationChartInstance, { timestamp, values: [parsedData.KX134_AccelX, parsedData.KX134_AccelY, parsedData.KX134_AccelZ] });
+        updateChart(accelerationChartInstance, { timestamp, values: [parseFloat(parsedData.KX134_AccelX), parseFloat(parsedData.KX134_AccelY), parseFloat(parsedData.KX134_AccelZ)] });
     }
     if (icmAccelChartInstance && parsedData.ICM_AccelX !== undefined) {
-        updateChart(icmAccelChartInstance, { timestamp, values: [parsedData.ICM_AccelX, parsedData.ICM_AccelY, parsedData.ICM_AccelZ] });
+        updateChart(icmAccelChartInstance, { timestamp, values: [parseFloat(parsedData.ICM_AccelX), parseFloat(parsedData.ICM_AccelY), parseFloat(parsedData.ICM_AccelZ)] });
     }
     if (icmGyroChartInstance && parsedData.ICM_GyroX !== undefined) {
-        updateChart(icmGyroChartInstance, { timestamp, values: [toDegrees(parsedData.ICM_GyroX), toDegrees(parsedData.ICM_GyroY), toDegrees(parsedData.ICM_GyroZ)] });
+        updateChart(icmGyroChartInstance, { timestamp, values: [toDegrees(parseFloat(parsedData.ICM_GyroX)), toDegrees(parseFloat(parsedData.ICM_GyroY)), toDegrees(parseFloat(parsedData.ICM_GyroZ))] });
     }
     if (icmMagChartInstance && parsedData.ICM_MagX !== undefined) {
-        updateChart(icmMagChartInstance, { timestamp, values: [parsedData.ICM_MagX, parsedData.ICM_MagY, parsedData.ICM_MagZ] });
+        updateChart(icmMagChartInstance, { timestamp, values: [parseFloat(parsedData.ICM_MagX), parseFloat(parsedData.ICM_MagY), parseFloat(parsedData.ICM_MagZ)] });
     }
     if (actuatorChartInstance && parsedData.ActuatorOutRoll !== undefined) {
-        updateChart(actuatorChartInstance, { timestamp, values: [parsedData.ActuatorOutRoll, parsedData.ActuatorOutPitch, parsedData.ActuatorOutYaw] });
+        updateChart(actuatorChartInstance, { timestamp, values: [parseFloat(parsedData.ActuatorOutRoll), parseFloat(parsedData.ActuatorOutPitch), parseFloat(parsedData.ActuatorOutYaw)] });
     }
 
     // --- Update Numerical Values ---
     const updateElementText = (element, value, defaultValue = 'N/A', precision = null) => {
         if (element) {
             let text = defaultValue;
-            if (value !== undefined && value !== null) {
-                text = precision !== null && typeof value === 'number' ? Number(value).toFixed(precision) : value;
+            if (value !== undefined && value !== null && value !== '') {
+                const numValue = parseFloat(value);
+                text = precision !== null ? numValue.toFixed(precision) : numValue.toString();
             }
             element.textContent = text;
         }
@@ -131,20 +113,23 @@ function updateUI(parsedData) {
     updateElementText(valSats, parsedData.Sats, 'N/A', 0);
     updateElementText(valAltGps, parsedData.Alt, 'N/A', 1);
 
-    updateElementText(valRoll, parsedData.EulerRoll_rad !== undefined ? toDegrees(parsedData.EulerRoll_rad) : undefined, 'N/A', 2);
-    updateElementText(valPitch, parsedData.EulerPitch_rad !== undefined ? toDegrees(parsedData.EulerPitch_rad) : undefined, 'N/A', 2);
-    updateElementText(valYaw, parsedData.EulerYaw_rad !== undefined ? toDegrees(parsedData.EulerYaw_rad) : undefined, 'N/A', 2);
+    const rollRad = parseFloat(parsedData.EulerRoll_rad);
+    const pitchRad = parseFloat(parsedData.EulerPitch_rad);
+    const yawRad = parseFloat(parsedData.EulerYaw_rad);
+
+    updateElementText(valRoll, !isNaN(rollRad) ? toDegrees(rollRad) : undefined, 'N/A', 2);
+    updateElementText(valPitch, !isNaN(pitchRad) ? toDegrees(pitchRad) : undefined, 'N/A', 2);
+    updateElementText(valYaw, !isNaN(yawRad) ? toDegrees(yawRad) : undefined, 'N/A', 2);
 
     // --- Update 3D Visualizer ---
-    if (typeof update3DVisualizer === 'function' && parsedData.EulerRoll_rad !== undefined) {
+    if (typeof update3DVisualizer === 'function' && !isNaN(rollRad)) {
         update3DVisualizer(
-            toDegrees(parsedData.EulerRoll_rad),
-            toDegrees(parsedData.EulerPitch_rad),
-            toDegrees(parsedData.EulerYaw_rad)
+            toDegrees(rollRad),
+            toDegrees(pitchRad),
+            toDegrees(yawRad)
         );
     }
     
-    // Barometer and other data
     updateElementText(valPressure, parsedData.Pressure, 'N/A', 2);
     updateElementText(valTemp, parsedData.Temperature, 'N/A', 1);
     updateElementText(valAltBaro, parsedData.CalibratedAltitude, 'N/A', 1);

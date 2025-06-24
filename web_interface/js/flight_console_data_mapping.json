@@ -51,6 +51,14 @@
     { "internal_name": "PIDIntPitch", "csv_header": "PIDIntPitch", "csv_index": null, "default_value": 0.0, "type": "float" },
     { "internal_name": "PIDIntYaw", "csv_header": "PIDIntYaw", "csv_index": null, "default_value": 0.0, "type": "float" }
   ],
+  "csv_headers": [
+    "SeqNum", "Timestamp", "FlightState", "FixType", "Sats", "Lat", "Long", "Alt", "AltMSL", "RawAltitude", 
+    "CalibratedAltitude", "Speed", "Heading", "pDOP", "RTK", "Pressure", "Temperature", "KX134_AccelX", 
+    "KX134_AccelY", "KX134_AccelZ", "ICM_AccelX", "ICM_AccelY", "ICM_AccelZ", "ICM_GyroX", "ICM_GyroY", 
+    "ICM_GyroZ", "ICM_MagX", "ICM_MagY", "ICM_MagZ", "ICM_Temp", "Q0", "Q1", "Q2", "Q3", "EulerRoll_rad", 
+    "EulerPitch_rad", "EulerYaw_rad", "GyroBiasX_rps", "GyroBiasY_rps", "GyroBiasZ_rps", "ActuatorOutRoll", 
+    "ActuatorOutPitch", "ActuatorOutYaw", "TgtRoll", "TgtPitch", "TgtYaw", "PIDIntRoll", "PIDIntPitch", "PIDIntYaw"
+  ],
   "csv_settings": {
     "delimiter": ",",
     "has_header": true

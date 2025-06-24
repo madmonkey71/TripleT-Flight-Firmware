@@ -80,6 +80,7 @@ float g_main_deploy_altitude_m_agl = 0.0f;
 const char* BOARD_NAME = "Teensy 4.1"; // This is a const, often uppercased, g_ prefix is optional by convention
 
 // Orientation Filter Selection
+// Is this needed any more ?
 bool g_useMadgwickFilter = !KALMAN_FILTER_ACTIVE_BY_DEFAULT;
 bool g_useKalmanFilter = KALMAN_FILTER_ACTIVE_BY_DEFAULT;
 float g_kalmanRoll = 0.0f;
@@ -361,6 +362,7 @@ void WriteLogData(bool forceLog) {
                                logEntry.q0, logEntry.q1, logEntry.q2, logEntry.q3);
   } else { // Default to Madgwick if Kalman is not active (g_useMadgwickFilter can also be checked)
       // Use quaternions from Madgwick filter (if available)
+      // Is this needed any more ?
       logEntry.q0 = icm_q0; // icm_q0 etc are globals from icm_20948_functions.cpp (Madgwick part)
       logEntry.q1 = icm_q1;
       logEntry.q2 = icm_q2;
@@ -369,7 +371,7 @@ void WriteLogData(bool forceLog) {
       convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3,
                                logEntry.euler_roll, logEntry.euler_pitch, logEntry.euler_yaw);
   }
-
+  // Is this needed any more ?
   logEntry.gyro_bias_x = gyroBias[0]; // gyroBias is likely global from sensor fusion/Madgwick
   logEntry.gyro_bias_y = gyroBias[1]; // (needs g_ if defined here)
   logEntry.gyro_bias_z = gyroBias[2];
@@ -758,6 +760,7 @@ void loop() {
         g_icm20948_ready,
         ms5611_initialized_ok, // extern, not prefixed with g_ unless defined here
         g_kx134_initialized_ok,
+        // Is this needed any more ? 
         &g_useMadgwickFilter,
         &g_useKalmanFilter,
         myGNSS,

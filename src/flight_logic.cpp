@@ -53,6 +53,7 @@ bool landingDetectedFlag = false;
 float previousApogeeDetectAltitude = 0.0f;
 float lastLandingCheckAltitudeAgl = 0.0f;
 int descendingCount = 0;
+static unsigned long lastStateBroadcastTime = 0; // For broadcasting state when CSV is off
 
 // Helper function to set LED color based on flight state
 void setFlightStateLED(FlightState state) {
@@ -84,6 +85,20 @@ void ProcessFlightState() {
     static unsigned long lastErrorClearTime = 0; // Track when errors were last cleared
     const unsigned long errorCheckInterval = 1000; // 1 second
     const unsigned long errorClearGracePeriod = 5000; // 5 seconds grace period after clearing errors
+    const unsigned long stateBroadcastInterval = 1000; // 1 second
+
+    // If CSV is OFF, periodically send the current state to the web UI
+    if (!g_debugFlags.enableSerialCSV) {
+        if (millis() - lastStateBroadcastTime > stateBroadcastInterval) {
+            lastStateBroadcastTime = millis();
+            // JSON format: {"state_id": 1, "state_name": "PAD_IDLE"}
+            Serial.print(F("{\"state_id\":"));
+            Serial.print(static_cast<int>(g_currentFlightState));
+            Serial.print(F(",\"state_name\":\""));
+            Serial.print(getStateName(g_currentFlightState));
+            Serial.println(F("\"}"));
+        }
+    }
 
     // Defer the health check to avoid immediate re-entry into ERROR state
     // after a manual `clear_errors` command.

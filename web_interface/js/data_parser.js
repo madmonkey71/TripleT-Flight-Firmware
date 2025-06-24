@@ -3,6 +3,7 @@
 let columnMappings = null;
 let csvDelimiter = ','; // Default delimiter
 let flightStateMappings = null; // To store flight state mappings
+let csvHeaders = [];
 
 /**
  * Determines if a message should be ignored for data parsing/plotting.
@@ -309,3 +310,68 @@ function parseSerialData(csvString) {
 //   const parsed = parseSerialData(testData);
 //   console.log("Parsed Data:", parsed);
 // });
+
+// Function to fetch and set CSV headers from the JSON mapping file
+async function loadCsvHeaders() {
+    try {
+        const response = await fetch('js/flight_console_data_mapping.json');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const mapping = await response.json();
+        csvHeaders = mapping.csv_headers;
+        console.log("CSV headers loaded successfully:", csvHeaders);
+    } catch (error) {
+        console.error("Failed to load CSV headers:", error);
+    }
+}
+
+// Ensure headers are loaded before any parsing is attempted
+loadCsvHeaders();
+
+// This function will parse a line of text from the serial port
+// and return a data object.
+function parseData(line) {
+    // Trim the line to remove any leading/trailing whitespace
+    const trimmedLine = line.trim();
+
+    // Check for our new JSON state message format
+    if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
+        try {
+            const stateData = JSON.parse(trimmedLine);
+            // Check if it's a valid state object with the expected property
+            if (stateData && typeof stateData.state_name !== 'undefined') {
+                // Return an object that mirrors the structure of a parsed CSV row
+                // This makes it compatible with the existing UI updater logic
+                return {
+                    FlightState: stateData.state_name
+                };
+            }
+        } catch (e) {
+            // This can happen if a non-JSON line contains braces. Ignore it.
+            // console.error("Error parsing potential JSON line:", trimmedLine, e);
+            return null;
+        }
+    }
+
+    // Handle existing CSV data
+    if (trimmedLine.startsWith("CSV:")) {
+        const parts = trimmedLine.substring(4).split(',');
+        if (parts.length !== csvHeaders.length) {
+            // console.warn(`CSV data length (${parts.length}) does not match headers length (${csvHeaders.length}). Line: ${line}`);
+            return null; // Skip mismatched lines
+        }
+
+        const dataObject = {};
+        csvHeaders.forEach((header, index) => {
+            // Trim each part to handle potential whitespace
+            const value = parts[index] ? parts[index].trim() : '';
+            dataObject[header] = value;
+        });
+
+        return dataObject;
+    }
+
+    // Return null for any line that is not a valid CSV or state message
+    return null;
+}

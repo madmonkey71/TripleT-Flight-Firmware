@@ -197,3 +197,33 @@
 
 // --- Servo Configuration ---
 #define NUM_SERVOS 4          // Total number of servos
+
+// --- Recovery Beacon Configuration ---
+#define RECOVERY_BEACON_SOS_DOT_MS 200      // Duration of an SOS dot
+#define RECOVERY_BEACON_SOS_DASH_MS 600     // Duration of an SOS dash
+#define RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS 200 // Pause between dots/dashes within a letter
+#define RECOVERY_BEACON_SOS_LETTER_PAUSE_MS 600 // Pause between S and O
+#define RECOVERY_BEACON_SOS_WORD_PAUSE_MS 1400  // Pause after SOS sequence
+#define RECOVERY_BEACON_FREQUENCY_HZ 2500   // Frequency of the recovery beep
+
+// --- Recovery LED Strobe Configuration ---
+#define RECOVERY_STROBE_ON_MS 100           // Duration LED is ON for strobe
+#define RECOVERY_STROBE_OFF_MS 900          // Duration LED is OFF for strobe (Total cycle 1s)
+#define RECOVERY_STROBE_BRIGHTNESS 255      // Brightness of strobe (0-255)
+// Strobe color (RGB)
+#define RECOVERY_STROBE_R 255
+#define RECOVERY_STROBE_G 255
+#define RECOVERY_STROBE_B 255
+
+// --- Recovery GPS Beacon Configuration ---
+#define RECOVERY_GPS_BEACON_INTERVAL_MS 10000 // Interval to print GPS beacon data (10 seconds)
+
+// --- Battery Voltage Monitoring Configuration ---
+#define ENABLE_BATTERY_MONITORING 1         // 1 to enable, 0 to disable
+#define BATTERY_VOLTAGE_PIN A7              // Analog pin for battery voltage sensing (example, ensure this is a valid analog pin)
+#define ADC_REFERENCE_VOLTAGE 3.3f          // ADC reference voltage (e.g., 3.3V for Teensy 4.1)
+#define ADC_RESOLUTION 1024.0f              // ADC resolution (e.g., 1024 for 10-bit, 4096 for 12-bit. Teensy 4.1 default is 10-bit)
+// Voltage Divider Resistors (if used) - R1 is connected to battery positive, R2 to ground, ADC reads between R1 and R2
+#define VOLTAGE_DIVIDER_R1 10000.0f         // Ohms (e.g., 10k)
+#define VOLTAGE_DIVIDER_R2 10000.0f         // Ohms (e.g., 10k) - results in a 1/2 divider
+#define BATTERY_VOLTAGE_READ_INTERVAL_MS 5000 // How often to read and potentially print battery voltage (5 seconds)

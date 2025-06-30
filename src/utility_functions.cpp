@@ -516,3 +516,20 @@ const char* getStateName(FlightState state) {
     default: return "UNKNOWN";
   }
 }
+
+// Function to read battery voltage
+// Assumes a voltage divider is used: Battery(+) -- R1 -- ADC_PIN -- R2 -- GND
+// Vin = ADC_Value * (ADC_REF_VOLTAGE / ADC_RESOLUTION) * ((R1 + R2) / R2)
+float read_battery_voltage() {
+  #if ENABLE_BATTERY_MONITORING == 1
+    int adc_raw = analogRead(BATTERY_VOLTAGE_PIN);
+    // Convert ADC reading to voltage at the ADC pin
+    float adc_voltage = adc_raw * (ADC_REFERENCE_VOLTAGE / ADC_RESOLUTION);
+    // Calculate actual battery voltage using divider formula
+    // Vin = Vout * (R1+R2)/R2
+    float battery_voltage = adc_voltage * (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2) / VOLTAGE_DIVIDER_R2;
+    return battery_voltage;
+  #else
+    return 0.0f; // Return 0 if monitoring is disabled
+  #endif
+}

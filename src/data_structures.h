@@ -67,6 +67,7 @@ typedef struct {
   float actuator_output_roll;
   float actuator_output_pitch;
   float actuator_output_yaw;
+  float battery_voltage;    // Battery voltage (V)
 } LogData;
 
 #include <Arduino.h> // For FlightState enum if not already included, though it's defined in TripleT_Flight_Firmware.cpp

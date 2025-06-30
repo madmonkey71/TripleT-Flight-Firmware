@@ -58,7 +58,8 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"PIDIntYaw", TYPE_FLOAT_P4, offsetof(LogData, pid_yaw_integral)},
     {"ActuatorOutRoll", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_roll)},
     {"ActuatorOutPitch", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_pitch)},
-    {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)}
+    {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)},
+    {"BattVoltage", TYPE_FLOAT_P2, offsetof(LogData, battery_voltage)} // Added Battery Voltage
 };
 
 // Definition of the log column count

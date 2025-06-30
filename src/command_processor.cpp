@@ -212,6 +212,7 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.print(F("  Sensor Detail Debug (sd, debug_sensor_detail [on|off]): ")); Serial.println(debugFlags.enableSensorDebug ? F("ON") : F("OFF"));
   Serial.print(F("  Status Summary      (j, summary, debug_status_summary [on|off]): ")); Serial.println(debugFlags.enableStatusSummary ? F("ON") : F("OFF"));
   Serial.print(F("  Detailed Display    (g, debug_detailed_display [on|off]): ")); Serial.println(debugFlags.displayMode ? F("ON") : F("OFF"));
+  Serial.print(F("  Battery Debug       (debug_battery [on|off]): ")); Serial.println(debugFlags.enableBatteryDebug ? F("ON") : F("OFF"));
 
   Serial.println(F("\nSingle-Key Commands:"));
   Serial.println(F("  0-6: Toggle specific debug flags"));
@@ -232,7 +233,7 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.println(F("\nMulti-Character Commands:"));
   Serial.println(F("  start_log"));
   Serial.println(F("  sd_status"));
-  Serial.println(F("  debug_<flag> [on|off] (system, imu, gps, baro, storage, icm_raw, serial_csv, sensor_detail, status_summary, detailed_display)"));
+  Serial.println(F("  debug_<flag> [on|off] (system, imu, gps, baro, storage, icm_raw, serial_csv, sensor_detail, status_summary, detailed_display, battery)"));
   Serial.println(F("  debug_all_off"));
   Serial.println(F("  help"));
   Serial.println(F("  calibrate"));
@@ -491,6 +492,7 @@ void processCommand(String command,
         else if (flagIdentifier == "sensor_detail") toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, specificState);
         else if (flagIdentifier == "status_summary") toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, specificState);
         else if (flagIdentifier == "detailed_display") toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, specificState);
+        else if (flagIdentifier == "battery") toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, specificState);
         else if (flagIdentifier == "all_off") {
             if (specificState == 0 || specificState == -1) { // i.e. "debug_all_off" or "debug_all_off off"
                 Serial.println(F("Disabling all common debug flags:"));
@@ -504,6 +506,7 @@ void processCommand(String command,
                 toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, 0);
                 toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, 0);
                 toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, 0);
+                toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, 0);
                 debugFlags.enableDetailedOutput = false;
                 Serial.println(F("Legacy Detailed output (global): OFF"));
             } else { // "debug_all_off on" is not logical for this command name

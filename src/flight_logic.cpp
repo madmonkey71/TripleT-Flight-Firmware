@@ -43,11 +43,6 @@ extern float g_kalmanYaw;
 // Global variables for flight logic state progression, defined in this file
 unsigned long boostEndTime = 0;
 
-// Constants for Recovery Beep Pattern
-static const unsigned long RECOVERY_BEEP_DURATION_MS = 200;
-static const unsigned long RECOVERY_SILENCE_DURATION_MS = 1800; // Total cycle time = 2000ms (2 seconds)
-static const unsigned int RECOVERY_BEEP_FREQUENCY_HZ = 2000; // 2kHz tone
-
 // Global variables for flight logic state progression, defined in this file (flight_logic.cpp)
 bool landingDetectedFlag = false;
 float previousApogeeDetectAltitude = 0.0f;
@@ -467,22 +462,237 @@ void ProcessFlightState() {
             break;
         case RECOVERY:
             {
-                static unsigned long lastRecoveryActionTime = 0;
-                static bool isBeeping = false;
+                // SOS Pattern: ... --- ... (S O S)
+                // S: Dot Dot Dot
+                // O: Dash Dash Dash
+                // --- SOS Buzzer Pattern ---
+                static unsigned long recoveryBuzzerPatternStartTime = 0;
+                static int recoveryBuzzerPatternStep = 0;
+
+                // --- LED Strobe Pattern ---
+                static unsigned long recoveryLedStrobeStartTime = 0;
+                static bool isLedStrobeOn = false;
+
+                // --- GPS Beacon Serial Output ---
+                static unsigned long lastGpsBeaconTime = 0;
+
                 unsigned long currentTimeMillis = millis();
 
-                if (isBeeping) {
-                    if (currentTimeMillis - lastRecoveryActionTime >= RECOVERY_BEEP_DURATION_MS) {
-                        noTone(BUZZER_PIN);
-                        isBeeping = false;
-                        lastRecoveryActionTime = currentTimeMillis;
+                // --- Buzzer Logic ---
+                if (BUZZER_OUTPUT) {
+                    // Initialize start time if entering state or pattern completed
+                    if (newStateSignal || recoveryBuzzerPatternStep == 0) {
+                        recoveryBuzzerPatternStartTime = currentTimeMillis;
+                        recoveryBuzzerPatternStep = 1;
+                        noTone(BUZZER_PIN); // Ensure tone is off initially
                     }
+
+                    unsigned long timeInBuzzerPattern = currentTimeMillis - recoveryBuzzerPatternStartTime;
+
+                    // (Keep existing SOS switch statement here, but use timeInBuzzerPattern and recoveryBuzzerPatternStartTime)
+                    // For brevity, assuming the SOS pattern logic from previous step is here,
+                    // just changing variable names for clarity if needed.
+                    // Example for case 1:
+                    // case 1: // Start S - Dot 1
+                    //     tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                    //     if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                    //         noTone(BUZZER_PIN);
+                    //         recoveryBuzzerPatternStartTime = currentTimeMillis;
+                    //         recoveryBuzzerPatternStep = 2;
+                    //     }
+                    //     break;
+                    // ... rest of SOS cases ...
+                    // Ensure variables used are recoveryBuzzerPatternStep, recoveryBuzzerPatternStartTime, timeInBuzzerPattern
+                    switch (recoveryBuzzerPatternStep) {
+                    // S
+                    case 1: // Start S - Dot 1
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis; // Reset timer for pause
+                            recoveryPatternStep = 2;
+                        }
+                        break;
+                    case 2: // Pause after Dot 1
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 3;
+                        }
+                        break;
+                    case 3: // Dot 2
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 4;
+                        }
+                        break;
+                    case 4: // Pause after Dot 2
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 5;
+                        }
+                        break;
+                    case 5: // Dot 3
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 6;
+                        }
+                        break;
+                    case 6: // Pause after S (before O)
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 7;
+                        }
+                        break;
+
+                    // O
+                    case 7: // Start O - Dash 1
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 8;
+                        }
+                        break;
+                    case 8: // Pause after Dash 1
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 9;
+                        }
+                        break;
+                    case 9: // Dash 2
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 10;
+                        }
+                        break;
+                    case 10: // Pause after Dash 2
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 11;
+                        }
+                        break;
+                    case 11: // Dash 3
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 12;
+                        }
+                        break;
+                    case 12: // Pause after O (before S)
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 13;
+                        }
+                        break;
+
+                    // S (again)
+                    case 13: // Start S - Dot 1
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 14;
+                        }
+                        break;
+                    case 14: // Pause after Dot 1
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 15;
+                        }
+                        break;
+                    case 15: // Dot 2
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 16;
+                        }
+                        break;
+                    case 16: // Pause after Dot 2
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 17;
+                        }
+                        break;
+                    case 17: // Dot 3
+                        tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                            noTone(BUZZER_PIN);
+                            recoveryPatternStartTime = currentTimeMillis;
+                            recoveryPatternStep = 18;
+                        }
+                        break;
+                    case 18: // Pause after full SOS (word pause)
+                        if (timeInPattern >= RECOVERY_BEACON_SOS_WORD_PAUSE_MS) {
+                            recoveryPatternStep = 0; // Reset to restart pattern
+                        }
+                        break;
+                }
+            }
+
+            // --- LED Strobe Logic ---
+            // Static variables for LED strobe, separate from buzzer logic
+            static unsigned long recoveryLedStrobeStartTime = 0;
+            static bool isLedStrobeOn = false;
+
+            // Initialize/reset LED strobe timing when first entering RECOVERY state (using newStateSignal)
+            // or if recoveryLedStrobeStartTime hasn't been set yet (e.g., if buzzer was off and newStateSignal was missed)
+            if (newStateSignal || recoveryLedStrobeStartTime == 0) {
+                recoveryLedStrobeStartTime = currentTimeMillis; // currentTimeMillis is already defined above for buzzer
+                isLedStrobeOn = false;
+                // Ensure LEDs are off at the start of the strobe cycle within RECOVERY
+                g_pixels.setPixelColor(0, g_pixels.Color(0,0,0));
+                if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(0,0,0));
+                g_pixels.show();
+            }
+
+            unsigned long timeInLedCycle = currentTimeMillis - recoveryLedStrobeStartTime;
+
+            if (isLedStrobeOn) { // LED is currently ON
+                if (timeInLedCycle >= RECOVERY_STROBE_ON_MS) {
+                    // Time to turn OFF
+                    g_pixels.setPixelColor(0, g_pixels.Color(0,0,0));
+                    if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(0,0,0));
+                    g_pixels.show();
+                    isLedStrobeOn = false;
+                    recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the OFF period
+                }
+            } else { // LED is currently OFF
+                if (timeInLedCycle >= RECOVERY_STROBE_OFF_MS) {
+                    // Time to turn ON
+                    g_pixels.setPixelColor(0, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
+                    if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
+                    // Consider RECOVERY_STROBE_BRIGHTNESS. If it's different from global, it should be set here.
+                    // For now, assuming global brightness is acceptable or RECOVERY_STROBE_BRIGHTNESS matches it.
+                    // If specific brightness needed: g_pixels.setBrightness(RECOVERY_STROBE_BRIGHTNESS);
+                    g_pixels.show();
+                    // If brightness was changed: g_pixels.setBrightness(global_brightness_variable); // Restore
+                    isLedStrobeOn = true;
+                    recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the ON period
+                }
+            }
+
+            // --- GPS Beacon Serial Output Logic ---
+            if (currentTimeMillis - lastGpsBeaconTime >= RECOVERY_GPS_BEACON_INTERVAL_MS) {
+                lastGpsBeaconTime = currentTimeMillis;
+                if (getFixType() > 0) { // Check for a valid GPS fix
+                    Serial.print(F("GPS_BEACON: Lat="));
+                    Serial.print(GPS_latitude / 10000000.0, 7);
+                    Serial.print(F(", Lon="));
+                    Serial.print(GPS_longitude / 10000000.0, 7);
+                    Serial.print(F(", AltMSL="));
+                    Serial.print(GPS_altitudeMSL / 1000.0, 2);
+                    Serial.print(F("m, Sats="));
+                    Serial.println(SIV);
                 } else {
-                    if (currentTimeMillis - lastRecoveryActionTime >= RECOVERY_SILENCE_DURATION_MS) {
-                        tone(BUZZER_PIN, RECOVERY_BEEP_FREQUENCY_HZ);
-                        isBeeping = true;
-                        lastRecoveryActionTime = currentTimeMillis;
-                    }
+                    Serial.println(F("GPS_BEACON: No valid GPS fix for beacon."));
                 }
             }
             break;

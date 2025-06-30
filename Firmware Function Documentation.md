@@ -1,7 +1,7 @@
 # TripleT Flight Firmware Function Documentation
-## Version 0.47
+## Version 0.50
 
-## Flow Diagram
+## Flow Diagram (Conceptual v0.50)
 
 ```mermaid
 graph TD
@@ -9,414 +9,249 @@ graph TD
 
     subgraph Setup
         direction LR
-        B1(Init Serial & I2C) --> B2(Init Sensors: KX134, ICM20948, MS5611, GPS);
-        B2 --> B3(Check Sensor Status);
-        B3 --> B4(Load State from EEPROM?);
-        B4 -- Yes --> B5(Recover State);
-        B4 -- No --> B6(Start Fresh);
-        B5 --> B7(Attempt Calibration from EEPROM?);
-        B6 --> B7;
-        B7 -- Yes --> B8(Calibrate Sensors);
-        B7 -- No --> B9(Use Defaults/Skip);
-        B8 --> B10(Final Sensor Check);
-        B9 --> B10;
-        B10 --> B11(Setup Complete - Set State to PAD_IDLE);
+        B1(Init HW: Serial, I2C, Pins) --> B_Neo(Init NeoPixel);
+        B_Neo --> B_Pyro(Init Pyro Pins);
+        B_Pyro --> B_Servo(Init Servos);
+        B_Servo --> B_Buzz(Init Buzzer);
+        B_Buzz --> B2(State Recovery: recoverFromPowerLoss());
+        B2 --> B3(Init SD Card: initSDCard());
+        B3 --> B4(Init GPS: gps_init());
+        B4 --> B5(Init Sensors: ms5611_init, ICM_20948_init, kx134_init);
+        B5 --> B6(Init Kalman Filter: kalman_init());
+        B6 --> B7(Init Guidance: guidance_init());
+        B7 --> B8(Create Initial Log File: createNewLogFile());
+        B8 --> B9(Print Initial Sensor Status);
+        B9 --> B10(Setup Complete);
     end
 
     B --> C{Loop};
 
     subgraph Loop
         direction TB
-        C1(Feed Watchdog) --> C2(Read All Sensors);
-        C2 --> C3(Check Auto-Calibration Triggers);
-        C3 --> C4(Log Data);
-        C4 --> C5{Process Current State};
-        C5 --> C6(Handle State Transitions);
-        C6 --> C7(Perform Periodic Checks - GPS/Recovery);
-        C7 --> C8(Delay/Yield);
-        C8 --> C1;
+        C0(Handle Initial State: handleInitialStateManagement()) --> C1(Process Serial Commands: processCommand());
+        C1 --> C2(Read Sensors: gps_read, ms5611_read, ICM_20948_read, kx134_read);
+        C2 --> C3(Update Kalman Filter: kalman_predict, kalman_update_accel, kalman_update_mag);
+        C3 --> C4(Log Data: WriteLogData());
+        C4 --> C5(Update Guidance Control: guidance_update, Servo Writes);
+        C5 --> C6(Process Flight State: ProcessFlightState());
+        C6 --> C0; % Loop back
     end
 
-    subgraph StateMachine [State Machine Detail]
-        direction TB
-        S_PAD_IDLE[PAD_IDLE] --> S_CALIBRATING(CALIBRATING);
-        S_CALIBRATING --> S_READY(READY);
-        S_READY --> S_FLIGHT(FLIGHT);
-        S_FLIGHT --> S_APOGEE(APOGEE_DETECTED);
-        S_APOGEE --> S_MAIN_CHUTE(MAIN_CHUTE_DEPLOYED);
-        S_MAIN_CHUTE --> S_LANDED(LANDED);
-        S_LANDED --> S_RECOVERY(RECOVERY);
-        S_RECOVERY --> S_SHUTDOWN(SHUTDOWN);
-        S_SHUTDOWN --> S_END(END);
+    % Simplified State Machine (details in State Machine.md)
+    subgraph StateMachine_Conceptual [State Machine via ProcessFlightState()]
+        direction TD
+        PAD_IDLE --> ARMED;
+        ARMED --> BOOST;
+        BOOST --> COAST;
+        COAST --> APOGEE;
+        APOGEE --> DROGUE_DEPLOY;
+        DROGUE_DEPLOY --> DROGUE_DESCENT;
+        DROGUE_DESCENT --> MAIN_DEPLOY;
+        MAIN_DEPLOY --> MAIN_DESCENT;
+        MAIN_DESCENT --> LANDED;
+        LANDED --> RECOVERY;
+        %% Add ERROR state and transitions from various points
+        COAST --> ERROR_STATE[ERROR];
+        PAD_IDLE --> ERROR_STATE;
+        ERROR_STATE --> PAD_IDLE; % Recovery
     end
-
-    C5 -- PAD_IDLE --> S_PAD_IDLE;
-    C5 -- CALIBRATING --> S_CALIBRATING;
-    C5 -- READY --> S_READY;
-    C5 -- FLIGHT --> S_FLIGHT;
-    C5 -- APOGEE_DETECTED --> S_APOGEE;
-    C5 -- MAIN_CHUTE_DEPLOYED --> S_MAIN_CHUTE;
-    C5 -- LANDED --> S_LANDED;
-    C5 -- RECOVERY --> S_RECOVERY;
-    C5 -- SHUTDOWN --> S_SHUTDOWN;
+     C6 --> StateMachine_Conceptual;
 
 ```
 *Note: The "State Machine Detail" diagram above is a simplified representation. For the canonical list of all 14 flight states and their detailed transitions, please refer to `State Machine.md`.*
 
 ## Function Documentation (`src/TripleT_Flight_Firmware.cpp`)
 
-This section details the functions defined in the main firmware file, tracing their call paths back to `setup()` or `loop()` where possible.
+This section details key functions, primarily focusing on those in `TripleT_Flight_Firmware.cpp` and their interactions with major modules.
 
 ---
 
-### State Management
-
-**`printState(FlightState state)`**
-*   **Purpose:** Prints the human-readable name of the given `FlightState` enum value to the Serial monitor.
-*   **Called By:** `setState()`, `recoverFromPowerLoss()`, `setup()` (indirectly via `recoverFromPowerLoss`), `loop()` (indirectly via `ProcessFlightState`)
-*   **Trace:** `setState()` -> Various / `recoverFromPowerLoss()` -> `setup()` / `ProcessFlightState()` -> `loop()`
-
-**`setState(FlightState newState)`**
-*   **Purpose:** Updates the global `currentState` variable, prints the new state, and saves the state to EEPROM.
-*   **Called By:** `setup()`, `ProcessFlightState()` (within `loop()`)
-*   **Trace:** Direct call from `setup()` / `ProcessFlightState()` -> `loop()`
-
-**`getCurrentState()`**
-*   **Purpose:** Returns the current flight state (`currentState`).
-*   **Called By:** `loop()` (indirectly via `ProcessFlightState`), `saveStateToEEPROM()`
-*   **Trace:** `ProcessFlightState()` -> `loop()` / `saveStateToEEPROM()` -> Various
-
-**`ProcessFlightState()`**
-*   **Purpose:** The core state machine logic. Evaluates conditions based on sensor data and the current state to determine if a state transition is necessary. Calls `setState()` to enact transitions. Also triggers state-specific actions (e.g., deploying chutes). It also manages state-specific actions, such as capturing the current orientation for Attitude Hold mode at the transition from BOOST to COAST, and activating an audible buzzer sequence during the RECOVERY state.
-*   **Called By:** `loop()`
-*   **Trace:** Direct call from `loop()`
-
-### Initialization (`setup()` related)
-
-**`watchdogHandler()`**
-*   **Purpose:** Callback function executed by the watchdog timer if it expires. Prints an error and attempts to restart the Teensy.
-*   **Called By:** Hardware Watchdog Timer (configured in `setup()`)
-*   **Trace:** Hardware Interrupt -> `setup()` (config)
-
-**`kx134_init()`**
-*   **Purpose:** Initializes the KX134 accelerometer sensor. Sets up I2C communication, configures range, data rate, and performs a self-test.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`ICM_20948_init()`**
-*   **Purpose:** Initializes the ICM-20948 IMU sensor (Accelerometer, Gyroscope, Magnetometer).
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`ms5611_init()`**
-*   **Purpose:** Initializes the MS5611 barometer sensor.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`gps_init()`**
-*   **Purpose:** Initializes the GPS module (u-blox). Sets up Serial communication and configuration messages.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
+### Core `setup()` and `loop()`
 
 **`setup()`**
-*   **Purpose:** Runs once on power-up or reset. Initializes hardware (Serial, I2C, SD card, watchdog), sensors, loads state/calibration from EEPROM (if available), attempts initial calibration, performs final checks, and sets the initial state (`PAD_IDLE`).
-*   **Called By:** Arduino Core / Teensyduino Bootloader
+*   **Purpose:** Runs once on power-up or reset. Initializes hardware (Serial, I2C, NeoPixel, pyro channels, servos, buzzer), attempts to recover state from EEPROM via `recoverFromPowerLoss()`, initializes SD card, GPS, all sensors (MS5611, ICM-20948, KX134), Kalman filter, guidance system, and creates an initial log file. Prints initial sensor status.
+*   **Called By:** Arduino Core / Teensyduino Bootloader.
 *   **Trace:** Entry point after boot.
 
-### Sensor Reading (`loop()` related)
-
-**`readKX134()`**
-*   **Purpose:** Reads acceleration data (X, Y, Z) from the KX134 sensor.
-*   **Called By:** `readSensors()`
-*   **Trace:** `readSensors()` -> `loop()`
-
-**`readICM20948()`**
-*   **Purpose:** Reads acceleration, gyroscope, and magnetometer data from the ICM-20948 sensor.
-*   **Called By:** `readSensors()`
-*   **Trace:** `readSensors()` -> `loop()`
-
-**`readMS5611()`**
-*   **Purpose:** Reads temperature and pressure data from the MS5611 barometer and calculates altitude.
-*   **Called By:** `readSensors()`
-*   **Trace:** `readSensors()` -> `loop()`
-
-**`readGPS()`**
-*   **Purpose:** Reads and parses data from the GPS fmodule. Updates global GPS variables.
-*   **Called By:** `readSensors()`, `periodicChecks()` (for recovery mode)
-*   **Trace:** `readSensors()` -> `loop()` / `periodicChecks()` -> `loop()`
-
-**`readSensors()`**
-*   **Purpose:** Calls the individual read functions for all active sensors.
+**`handleInitialStateManagement()`**
+*   **Purpose:** Called once at the beginning of `loop()`. Performs initial system health checks using `isSensorSuiteHealthy()`. Based on the current state (either fresh `STARTUP` or recovered from EEPROM) and system health, it transitions to `CALIBRATION`, `PAD_IDLE`, or `ERROR` state.
 *   **Called By:** `loop()`
-*   **Trace:** Direct call from `loop()`
+*   **Trace:** `loop()` -> `handleInitialStateManagement()`
 
-### Calibration
-
-**`readCalibrationFromEEPROM()`**
-*   **Purpose:** Reads sensor calibration data (offsets, scale factors) stored in EEPROM.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`saveCalibrationToEEPROM()`**
-*   **Purpose:** Saves the current sensor calibration data to EEPROM.
-*   **Called By:** `calibrateSensors()`
-*   **Trace:** `calibrateSensors()` -> `setup()` / `autoCalibrate()` -> `loop()`
-
-**`calibrateSensors()`**
-*   **Purpose:** Performs the sensor calibration routine. Gathers data while stationary and calculates offsets. Saves results to EEPROM.
-*   **Called By:** `setup()`, `autoCalibrate()`
-*   **Trace:** Direct call from `setup()` / `autoCalibrate()` -> `loop()`
-
-**`autoCalibrate()`**
-*   **Purpose:** Checks if conditions are met for automatic calibration (e.g., stable on pad). If so, calls `calibrateSensors()`.
-*   **Called By:** `loop()`
-*   **Trace:** Direct call from `loop()`
-
-**`checkCalibration()`**
-*   **Purpose:** Checks if valid calibration data exists (likely loaded from EEPROM or performed at startup).
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-### Data Logging & Output
-
-**`logData()`**
-*   **Purpose:** Formats sensor data, state information, and timestamps into a CSV string and writes it to the SD card. Also prints summary data to Serial. The logged CSV data includes a comprehensive set of parameters: sensor readings, flight state, timestamps, and detailed Guidance, Navigation, and Control (GNC) data (such as PID target angles, PID integral values, and final actuator outputs).
-*   **Called By:** `loop()`
-*   **Trace:** Direct call from `loop()`
-
-**`printData()`**
-*   **Purpose:** Prints current sensor readings and state information to the Serial monitor.
-*   **Called By:** `logData()` (potentially others, needs verification - currently seems only used within `logData`)
-*   **Trace:** `logData()` -> `loop()`
-
-**`writeToSD(String dataLine)`**
-*   **Purpose:** Writes a given string (data line) to the log file on the SD card. Handles file opening and closing.
-*   **Called By:** `logData()`
-*   **Trace:** `logData()` -> `loop()`
-
-**`setupSDCard()`**
-*   **Purpose:** Initializes the SD card module and opens/creates the log file.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-### Flight Logic & Control
-
-**`detectApogee()`**
-*   **Purpose:** Detects apogee using multiple redundant methods: 1) Checks for decreasing barometric altitude (MS5611) over several readings. 2) Checks for near-zero vertical acceleration (KX134 or ICM-20948) over several readings. 3) Uses a time-based backup relative to the end of the boost phase. Returns `true` if apogee is detected by any method.
-*   **Called By:** `ProcessFlightState()` (in `COAST` state)
-*   **Trace:** `ProcessFlightState()` -> `loop()`
-
-**`deployMainChute()`**
-*   **Purpose:** Placeholder function intended to trigger the main parachute deployment mechanism.
-*   **Called By:** `ProcessFlightState()` (within the `APOGEE_DETECTED` state)
-*   **Trace:** `ProcessFlightState()` -> `loop()`
-
-**`detectLanding()`**
-*   **Purpose:** Analyzes sensor data (e.g., altitude, acceleration) to determine if the rocket has landed.
-*   **Called By:** `ProcessFlightState()` (within the `MAIN_CHUTE_DEPLOYED` state)
-*   **Trace:** `ProcessFlightState()` -> `loop()`
-
-**`enterRecoveryMode()`**
-*   **Purpose:** Placeholder or simple function to indicate the recovery phase has started (e.g., enabling GPS transmission if applicable).
-*   **Called By:** `ProcessFlightState()` (within the `LANDED` state)
-*   **Trace:** `ProcessFlightState()` -> `loop()`
-
-### EEPROM State/Recovery
-
-**`saveStateToEEPROM()`**
-*   **Purpose:** Saves the current flight state (`currentState`) and potentially other critical recovery data to EEPROM.
-*   **Called By:** `setState()`
-*   **Trace:** `setState()` -> `setup()` / `ProcessFlightState()` -> `loop()`
-
-**`loadStateFromEEPROM()`**
-*   **Purpose:** Reads the flight state from EEPROM. Includes a validity check.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`recoverFromPowerLoss()`**
-*   **Purpose:** Called during `setup()` if `loadStateFromEEPROM()` returns a valid state. Restores the `currentState` from the value loaded from EEPROM.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-### Utility & Miscellaneous
-
-**`periodicChecks()`**
-*   **Purpose:** Performs tasks that don't need to run on every loop iteration, such as checking GPS fix status during recovery.
-*   **Called By:** `loop()`
-*   **Trace:** Direct call from `loop()`
-
-**`prepareForShutdown()`**
-*   **Purpose:** Performs any necessary actions before intentionally stopping or resetting (e.g., ensuring data is saved). Called when entering the `SHUTDOWN` state.
-*   **Called By:** `ProcessFlightState()`
-*   **Trace:** `ProcessFlightState()` -> `loop()`
-
-**`blinkLED(int pin, int duration, int times)`**
-*   **Purpose:** Blinks an LED connected to the specified pin for a given duration and number of times. Used for visual status indication.
-*   **Called By:** Various functions for status/error indication (e.g., `setup()`, `calibrateSensors()`, potentially error handlers)
-*   **Trace:** Called from multiple locations, often in `setup()` or specific event handlers.
-
-**`printSensorStatus()`**
-*   **Purpose:** Prints the initialization status (working or not) of each sensor to the Serial monitor.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
+**`loop()`**
+*   **Purpose:** Main repeating function.
+    1.  Calls `handleInitialStateManagement()` (once).
+    2.  Processes incoming serial commands via `processCommand()`.
+    3.  Periodically reads sensor data: `gps_read()`, `ms5611_read()`, `ICM_20948_read()`, `kx134_read()`.
+    4.  Periodically reads battery voltage via `read_battery_voltage()` (if `ENABLE_BATTERY_MONITORING` is 1).
+    5.  Updates the Kalman filter (`kalman_predict()`, `kalman_update_accel()`, `kalman_update_mag()`) with new sensor data.
+    6.  Logs data to SD card and/or serial via `WriteLogData()` if sensors were updated. This now includes battery voltage.
+    7.  Updates the guidance control system via `guidance_update()` and writes to servo actuators if applicable.
+    8.  Manages the main flight logic via `ProcessFlightState()`.
+    9.  Periodically prints battery voltage to Serial if `g_debugFlags.enableBatteryDebug` is true.
+*   **Called By:** Arduino Core.
+*   **Trace:** Continuously called after `setup()`.
 
 ---
+### Data Logging & Storage (`src/TripleT_Flight_Firmware.cpp`)
 
-### Potentially Orphaned/Unused Functions
+**`checkStorageSpace(SdFat& sd_obj_ref, uint64_t& availableSpace_out_ref)`**
+*   **Purpose:** Checks available space on the SD card. Warns if space is low.
+*   **Called By:** `setup()`, `printSDCardStatus()` (in `command_processor.cpp`)
+*   **Trace:** `setup()` / `processCommand()` -> `printSDCardStatus()` -> `checkStorageSpace()`
 
-Based on the current analysis of `src/TripleT_Flight_Firmware.cpp`:
+**`createNewLogFile(SdFat& sd_obj, SFE_UBLOX_GNSS& gnss, FsFile& logFile_obj_ref, char* logFileName_out_buf, size_t logFileName_out_buf_size)`**
+*   **Purpose:** Creates a new log file on the SD card. Filename is timestamped if GPS fix is available, otherwise uses `millis()`. Writes CSV header based on `LOG_COLUMNS` from `log_format_definition.h`.
+*   **Called By:** `setup()`, `WriteLogData()` (for recovery), `attemptToStartLogging()` (in `command_processor.cpp`)
+*   **Trace:** `setup()` / `WriteLogData()` -> `loop()` / `processCommand()` -> `attemptToStartLogging()` -> `createNewLogFile()`
 
-*   **`IsStable()`:** This function was likely part of an older calibration or state check mechanism. It does not appear to be called anywhere in the current code.
-*   **`checkWatchdog()`:** The watchdog is fed in the main loop (`watchdog.feed()`), but this specific function to *check* its status (other than the hardware handler `watchdogHandler`) isn't called.
-*   **`formatNumber(float num, int precision)`:** This utility might be useful, but it's not currently called by `logData` or `printData` or other formatting functions.
+**`closeAllFiles(FsFile& logFile_obj_to_close)`**
+*   **Purpose:** Safely closes the provided log file object.
+*   **Called By:** `prepareForShutdown()` (in `command_processor.cpp`)
+*   **Trace:** `processCommand()` -> `prepareForShutdown()` -> `closeAllFiles()`
 
-*Note: Further analysis might reveal calls from included header files (`.h`) or libraries, but within the main `.cpp` file, these functions appear unused.*
+**`WriteLogData(bool forceLog)`**
+*   **Purpose:** Populates a `LogData` struct with current sensor readings (GPS, barometer, IMUs), Kalman filter orientation (roll, pitch, yaw, quaternions), GNC data (PID targets, integrals, actuator outputs), **battery voltage (`g_battery_voltage`)**, flight state, and timestamps. Converts the struct to a CSV string using `logDataToString()` (from `utility_functions.cpp`) and writes it to the SD card via `g_LogDataFile.println()`. Handles log file opening/recovery if necessary. Also outputs CSV to serial if `g_debugFlags.enableSerialCSV` is true. Logs periodically or when `forceLog` is true.
+*   **Called By:** `loop()` (after sensor updates), `ProcessFlightState()` (on state transitions, indirectly by setting `newStateSignal` that `ProcessFlightState` checks to then call `WriteLogData(true)`).
+*   **Trace:** `loop()` / `ProcessFlightState()` -> `loop()`
 
 ---
-
-## Included Code Documentation
-
-*(This section is a placeholder. Documentation for functions defined in included `.h` files like `sensor_utils.h`, `gps_functions.h`, `kx134_registers.h`, `ms5611_registers.h`, `ICM_20948_registers.h`, `eeprom_map.h`, `state_machine.h`, etc., needs to be generated separately by analyzing those specific files.)*
-
-### GPS Module Functions (`src/gps_functions.cpp`)
-
-**`gps_init()`**
-*   **Purpose:** Initializes the GPS module (u-blox) including configuring the I2C communication, setting navigation frequency (5Hz), enabling required messages (UBX format), and configuring Auto-PVT mode. Sets initial GPS time values to defaults (Jan 1, 2000).
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-**`checkGPSConnection()`**
-*   **Purpose:** Verifies communication with the GPS module by attempting to read the navigation frequency. Returns true if the GPS is responding.
-*   **Called By:** `loop()` (in periodic GPS check interval section)
-*   **Trace:** Direct call from `loop()` every GPS_CHECK_INTERVAL milliseconds
-
-**`gps_read()`**
-*   **Purpose:** Reads position, velocity, and time data from the GPS module using the getPVT() function. Updates global variables for GPS_latitude, GPS_longitude, GPS_altitude, GPS_speed, GPS_fixType, SIV (satellites in view), and GPS time information.
-*   **Called By:** `loop()` (in GPS data polling section)
-*   **Trace:** Direct call from `loop()` every GPS_POLL_INTERVAL milliseconds
-
-**`gps_print()`**
-*   **Purpose:** Formats and prints GPS data in human-readable format to the Serial monitor. Includes fix type, satellite count, position, speed, and time.
-*   **Called By:** `gps_read()` (when enableGPSDebug is true)
-*   **Trace:** `gps_read()` -> `loop()`
-
-**`getGPSDateTime()`**
-*   **Purpose:** Safely provides GPS date/time values via reference parameters. Returns current values if valid, or defaults to Jan 1, 2000 if no valid time is available.
-*   **Called By:** `createNewLogFile()` (when creating log files with timestamp-based names)
-*   **Trace:** `createNewLogFile()` -> `setup()` / `loop()` (when recovering SD card)
-
-**`setGPSDebugging()`**
-*   **Purpose:** Controls debug output from the GPS module. Enables or disables debugging messages on the Serial monitor. Uses a special technique with multiple calls to ensure the setting takes effect.
-*   **Called By:** `gps_init()`, `checkGPSConnection()`, indirectly via command processing
-*   **Trace:** Various paths, primarily during initialization and troubleshooting
-
-### GPS Status Monitoring
-
-**`checkSensorStatus()`**
-*   **Purpose:** Checks the status of all sensors including GPS. For GPS specifically, it verifies communication with getPVT() and also checks GPS_fixType and SIV values to determine if GPS should be considered working. Updates gpsStatus.isWorking and gpsStatus.lastValidReading timestamp.
-*   **Called By:** `loop()` (periodically every 1000ms)
-*   **Trace:** Direct call from `loop()` at regular intervals
-
-**`handleSensorErrors()`**
-*   **Purpose:** Monitors sensor error conditions and manages error recovery. For GPS specifically, it checks if the time since last valid reading exceeds GPS_TIMEOUT_MS (5000ms) while also checking GPS_fixType and SIV as redundant indicators of GPS health. Updates consecutive failures counter and may mark GPS as not working after repeated failures.
-*   **Called By:** Note in documentation: This was previously marked as potentially unused, but it is now called by the system to check sensor errors and determine if a transition to ERROR state is needed.
-*   **Trace:** Called by checkSensorStatus() -> `loop()`
-
-**`isSensorSuiteHealthy()`**
-*   **Purpose:** Determines if the flight computer's sensor suite is healthy enough for the current flight state. Different flight states have different sensor requirements - for ground states (STARTUP through ARMED), both GPS and barometer must be working; for recovery states, all sensors including GPS must be working. This function is critically called by `ProcessFlightState()` at the beginning of its execution cycle for most active flight states. If `isSensorSuiteHealthy()` returns `false`, `ProcessFlightState()` will immediately transition the system to the `ERROR` state.
-*   **Called By:** `checkSensorStatus()`, `setup()` (during final health check)
-*   **Trace:** `checkSensorStatus()` -> `loop()` / Direct call from `setup()`
-
-### Utility Functions (`src/utility_functions.cpp`)
-
-#### I2C and Hardware Interface
-
-**`scan_i2c()`**
-*   **Purpose:** Performs a scan of the I2C bus (addresses 1-127) to detect connected devices. Attempts to identify known sensors (GPS, barometer, IMU, accelerometer) by their I2C addresses. Outputs a formatted table of found devices to the Serial monitor.
-*   **Called By:** `processCommand()` (when the "scan" command is entered)
-*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
-
-**`initNeoPixel()`**
-*   **Purpose:** Initializes the RGB LED (NeoPixel) with appropriate brightness (50%) and turns it off initially. Used for status indication throughout the flight.
-*   **Called By:** `setup()`
-*   **Trace:** Direct call from `setup()`
-
-#### SD Card Management
-
-**`initSDCard()`**
-*   **Purpose:** Performs robust initialization of the SD card with multiple retry attempts. Includes physical card detection (if supported), initialization via SD.begin(), and a read/write test to verify functionality. Updates global flags (sdCardPresent, sdCardMounted, sdCardAvailable) and calculates available space.
-*   **Called By:** `setup()`, `loop()` (during periodic SD card retry)
-*   **Trace:** Direct call from `setup()` / Periodic check in `loop()`
-
-**`listRootDirectory()`**
-*   **Purpose:** Lists all files in the root directory of the SD card with detailed information (name, size, date/time). Produces a formatted table and summary statistics (file count, total size).
-*   **Called By:** `processCommand()` (when the "dir" or "ls" command is entered)
-*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
-
-**`checkStorageSpace()`**
-*   **Purpose:** Updates the available space calculation for the SD card. Called periodically to ensure accurate space reporting and to detect when storage is running low.
-*   **Called By:** `loop()` (at STORAGE_CHECK_INTERVAL intervals)
-*   **Trace:** Direct call from `loop()` periodically
-
-#### Debug and Formatting Functions
-
-**`printDebugHeader(const char* title)`**
-*   **Purpose:** Formats and prints a section header for debug output with visual emphasis.
-*   **Called By:** Various debug print functions including `printStatusSummary()`, `printStorageStatistics()`
-*   **Trace:** Various paths, all related to debug output
-
-**`printDebugValue(const char* label, float value, int precision)`**
-*   **Purpose:** Formats and prints a labeled value with specified precision for debug output.
-*   **Called By:** Various status and debug functions
-*   **Trace:** Various paths, mostly via `printStatusSummary()`
-
-**`printDebugValueWithUnit(const char* label, float value, const char* unit, int precision)`**
-*   **Purpose:** Similar to printDebugValue but includes a unit with the value.
-*   **Called By:** Status and calibration reporting functions
-*   **Trace:** Various debug printing paths
-
-**`printDebugPair/Triple/Quad`**
-*   **Purpose:** Formats and prints 2, 3, or 4 related values (such as vector components) with a single label.
-*   **Called By:** Sensor data display functions, particularly for accelerometer/gyroscope/magnetometer vector data
-*   **Trace:** Various paths including `printStatusSummary()`, `ICM_20948_print()`
-
-**`printDebugState(const char* label, const char* state)`**
-*   **Purpose:** Formats and prints a labeled state string (like flight state names).
-*   **Called By:** Status reporting functions
-*   **Trace:** Various status output paths including `printStatusSummary()`
-
-**`printDebugBoolean(const char* label, bool value)`**
-*   **Purpose:** Formats and prints a labeled boolean value as "ON" or "OFF" for readability.
-*   **Called By:** Various status functions when displaying flags or enabled/disabled features
-*   **Trace:** Various paths including `printStatusSummary()`, `printStorageStatistics()`
-
-**`printDebugDivider()`**
-*   **Purpose:** Prints a visual divider line for separating sections in debug output.
-*   **Called By:** Various debug print functions
-*   **Trace:** Various debug output pathsfffffffffff
-
-**`formatNumber(float input, byte columns, byte places)`**
-*   **Purpose:** Formats a floating-point number with specified column width and decimal places for consistent display in serial output.
-*   **Called By:** `WriteLogData()` for data logging formatting, various debug print functions
-*   **Trace:** Various paths related to data output formatting
-
-#### Status Display Functions
+### Status & Debug Output (`src/TripleT_Flight_Firmware.cpp`)
 
 **`printStatusSummary()`**
-*   **Purpose:** Provides a comprehensive formatted summary of the flight computer's status including sensor readings, GPS data, flight state, and system health. Organizes information into logical sections for readability.
-*   **Called By:** `loop()` (at DISPLAY_INTERVAL intervals when enableStatusSummary is true)
-*   **Trace:** Direct call from `loop()` periodically
-
-**`printHelpMessage()`**
-*   **Purpose:** Outputs a help guide explaining available serial commands and their usage to assist with ground testing and debugging.
-*   **Called By:** `processCommand()` (when "help" or "?" command is entered)
-*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
-
-**`printStorageStatistics()`**
-*   **Purpose:** Outputs detailed information about storage media (SD card/Flash) including capacity, used space, free space, and logging status.
-*   **Called By:** `processCommand()` (when "storage" command is entered)
-*   **Trace:** `processCommand()` -> `loop()` (via serial command processing)
+*   **Purpose:** Prints a formatted summary of system status including time, GPS, IMU, barometer, storage, and debug flags to the Serial monitor. Called when `g_debugFlags.enableStatusSummary` is true.
+*   **Called By:** `loop()` (indirectly, via `processCommand` toggling the flag, then `loop` checks flag) and `processCommand` if 'j' or 'summary' is used.
+*   **Trace:** `processCommand()` -> `printStatusSummary()` or `loop()` checks flag set by `processCommand()`.
 
 ---
+### Initialization Helper (`src/TripleT_Flight_Firmware.cpp`)
 
-This documentation reflects the state of the firmware after the recent refactoring.
+**`initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out)`**
+*   **Purpose:** Initializes the SD card using `SdioConfig(FIFO_SDIO)`. Updates output parameters indicating mount status and presence.
+*   **Called By:** `setup()`, `attemptToStartLogging()` (in `command_processor.cpp`)
+*   **Trace:** `setup()` / `processCommand()` -> `attemptToStartLogging()` -> `initSDCard()`
+
+---
+## Module Function Summaries
+
+### Flight Logic (`src/flight_logic.cpp`)
+
+**`ProcessFlightState()`**
+*   **Purpose:** Core state machine. Handles transitions between `FlightState`s based on sensor data, timers, and system health (`isSensorSuiteHealthy()`). Manages state-specific actions:
+    *   Sets LED indicators via `setFlightStateLED()` (except for `RECOVERY` state, which manages its own strobe).
+    *   Calculates dynamic main deployment altitude (`g_main_deploy_altitude_m_agl`) in `ARMED` state.
+    *   Captures orientation for attitude hold (`guidance_set_target_orientation_euler()`) at `BOOST` to `COAST` transition.
+    *   Calls `detectBoostEnd()`, `detectApogee()`, `detectLanding()`.
+    *   Triggers pyro channels (`PYRO_CHANNEL_1`, `PYRO_CHANNEL_2`) during `DROGUE_DEPLOY` and `MAIN_DEPLOY`.
+    *   Activates SOS recovery buzzer pattern, LED strobe pattern, and GPS serial beacon in `RECOVERY` state.
+    *   Manages `ERROR` state behavior, including automatic recovery attempts and grace period.
+*   **Called By:** `loop()` (in `TripleT_Flight_Firmware.cpp`)
+
+**`setFlightStateLED(FlightState state)`**
+*   **Purpose:** Sets NeoPixel LED color based on the current `FlightState`. For `RECOVERY` state, it initializes LEDs to off, as `ProcessFlightState` handles the specific strobe pattern.
+*   **Called By:** `ProcessFlightState()`, `setup()` (indirectly via `handleInitialStateManagement`)
+
+**`detectBoostEnd()`**
+*   **Purpose:** Detects motor burnout by checking if acceleration magnitude (`get_accel_magnitude()`) drops below `COAST_ACCEL_THRESHOLD`. Sets `boostEndTime`.
+*   **Called By:** `ProcessFlightState()` (in `BOOST` state)
+
+**`detectApogee()`**
+*   **Purpose:** Detects apogee using four redundant methods:
+    1.  Barometric: `g_maxAltitudeReached` vs current altitude (`APOGEE_CONFIRMATION_COUNT`).
+    2.  Accelerometer (ICM-20948): Negative Z-axis acceleration (`APOGEE_ACCEL_CONFIRMATION_COUNT`).
+    3.  GPS: Decreasing GPS altitude (`APOGEE_GPS_CONFIRMATION_COUNT`).
+    4.  Timer: `BACKUP_APOGEE_TIME_MS` after `boostEndTime`.
+*   **Called By:** `ProcessFlightState()` (in `COAST` state)
+
+**`detectLanding()`**
+*   **Purpose:** Detects landing using a combination of averaged barometric altitude stability near `g_launchAltitude` (`LANDING_ALTITUDE_STABLE_THRESHOLD`) and stable accelerometer magnitude (`LANDING_ACCEL_MIN_G` to `LANDING_ACCEL_MAX_G`) for `LANDING_CONFIRMATION_TIME_MS`.
+*   **Called By:** `ProcessFlightState()` (in `DROGUE_DESCENT` if no main, and `MAIN_DESCENT` states)
+
+### State Management (`src/state_management.cpp`)
+
+**`saveStateToEEPROM()`**
+*   **Purpose:** Saves the `FlightStateData` struct (current state, altitudes including `g_main_deploy_altitude_m_agl`, timestamp, signature) to EEPROM. Called periodically and on critical state changes.
+*   **Called By:** `ProcessFlightState()` (indirectly via `g_currentFlightState` changes), `handleInitialStateManagement()`, `processCommand()` (indirectly via state changes like `arm`).
+
+**`recoverFromPowerLoss()`**
+*   **Purpose:** Loads `FlightStateData` from EEPROM. If valid, restores global state variables (`g_currentFlightState`, `g_launchAltitude`, `g_maxAltitudeReached`, `g_main_deploy_altitude_m_agl`) and determines the appropriate state to resume operation.
+*   **Called By:** `setup()` (via `handleInitialStateManagement()` in `TripleT_Flight_Firmware.cpp`)
+
+### Sensor Interface Modules
+
+#### GPS Functions (`src/gps_functions.cpp`)
+*   **`gps_init()`:** Initializes u-blox GPS, configures I2C, UBX output, message rates, Auto-PVT.
+*   **`gps_read()`:** Reads PVT data, updates global GPS variables (latitude, longitude, altitude, speed, fixType, SIV, time).
+*   **`gps_print()`:** Prints formatted GPS data if debug enabled.
+*   **`getGPSDateTime(int& year, ...)`:** Safely provides GPS date/time.
+*   **`getFixType()`:** Returns current GPS fix type.
+*   **`getGPSAltitude()`:** Returns GPS altitude in meters.
+*   **`setGPSDebugging(bool enable)`:** Enables/disables verbose GPS debug output.
+*   **REMOVED:** `checkGPSConnection()` (unused).
+
+#### MS5611 Barometer Functions (`src/ms5611_functions.cpp`)
+*   **`ms5611_init()`:** Initializes MS5611 sensor, checks connection, reads calibration coefficients.
+*   **`ms5611_read()`:** Reads raw pressure and temperature, performs calculations. Updates global `pressure`, `temperature`.
+*   **`ms5611_get_altitude()`:** Calculates altitude from current pressure and `g_launchAltitude` (if calibrated).
+*   **`ms5611_calibrate_with_gps(uint32_t timeout_ms)`:** Calibrates barometer using GPS altitude as reference. Sets `g_baroCalibrated` and `baro_altitude_offset`.
+*   **`ms5611_get_pressure()` and `ms5611_get_temperature()`:** Return current readings.
+
+#### ICM-20948 IMU Functions (`src/icm_20948_functions.cpp`)
+*   **`ICM_20948_init()`:** Initializes ICM-20948, sets ranges, enables FIFO, loads mag calibration from EEPROM.
+*   **`ICM_20948_read()`:** Reads accelerometer, gyroscope, magnetometer data. Updates global `icm_accel`, `icm_gyro`, `icm_mag`, `icm_temp`, and applies calibration. Calculates `isStationary`.
+*   **`ICM_20948_print()`:** Prints formatted IMU data.
+*   **`ICM_20948_calibrate_mag_interactive()`:** Interactive magnetometer calibration routine.
+*   **`ICM_20948_calibrate_gyro_bias(int num_samples, int delay_ms)`:** Calibrates gyro biases.
+*   **`icm_20948_save_calibration()`:** Saves magnetometer calibration to EEPROM.
+*   **`icm_20948_load_calibration()`:** Loads magnetometer calibration from EEPROM.
+*   **`ICM_20948_get_calibrated_gyro(float* dest_array)`:** Provides calibrated gyroscope data.
+*   **`icm_20948_get_mag(float* dest_array)`:** Provides calibrated magnetometer data.
+
+#### KX134 Accelerometer Functions (`src/kx134_functions.cpp`)
+*   **`kx134_init()`:** Initializes KX134, sets range and output data rate.
+*   **`kx134_read()`:** Reads accelerometer data. Updates global `kx134_accel`.
+*   **`kx134_print()`:** Prints formatted KX134 data.
+
+### Kalman Filter (`src/kalman_filter.cpp`)
+*   **`kalman_init(float initial_roll, ...)`:** Initializes Kalman filter state and covariance.
+*   **`kalman_predict(float gyro_x, ..., float dt)`:** Predicts next state using gyro data.
+*   **`kalman_update_accel(float accel_x, ...)`:** Updates state with accelerometer measurements for roll/pitch.
+*   **`kalman_update_mag(float mag_x, ...)`:** Updates yaw estimate using tilt-compensated magnetometer data.
+*   **`kalman_get_orientation(float &roll, ...)`:** Provides current estimated roll, pitch, yaw.
+
+### Guidance & Control (`src/guidance_control.cpp`)
+*   **`guidance_init()`:** Resets PID controller states and target orientation.
+*   **`guidance_set_target_orientation_euler(float tr_rad, ...)`:** Sets the desired target orientation.
+*   **`guidance_update(float current_roll_rad, ..., float deltat)`:** Calculates PID outputs for roll, pitch, yaw based on current and target orientation, and rates. Updates internal actuator outputs.
+*   **`guidance_get_actuator_outputs(float& out_x, ...)`:** Provides calculated actuator commands.
+*   **`guidance_get_target_euler_angles(float& out_target_roll_rad, ...)`:** Provides current target orientation.
+*   **`guidance_get_pid_integrals(float& out_integral_roll, ...)`:** Provides current PID integral terms.
+
+### Utility Functions (`src/utility_functions.cpp`)
+*   **`scan_i2c()`:** Scans I2C bus for connected devices.
+*   **`initNeoPixel(Adafruit_NeoPixel& pixels_obj)`:** Initializes NeoPixel strip.
+*   **`listRootDirectory()`:** Lists files on SD card.
+*   **`get_accel_magnitude(...)`:** Calculates acceleration magnitude, preferring KX134 if available, else ICM-20948.
+*   **`logDataToString(const LogData& data)`:** Converts `LogData` struct to a CSV string based on `LOG_COLUMNS`.
+*   **`convertQuaternionToEuler(...)` and `convertEulerToQuaternion(...)`:** Quaternion/Euler angle conversion utilities.
+*   **`isSensorSuiteHealthy(FlightState currentState, bool verbose)`:** Checks health of critical sensors based on current flight state requirements.
+*   **`getStateName(FlightState state)`:** Returns human-readable string for a `FlightState` enum.
+*   **`read_battery_voltage()`:** Reads the analog pin defined by `BATTERY_VOLTAGE_PIN`, applies voltage divider calculation using `VOLTAGE_DIVIDER_R1`, `VOLTAGE_DIVIDER_R2`, `ADC_REFERENCE_VOLTAGE`, and `ADC_RESOLUTION` to return the calculated battery voltage. Returns `0.0f` if `ENABLE_BATTERY_MONITORING` is `0`.
+    *   **Voltage Divider Construction Note:** Connect Battery(+) to R1. Connect the junction of R1 and R2 to the `BATTERY_VOLTAGE_PIN`. Connect R2 to Ground. The formula used is `V_battery = V_adc * (R1 + R2) / R2`. Ensure the voltage at the ADC pin (`V_adc`) does not exceed `ADC_REFERENCE_VOLTAGE`.
+*   **Debug print functions (`printDebugHeader`, `printDebugValue`, etc.):** Helpers for formatted serial output.
+*   **REMOVED/UNUSED:** `formatNumber()` (superseded by `logDataToString`), `IsStable()`, `checkWatchdog()`.
+
+### Command Processor (`src/command_processor.cpp`)
+*   **`processCommand(String command, FlightState& currentFlightState_ref, ...)`:** Parses serial input and executes corresponding actions (toggling debug flags including `enableBatteryDebug`, initiating calibration, arming, error clearing, status reports, etc.). Interacts with most other modules.
+*   **Helper functions:**
+    *   `printHelpMessage()`, `printSDCardStatus()`, `attemptToStartLogging()`, `printStorageStatistics()`, `toggleDebugFlag()`, `performCalibration()`, `printSystemStatus()`, `prepareForShutdown()`, `setOrientationFilter()`, `getOrientationFilterStatus()`. These are called by `processCommand`.
+
+---
+### Potentially Orphaned/Unused Functions (Summary from previous analysis)
+
+*   **`IsStable()`:** (Likely in `TripleT_Flight_Firmware.cpp` or older utility) - Unused.
+*   **`checkWatchdog()`:** (Likely in `TripleT_Flight_Firmware.cpp` or older utility) - Watchdog system was removed/is inactive.
+*   **`formatNumber(float num, int precision)`:** (In `utility_functions.cpp`) - Superseded by `logDataToString` and direct `dtostrf` usage.
+*   **`checkGPSConnection()`:** (In `gps_functions.cpp`) - Unused.
+
+*This document provides a high-level overview. For detailed arguments, return types, and specific behaviors, refer to the source code and header files.*

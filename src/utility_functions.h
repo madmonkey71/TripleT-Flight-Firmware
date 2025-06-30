@@ -72,4 +72,7 @@ bool isSensorSuiteHealthy(FlightState currentState, bool verbose = false);
 // Get the string name of a flight state
 const char* getStateName(FlightState state);
 
+// Battery Voltage Reading
+float read_battery_voltage();
+
 #endif // UTILITY_FUNCTIONS_H 

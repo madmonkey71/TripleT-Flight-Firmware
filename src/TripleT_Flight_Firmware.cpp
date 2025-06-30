@@ -77,6 +77,9 @@ extern bool ms5611_initialized_ok; // Definition is likely in ms5611_functions.c
 // Global variable for dynamic main deployment altitude (Task Step 2)
 float g_main_deploy_altitude_m_agl = 0.0f;
 
+// Global variable for battery voltage
+float g_battery_voltage = 0.0f;
+
 const char* BOARD_NAME = "Teensy 4.1"; // This is a const, often uppercased, g_ prefix is optional by convention
 
 // Orientation Filter Selection - Always use Kalman filter
@@ -360,6 +363,9 @@ void WriteLogData(bool forceLog) {
   logEntry.gyro_bias_x = gyroBias[0];
   logEntry.gyro_bias_y = gyroBias[1];
   logEntry.gyro_bias_z = gyroBias[2];
+
+  // Battery Voltage
+  logEntry.battery_voltage = g_battery_voltage;
 
   // Populate Guidance Control Data
   // Target Euler angles and PID integrals are static in guidance_control.cpp.
@@ -724,6 +730,7 @@ void loop() {
   static unsigned long lastIMUReadTime = 0;   // For ICM20948 IMU
   static unsigned long lastBaroReadTime = 0;
   static unsigned long lastKalmanUpdateTime = 0; // For Kalman filter dt calculation
+  static unsigned long lastBatteryReadTime = 0; // For battery voltage reading
 
   bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
 
@@ -781,6 +788,16 @@ void loop() {
     // NOTE: Old automatic barometer calibration logic based on pDOP < 300 from loop() should be REMOVED.
     // Calibration is now handled by setup() and the CALIBRATION state in ProcessFlightState.
   }
+
+  if (millis() - lastBatteryReadTime >= BATTERY_VOLTAGE_READ_INTERVAL_MS) {
+    lastBatteryReadTime = millis();
+    #if ENABLE_BATTERY_MONITORING == 1
+      g_battery_voltage = read_battery_voltage();
+      // sensorsUpdatedThisCycle = true; // Optionally mark as updated if voltage is critical for immediate logging
+                                      // For now, it will be logged with other sensor data
+    #endif
+  }
+
   if (millis() - lastBaroReadTime >= BARO_POLL_INTERVAL) {
     lastBaroReadTime = millis();
     if (ms5611_read() == MS5611_READ_OK) { // Existing barometer read
@@ -918,6 +935,17 @@ void loop() {
 
   // --- Flight State Processing ---
   ProcessFlightState(); // Handle flight state machine logic
+
+  // --- Periodic Battery Voltage Printout ---
+  #if ENABLE_BATTERY_MONITORING == 1
+    static unsigned long lastBatteryPrintTime = 0;
+    if (g_debugFlags.enableBatteryDebug && (millis() - lastBatteryPrintTime >= BATTERY_VOLTAGE_READ_INTERVAL_MS)) {
+      lastBatteryPrintTime = millis();
+      Serial.print(F("Battery Voltage: "));
+      Serial.print(g_battery_voltage, 2);
+      Serial.println(F(" V"));
+    }
+  #endif
 
   // TODO: Add other periodic tasks here as needed
   // - Actuator updates 

@@ -15,6 +15,7 @@ typedef struct {
     volatile bool displayMode;
     volatile bool enableSensorDebug;    // For 'sd' command, legacy
     volatile bool enableDetailedOutput; // General detailed output not tied to a specific system
+    volatile bool enableBatteryDebug;   // For periodic battery status printing
 } DebugFlags;
 
 #endif // DEBUG_FLAGS_H

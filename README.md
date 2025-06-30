@@ -2,119 +2,127 @@
 
 **Current Version:** v0.50  
 **Current State:** Beta  
-**Last Updated:** January 2025
+**Last Updated:** June 2025 (Updated for v0.50 features)
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
 
 ## Project Status - Beta (Ready for Controlled Test Flights)
-**Current Version**: v0.50  
-**Branch**: fix/state-machine-error-pad-idle
+**Current Version**: v0.50
 
 ### Recent Updates (v0.50)
-- ✅ **FIXED: Automatic Error Recovery** - System now automatically recovers from ERROR state when sensors become healthy
-- ✅ **Enhanced State Management** - Improved continuous health monitoring with automatic transitions
-- ✅ **Web Interface Synchronization** - Fixed issue where web interface would stay in ERROR state after sensor recovery
+- ✅ **Enhanced Recovery State**: Implemented SOS audible beacon pattern.
+- ✅ **Enhanced Recovery State**: Added visual LED strobe pattern for location.
+- ✅ **Enhanced Recovery State**: Added mock-up GPS coordinate serial beacon output.
+- ✅ **Battery Voltage Monitoring**: Implemented basic battery voltage reading, logging, and serial debug output.
+- ✅ **Kalman Filter as Primary**: Kalman filter is the sole orientation filter, integrating accelerometer, gyroscope, and magnetometer data. Yaw drift corrected using tilt-compensated magnetometer. (Carried over from v0.48)
+- ✅ **Magnetometer Calibration Persistence**: Bias and scale factors saved to EEPROM. (Carried over from v0.48)
+- ✅ **Dual Accelerometer Fusion**: Using KX134 for high-G and ICM-20948 otherwise. (Carried over from v0.48)
+- ✅ **Dynamic Main Parachute Deployment**: Altitude calculated dynamically. (Carried over from v0.48)
+- ✅ **Enhanced Error Recovery**: Automatic error recovery with grace period. (Carried over from v0.48)
+- ✅ **Comprehensive GNC Data Logging**: PID data logged. (Carried over from v0.48)
+
 
 ### Development Status Assessment (Based on Updated Gap Analysis)
 
 #### ✅ PRODUCTION-READY FEATURES
-- ✅ **Core Sensor Integration**: GPS, Barometer, ICM-20948 (9-DOF IMU), and KX134 (High-G Accelerometer) fully integrated and operational
+- ✅ **Core Sensor Integration**: GPS, Barometer, ICM-20948 (9-DOF IMU), and KX134 (High-G Accelerometer) fully integrated and operational.
 - ✅ **Critical Safety Systems**: 
-  - Sensor health monitoring integrated into flight state machine
-  - Multi-method redundant apogee detection (barometric, accelerometer, GPS, backup timer)
-  - Automatic error state transitions for sensor failures
-- ✅ **Flight State Machine**: Complete 14-state flight state machine with robust state transitions and error handling
-- ✅ **State Persistence & Recovery**: EEPROM-based state saving with power-loss recovery capabilities
-- ✅ **Parachute Deployment**: Reliable pyro channel control with multiple deployment trigger methods
-- ✅ **SD Card Data Logging**: Comprehensive CSV logging including GNC data (PID targets, integrals, outputs)
-- ✅ **Interactive Serial Interface**: Feature-rich command system for diagnostics, calibration, and control
-- ✅ **Web Interface**: Complete real-time data visualization with Web Serial API integration
+  - Sensor health monitoring integrated into flight state machine.
+  - Multi-method redundant apogee detection (barometric, accelerometer, GPS, backup timer).
+  - Automatic error state transitions for sensor failures with recovery mechanisms.
+- ✅ **Flight State Machine**: Complete 14-state flight state machine with robust state transitions and error handling.
+- ✅ **State Persistence & Recovery**: EEPROM-based state saving (`FlightStateData`) with power-loss recovery capabilities.
+- ✅ **Parachute Deployment**: Reliable pyro channel control with multiple deployment trigger methods and dynamic main deployment altitude.
+- ✅ **SD Card Data Logging**: Comprehensive CSV logging including detailed GNC data (PID targets, integrals, outputs) and Kalman filter orientation.
+- ✅ **Interactive Serial Interface**: Feature-rich command system for diagnostics, calibration (including magnetometer), and control.
+- ✅ **Web Interface**: Complete real-time data visualization with Web Serial API integration.
+- ✅ **Orientation Filtering**: Robust Kalman filter implemented for 9-DOF sensor fusion, including magnetometer for yaw correction.
+- ✅ **Magnetometer Calibration**: Interactive magnetometer calibration routine with EEPROM persistence.
+- ✅ **Dual Accelerometer Strategy**: Intelligent switching between KX134 (high-G) and ICM-20948 accelerometers.
 
 #### ✅ BASIC FLIGHT CONTROL READY
-- ✅ **PID Control System**: 3-axis PID controllers with state-based activation (BOOST/COAST only)
-- ✅ **Attitude Hold**: Maintains orientation captured at motor burnout during coast phase
-- ✅ **Actuator Integration**: PWM servo control with configurable mapping and limits
+- ✅ **PID Control System**: 3-axis PID controllers (configurable via `PID_ROLL_KP` etc.) with state-based activation (BOOST/COAST only).
+- ✅ **Attitude Hold**: Maintains orientation captured at motor burnout (BOOST to COAST transition) using Kalman filter data.
+- ✅ **Actuator Integration**: PWM servo control (`ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`) with configurable mapping and limits.
 
 #### 🔴 HIGH PRIORITY - MISSING FEATURES
-- ❌ **Live Telemetry**: Radio communication system not implemented (critical for operational flights)
-- ❌ **Advanced Guidance**: Only basic attitude hold implemented; lacks trajectory following, gravity turns, wind compensation
-- 🚧 **Sensor Fusion**: Kalman filter implementation paused; orientation accuracy limited
+- ❌ **Live Telemetry**: Radio communication system not implemented (critical for operational flights). Plan exists for ESP32 bridge.
+- ❌ **Advanced Guidance**: Only basic attitude hold implemented; lacks trajectory following, gravity turns, wind compensation.
 
 #### 🟡 MEDIUM PRIORITY - ENHANCEMENTS NEEDED
-- 🚧 **Recovery System**: Basic implementation; lacks GPS beacon, audio locator, visual indicators
-- 🚧 **Calibration Persistence**: Magnetometer calibration not saved between power cycles
-- 🚧 **Enhanced Diagnostics**: Basic error handling; needs expanded error codes and recovery procedures
+- 🚧 **Recovery System**: Basic implementation; lacks GPS beacon transmission, advanced audio locator patterns, visual strobes in `RECOVERY` state.
+- 🚧 **Enhanced Diagnostics**: Basic error handling; could benefit from more specific error codes and more nuanced recovery procedures.
+- 🚧 **Sensor Fusion Validation**: Kalman filter and sensor fusion implemented, but orientation accuracy needs validation against known reference data (physical testing).
 
-**Current Capability Assessment**: Ready for controlled test flights with basic guidance. Advanced operational flights require telemetry and enhanced guidance algorithms.
+**Current Capability Assessment**: Ready for controlled test flights with robust attitude hold and data logging. Advanced operational flights require telemetry and more sophisticated guidance algorithms.
 
 ### Redundant Apogee Detection
-To ensure the highest reliability for parachute deployment, the firmware now employs a multi-method apogee detection strategy. This system is designed to detect apogee accurately and within two seconds of the event, even in the case of a single sensor malfunction. Apogee is triggered if any of the following conditions are met:
+To ensure the highest reliability for parachute deployment, the firmware now employs a multi-method apogee detection strategy. This system is designed to detect apogee accurately, even in the case of a single sensor malfunction. Apogee is triggered if any of the following conditions are met:
 
-1.  **Primary: Barometric Pressure:**
-    *   **Method:** The primary and most sensitive method tracks the altitude from the MS5611 barometer. It records the maximum altitude reached during the flight.
-    *   **Trigger:** Apogee is confirmed if the barometer registers a specific number of consecutive readings (`APOGEE_CONFIRMATION_COUNT`) that are lower than the maximum recorded altitude. This indicates the rocket has started its descent.
-
-2.  **Secondary: Accelerometer Freefall:**
-    *   **Method:** A secondary check uses the Z-axis of the ICM-20948 accelerometer. At apogee, the rocket experiences a brief period of near-zero gravity (freefall) as it transitions from upward to downward motion.
-    *   **Trigger:** Apogee is confirmed if the accelerometer measures negative g-force on its vertical axis for a specific number of consecutive readings (`APOGEE_ACCEL_CONFIRMATION_COUNT`), indicating that the rocket is no longer accelerating upwards.
-
-3.  **Tertiary: GPS Altitude:**
-    *   **Method:** As a third layer of redundancy, the GPS module's altitude data is monitored. While typically having a slower update rate than the barometer, it provides an independent source of altitude information.
-    *   **Trigger:** Similar to the barometer, if the GPS reports a number of consecutive altitude readings (`APOGEE_GPS_CONFIRMATION_COUNT`) lower than its previously recorded maximum, apogee is signaled. A 5-meter hysteresis is used to prevent triggering from GPS noise.
-
-4.  **Failsafe: Backup Timer:**
-    *   **Method:** A final, time-based failsafe ensures parachute deployment even if all other sensors fail to detect apogee. This timer starts at motor burnout (end of the `BOOST` phase).
-    *   **Trigger:** If a pre-configured amount of time (`BACKUP_APOGEE_TIME_MS`, typically ~20 seconds) passes after motor burnout without any other method detecting apogee, the system will force an apogee event. This is a critical safety feature to prevent a total loss of the vehicle.
+1.  **Primary: Barometric Pressure (`APOGEE_CONFIRMATION_COUNT`):**
+    *   Tracks maximum altitude from MS5611. Apogee if current altitude is consistently lower than max.
+2.  **Secondary: Accelerometer Freefall (`APOGEE_ACCEL_CONFIRMATION_COUNT`):**
+    *   Uses ICM-20948 Z-axis. Apogee if negative g-force (freefall) is detected consecutively.
+3.  **Tertiary: GPS Altitude (`APOGEE_GPS_CONFIRMATION_COUNT`):**
+    *   Monitors u-blox GPS altitude. Apogee if GPS altitude is consistently lower than its recorded max (with hysteresis).
+4.  **Failsafe: Backup Timer (`BACKUP_APOGEE_TIME_MS`):**
+    *   Time-based failsafe starting at motor burnout. Forces apogee if other methods fail within the configured time.
 
 This layered approach ensures that the flight computer can reliably detect the peak of its flight and initiate recovery procedures under a wide range of conditions.
 
 ## State Machine
-The firmware operates on a state machine that dictates the rocket's behavior throughout its flight, from startup to recovery.
+The firmware operates on a 14-state state machine (see `State Machine.md` and `src/data_structures.h`) that dictates the rocket's behavior throughout its flight, from startup to recovery.
 
 ### AI Assistance
 This project utilizes AI assistance for:
-- Code documentation and implementation
-- System architecture design and review
-- Gap analysis and project planning
+- Code documentation and implementation.
+- System architecture design and review.
+- Gap analysis and project planning.
 
 ## Overview
 
-This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets. The system manages all phases of flight from launch detection through recovery, with robust sensor fusion, data logging, and safety features.
+This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets. The system manages all phases of flight from launch detection through recovery, utilizing a Kalman filter for sensor fusion, robust data logging, and extensive safety features.
 
 ## Key Features
 
-- **Multi-Phase Flight Management**: Handles all flight phases from pad idle through recovery
-- **Sensor Fusion**: Combines data from multiple sensors (ICM-20948 IMU, KX134 accelerometer, MS5611 barometer, GPS)
-- **Dual Accelerometer Support**: Primary KX134 for high-G events, secondary ICM-20948 for attitude
-- **Advanced Orientation Filtering**: Kalman filter with Madgwick filter fallback option
-- **Redundant Apogee Detection**: Multiple methods including barometric, accelerometer, GPS, and backup timer
-- **Configurable Parachute Deployment**: Support for single or dual-deploy configurations
-- **Comprehensive Data Logging**: Real-time CSV logging to SD card with 50+ data points
-- **Interactive Command Interface**: Serial commands for configuration, calibration, and diagnostics
-- **Visual Status Indicators**: NeoPixel LEDs for flight state indication
-- **Audio Feedback**: Buzzer patterns for different states and alerts
-- **Error Recovery**: Automatic sensor health monitoring and recovery mechanisms
-- **EEPROM State Persistence**: Flight state recovery after power loss
+- **Multi-Phase Flight Management**: Handles all 14 flight phases from pad idle through recovery.
+- **Advanced Sensor Fusion**: Kalman filter combining data from ICM-20948 IMU (accel, gyro, mag), KX134 high-G accelerometer, MS5611 barometer, and u-blox GPS.
+- **Dual Accelerometer Strategy**: Intelligently uses KX134 for high-G events (e.g., launch detection, Kalman input during high acceleration) and ICM-20948 for general flight and attitude determination.
+- **Kalman Orientation Filtering**: Sole orientation filter providing roll, pitch, and tilt-compensated yaw from magnetometer data. Magnetometer calibration data is persisted to EEPROM.
+- **Redundant Apogee Detection**: Four distinct methods: barometric, accelerometer, GPS, and a backup timer.
+- **Configurable Parachute Deployment**: Supports single or dual-deploy configurations with dynamic calculation of main parachute deployment altitude based on ground level.
+- **Comprehensive Data Logging**: Real-time CSV logging to SD card with 50+ data points, including detailed GNC (PID targets, integrals, actuator outputs), Kalman filter orientation, and battery voltage.
+- **Interactive Command Interface**: Serial commands for configuration, calibration (gyro, magnetometer with persistence), diagnostics, and system control.
+- **Visual Status Indicators**: NeoPixel LEDs for clear flight state indication, including recovery strobe pattern.
+- **Audio Feedback**: Buzzer patterns for different states and alerts, including SOS beacon in `RECOVERY` state.
+- **Robust Error Recovery**: Automatic sensor health monitoring, transition to `ERROR` state on critical failures, and automatic recovery attempts with a grace period. Manual recovery commands available.
+- **EEPROM State Persistence**: Critical flight state information (`FlightStateData` struct) saved to EEPROM for recovery after power loss.
+- **Battery Voltage Monitoring**: Reads and logs battery voltage.
 
 ## Hardware Requirements
 
 ### Core Components
 - **Teensy 4.1** microcontroller
 - **ICM-20948** 9-DOF IMU (gyroscope, accelerometer, magnetometer)
-- **KX134** high-G accelerometer (±64g range)
+- **KX134** high-G accelerometer (typically configured for ±64g range)
 - **MS5611** barometric pressure sensor
-- **u-blox GPS module** (e.g., ZOE-M8Q)
-- **SD card** for data logging (built-in Teensy 4.1 slot)
-- **NeoPixel LEDs** (2x for status indication)
-- **Buzzer** for audio feedback
-- **Pyrotechnic channels** for parachute deployment
+- **u-blox GPS module** (e.g., ZOE-M8Q or similar, configured for UBX protocol)
+- **SD card** for data logging (using Teensy 4.1 built-in SDIO slot)
+- **NeoPixel LEDs** (2x configured via `NEOPIXEL_COUNT` and `NEOPIXEL_PIN`)
+- **Buzzer** (connected to `BUZZER_PIN`)
+- **Pyrotechnic channels** for parachute deployment (connected to `PYRO_CHANNEL_1`, `PYRO_CHANNEL_2`)
+- **Servos** for attitude control (optional, connected to `ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`)
+
 
 ### Pin Configuration
-- **NeoPixel**: Pin 2
-- **Buzzer**: Pin 9
-- **Pyro Channel 1** (Drogue): Pin 2
-- **Pyro Channel 2** (Main): Pin 3
+- **NeoPixel**: Pin `NEOPIXEL_PIN` (default: 2)
+- **Buzzer**: Pin `BUZZER_PIN` (default: 9)
+- **Pyro Channel 1** (Drogue): Pin `PYRO_CHANNEL_1` (default: 2)
+- **Pyro Channel 2** (Main): Pin `PYRO_CHANNEL_2` (default: 3)
+- **Actuator Pitch**: Pin `ACTUATOR_PITCH_PIN` (default: 21)
+- **Actuator Roll**: Pin `ACTUATOR_ROLL_PIN` (default: 23)
+- **Actuator Yaw**: Pin `ACTUATOR_YAW_PIN` (default: 20)
 - **I2C**: Pins 18 (SDA), 19 (SCL) - for sensors
 - **GPS Serial**: Hardware serial port
 - **SD Card**: Built-in SDIO interface
@@ -143,32 +151,42 @@ The firmware supports a rich set of serial commands for interaction:
 
 | Command | Description |
 |---|---|
-| `arm` | Arms the flight computer, transitioning to the ARMED state to listen for liftoff. |
-| `calibrate` / `h` | Manually triggers barometer calibration using GPS data. |
-| `status_sensors` | Displays detailed status information for all connected sensors. |
-| `b` | Shows a brief system status summary. |
-| `f` | Shows SD card storage statistics. |
-| `0` | Toggles continuous CSV data output over serial. |
-| `1-9` | Toggle various debug output levels (system, IMU, GPS, etc.). |
+| `arm` | Arms the flight computer, transitioning to ARMED state. Checks sensor health for ARMED state requirements. |
+| `calibrate` / `h` | Manually triggers barometer calibration using GPS data (requires GPS fix). |
+| `calibrate_mag` | Starts interactive magnetometer calibration routine. |
+| `calibrate_gyro` | Performs gyroscope bias calibration while stationary. |
+| `save_mag_cal` | Saves current magnetometer calibration data to EEPROM. |
+| `status_sensors` / `b` | Displays detailed status information for all connected sensors and system components. |
+| `sd_status` / `f` | Shows SD card status, available space, and current log file. |
+| `0` / `debug_serial_csv [on|off]` | Toggles continuous CSV data output over serial. |
+| `1-6` / `debug_system [on|off]` etc. | Toggle specific debug output levels (system, IMU, GPS, baro, storage, ICM raw). |
 | `help` / `a` | Shows the full list of available commands. |
-| `set_orientation_filter [madgwick\|kalman]` | Sets the orientation filter type. |
-| `clear_errors` | Manually clears error state if sensors have recovered. |
-| `clear_to_calibration` | Clears error state to CALIBRATION for barometer issues. |
-| `sensor_requirements` | Shows sensor requirements for each flight state. |
+| `set_orientation_filter kalman` | Sets the orientation filter type (Kalman is the only option). |
+| `get_orientation_filter` | Shows the currently active orientation filter. |
+| `clear_errors` | Manually attempts to clear `ERROR` state if sensors have recovered, transitioning to `PAD_IDLE`. |
+| `clear_to_calibration` | Clears `ERROR` state to `CALIBRATION` if barometer needs calibration. |
+| `sensor_requirements` | Displays sensor requirements for each flight state. |
+| `scan_i2c` | Scans the I2C bus and lists detected devices. |
+| `start_log` / `7` | Attempts to initialize SD card and start a new log file. |
+| `status` | Alias for `status_sensors`. |
+| `summary` / `j` | Toggles the periodic display of a status summary. |
+| `debug_battery [on|off]` | Toggles periodic serial printing of battery voltage. |
 
 ### Data Logging
 
-Data is logged to the SD card in CSV format with timestamps. The log includes:
-- **Flight State Information**: Current state, timestamps, state durations
-- **Sensor Data**: All accelerometer, gyroscope, magnetometer, barometer, and GPS readings
-- **Orientation Data**: Quaternions, Euler angles from both Kalman and Madgwick filters
-- **Flight Metrics**: Altitude AGL, velocity, maximum altitude reached
-- **System Status**: Sensor health, calibration status, error flags
-- **Control Outputs**: Servo commands for attitude control (if enabled)
+Data is logged to the SD card in CSV format with timestamps. The log (`logDataToString()` driven by `LOG_COLUMNS` in `log_format_definition.h`) includes:
+- **Flight State Information**: Current state (`FlightState`), timestamps, sequence number.
+- **Sensor Data**: Raw and calibrated barometer altitude, pressure, temperature. KX134 and ICM-20948 accelerometer, gyroscope, magnetometer readings, and ICM temperature.
+- **GPS Data**: Latitude, longitude, altitude (ellipsoid and MSL), speed, heading, fix type, satellites, pDOP, RTK status.
+- **Orientation Data (Kalman Filter)**: Quaternions (q0-q3), Euler angles (roll, pitch, yaw in radians), gyroscope biases.
+- **Battery Voltage**: Measured battery voltage (`battery_voltage`).
+- **Flight Metrics**: `g_launchAltitude`, `g_maxAltitudeReached`, `currentAglAlt` (calculated).
+- **GNC Data**: Target Euler angles (roll, pitch, yaw), PID integral terms for each axis, and final actuator outputs for roll, pitch, and yaw.
+- **System Status**: Implicit through logged data and flight state.
 
 ### Flight States
 
-The firmware manages the following flight states:
+The firmware manages the following 14 flight states (defined in `src/data_structures.h`):
 
 1. **STARTUP**: Initial power-on and hardware initialization
 2. **CALIBRATION**: Waiting for barometer calibration with GPS
@@ -190,177 +208,184 @@ The firmware manages the following flight states:
 Key configuration parameters can be modified in `src/config.h`:
 
 ### Flight Parameters
-- `BOOST_ACCEL_THRESHOLD`: Liftoff detection threshold (default: 2.0g)
-- `COAST_ACCEL_THRESHOLD`: Motor burnout detection (default: 0.5g)
-- `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M`: Main parachute deployment altitude (default: 100m AGL)
-- `APOGEE_CONFIRMATION_COUNT`: Readings required to confirm apogee (default: 5)
+- `BOOST_ACCEL_THRESHOLD`: Liftoff detection threshold (default: 2.0g).
+- `COAST_ACCEL_THRESHOLD`: Motor burnout detection (default: 0.5g).
+- `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M`: Default height in meters AGL for main parachute deployment if dynamic calculation fails or for reference (default: 100m). Actual deployment uses `g_main_deploy_altitude_m_agl`.
+- `APOGEE_CONFIRMATION_COUNT`: Barometer readings to confirm apogee (default: 5).
+- `APOGEE_ACCEL_CONFIRMATION_COUNT`: Accelerometer readings for apogee (default: 5).
+- `APOGEE_GPS_CONFIRMATION_COUNT`: GPS readings for apogee (default: 3).
+- `BACKUP_APOGEE_TIME_MS`: Failsafe apogee timer after boost (default: 20s).
 
 ### Hardware Configuration
-- `DROGUE_PRESENT` / `MAIN_PRESENT`: Configure parachute deployment type
-- `USE_KX134`: Enable/disable KX134 high-G accelerometer
-- `BUZZER_OUTPUT`: Enable/disable buzzer functionality
-- `NEOPIXEL_COUNT`: Number of status LEDs
+- `DROGUE_PRESENT` / `MAIN_PRESENT`: Configure parachute deployment type (e.g., `true`/`false`).
+- `USE_KX134`: Enable/disable KX134 high-G accelerometer (default: 1, enabled).
+- `BUZZER_OUTPUT`: Enable/disable buzzer functionality (default: 1, enabled).
+- `NEOPIXEL_COUNT`: Number of status LEDs (default: 2).
+- `PYRO_CHANNEL_1`, `PYRO_CHANNEL_2`: Pins for pyro deployment.
+- `ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`: Pins for servo actuators.
 
-### Safety Parameters
-- `MAX_SENSOR_FAILURES`: Sensor failure threshold before error state
+### PID Controller Gains (Example)
+- `PID_ROLL_KP`, `PID_ROLL_KI`, `PID_ROLL_KD`: Gains for roll axis.
+- `PID_PITCH_KP`, `PID_PITCH_KI`, `PID_PITCH_KD`: Gains for pitch axis.
+- `PID_YAW_KP`, `PID_YAW_KI`, `PID_YAW_KD`: Gains for yaw axis.
+
+### Recovery Beacon & GPS
+- `RECOVERY_BEACON_SOS_DOT_MS`, `_DASH_MS`, `_SYMBOL_PAUSE_MS`, `_LETTER_PAUSE_MS`, `_WORD_PAUSE_MS`: Timings for SOS buzzer.
+- `RECOVERY_BEACON_FREQUENCY_HZ`: Buzzer frequency for SOS.
+- `RECOVERY_STROBE_ON_MS`, `_OFF_MS`, `_BRIGHTNESS`, `_R`, `_G`, `_B`: Parameters for LED recovery strobe.
+- `RECOVERY_GPS_BEACON_INTERVAL_MS`: Interval for serial GPS beacon mock-up.
+
+### Battery Monitoring
+- `ENABLE_BATTERY_MONITORING`: `1` to enable, `0` to disable.
+- `BATTERY_VOLTAGE_PIN`: Analog pin for voltage sensing (e.g., `A7`).
+- `ADC_REFERENCE_VOLTAGE`: ADC reference (e.g., `3.3f` for Teensy 4.1).
+- `ADC_RESOLUTION`: ADC resolution (e.g., `1024.0f` for 10-bit).
+- `VOLTAGE_DIVIDER_R1`, `VOLTAGE_DIVIDER_R2`: Resistor values for voltage divider.
+  - **Voltage Divider Construction**: Connect Battery(+) to R1. Connect the junction of R1 and R2 to `BATTERY_VOLTAGE_PIN`. Connect R2 to Ground.
+  - `V_battery = V_adc * (R1 + R2) / R2`. Ensure `V_adc` (voltage at the pin) does not exceed `ADC_REFERENCE_VOLTAGE`.
+- `BATTERY_VOLTAGE_READ_INTERVAL_MS`: Read and print interval.
+
+
+### Safety & EEPROM
+- `MAX_SENSOR_FAILURES`: Sensor failure threshold before `ERROR` state (default: 3).
+- `EEPROM_STATE_ADDR`: Address for `FlightStateData` struct (default: 0).
+- `EEPROM_SIGNATURE_VALUE`: Signature for EEPROM data validity (default: 0xBEEF).
+- `MAG_CAL_EEPROM_ADDR`: EEPROM address for magnetometer calibration data.
 
 ## Error Recovery System
 
-The firmware includes comprehensive automatic sensor health monitoring and recovery mechanisms:
+The firmware includes comprehensive automatic sensor health monitoring and recovery mechanisms, primarily managed in `src/flight_logic.cpp` and `src/command_processor.cpp`:
 
-- **Automatic Health Checks**: Continuous monitoring of all critical sensors every 1 second during normal operation
-- **Graceful Degradation**: System continues operation with reduced capability when non-critical sensors fail
-- **Automatic Error Recovery**: System automatically recovers from ERROR state when sensors become healthy again
-  - Checks every 2 seconds if system health is restored while in ERROR state
-  - Automatically transitions to PAD_IDLE if barometer is calibrated and all systems are healthy
-  - Automatically transitions to CALIBRATION if barometer is initialized but needs calibration
-  - Prevents recovery if critical hardware (e.g., barometer) is not initialized
-- **Manual Recovery Options**: Backup recovery via `clear_errors` and `clear_to_calibration` commands
-- **Grace Period Protection**: 5-second grace period after error clearance to prevent immediate re-entry to ERROR state
-- **State Persistence**: EEPROM-based state saving survives power cycles and supports recovery scenarios
-- **Diagnostic Tools**: Comprehensive status reporting with `isSensorSuiteHealthy()` verbose mode for troubleshooting
+- **Automatic Health Checks**: Continuous monitoring of critical sensors. If `isSensorSuiteHealthy()` (in `src/utility_functions.cpp`) reports a failure for the current operational state (excluding `LANDED`, `RECOVERY`, `ERROR`), the system transitions to the `ERROR` state.
+- **Automatic Error Recovery**: While in the `ERROR` state, the system periodically checks (every 2 seconds via `autoRecoveryCheckInterval`) if sensor health has been restored (suitable for `PAD_IDLE` or `CALIBRATION`).
+  - If healthy for `PAD_IDLE` (all systems go, barometer calibrated), transitions to `PAD_IDLE`.
+  - If healthy for `CALIBRATION` (barometer initialized but needs calibration), transitions to `CALIBRATION`.
+  - Recovery is prevented if critical hardware (e.g., barometer) is not initialized.
+- **Manual Recovery Options**:
+  - `clear_errors`: Attempts to transition from `ERROR` to `PAD_IDLE` if health checks pass.
+  - `clear_to_calibration`: Attempts to transition from `ERROR` to `CALIBRATION` if the barometer is initialized but needs calibration.
+- **Grace Period Protection**: A 5-second grace period (`errorClearGracePeriod`) is activated after clearing an error (manually or automatically) to prevent immediate re-entry into the `ERROR` state due to transient sensor fluctuations.
+- **State Persistence**: The `FlightStateData` struct (including `g_main_deploy_altitude_m_agl`) is saved to EEPROM via `saveStateToEEPROM()` (in `src/state_management.cpp`) to survive power cycles and support recovery scenarios defined in `recoverFromPowerLoss()`.
+- **Diagnostic Tools**: `isSensorSuiteHealthy()` provides verbose output for troubleshooting. Serial commands like `status_sensors` and debug flags offer detailed insights.
 
 ### Error State Behavior
 
-When in ERROR state:
-- System performs continuous health monitoring
-- LED shows red error indication
-- Buzzer emits fast beeping pattern (if enabled)
-- Web interface displays ERROR status
-- Serial output provides detailed diagnostic information
-- System automatically attempts recovery every 2 seconds
+When in `ERROR` state:
+- System performs continuous health monitoring for automatic recovery.
+- LED shows red error indication (managed by `setFlightStateLED` in `src/flight_logic.cpp`).
+- Buzzer emits a fast beeping pattern (if `BUZZER_OUTPUT` enabled).
+- Web interface (if connected) should reflect the `ERROR` state.
+- Serial output provides diagnostic information if system debug is enabled.
 
-### Recovery Process
+### Recovery Process (Automatic)
 
-1. **Automatic Detection**: System detects when sensors become healthy
-2. **State Decision**: Determines target state based on sensor calibration status
-3. **Transition**: Automatically transitions to appropriate state (PAD_IDLE or CALIBRATION)
-4. **Grace Period**: Starts 5-second grace period to prevent immediate error re-entry
-5. **Confirmation**: System confirms successful recovery and updates all interfaces
-- `ERROR_RECOVERY_ATTEMPT_MS`: Time before attempting error recovery
-- `BACKUP_APOGEE_TIME_MS`: Failsafe apogee detection timer
+1. **Detection**: `isSensorSuiteHealthy()` identifies if conditions for `PAD_IDLE` or `CALIBRATION` are met.
+2. **State Decision**: System determines the appropriate target state.
+3. **Transition**: Automatically transitions to `PAD_IDLE` or `CALIBRATION`.
+4. **Grace Period**: Activates the 5-second grace period.
+5. **Confirmation**: System logs the recovery and updates status indicators.
+
+Key constants involved: `errorCheckInterval`, `autoRecoveryCheckInterval`, `errorClearGracePeriod`.
 
 ## Safety Features
 
-- **Sensor Health Monitoring**: Continuous monitoring of all critical sensors
-- **Redundant Apogee Detection**: Multiple independent methods to ensure reliable deployment
-- **Error Recovery**: Automatic recovery from transient sensor failures
-- **State Persistence**: Flight state saved to EEPROM for power-loss recovery
-- **Backup Timers**: Failsafe mechanisms if primary detection methods fail
-- **Comprehensive Logging**: Detailed data logging for post-flight analysis
+- **Sensor Health Monitoring**: Continuous checks via `isSensorSuiteHealthy()`.
+- **Redundant Apogee Detection**: Four independent methods (barometric, accelerometer, GPS, timer).
+- **Error Recovery**: Automatic and manual recovery from `ERROR` state with grace period.
+- **State Persistence**: Flight state (`FlightStateData`) saved to EEPROM for power-loss recovery.
+- **Backup Timers**: Failsafe apogee detection timer (`BACKUP_APOGEE_TIME_MS`).
+- **Comprehensive Logging**: Detailed data logging (`LogData` struct) for post-flight analysis.
+- **Dynamic Main Deployment Altitude**: Calculates main chute deployment altitude AGL at arming.
 
 ## Development
 
 ### Project Structure
 ```
 src/
-├── TripleT_Flight_Firmware.cpp    # Main firmware file
-├── config.h                       # Configuration parameters
-├── flight_logic.cpp               # Flight state machine
-├── command_processor.cpp          # Serial command handling
-├── sensor functions/              # Individual sensor modules
-├── utility_functions.cpp          # Helper functions
-└── data_structures.h              # Data type definitions
+├── TripleT_Flight_Firmware.cpp    # Main firmware file, setup(), loop()
+├── config.h                       # Centralized configuration parameters
+├── constants.h                    # Global constants
+├── flight_logic.cpp               # Core flight state machine logic (ProcessFlightState, detectApogee, etc.)
+├── state_management.cpp           # EEPROM state saving and recovery (saveStateToEEPROM, recoverFromPowerLoss)
+├── command_processor.cpp          # Serial command parsing and handling
+├── gps_functions.cpp              # u-blox GPS module interaction
+├── ms5611_functions.cpp           # MS5611 barometer interaction
+├── icm_20948_functions.cpp        # ICM-20948 IMU interaction (includes mag calibration)
+├── kx134_functions.cpp            # KX134 accelerometer interaction
+├── kalman_filter.cpp              # Kalman filter implementation for orientation
+├── guidance_control.cpp           # PID controllers and guidance logic
+├── utility_functions.cpp          # Helper functions (I2C scan, debug prints, etc.)
+├── data_structures.h              # Struct definitions (LogData, FlightStateData)
+├── log_format_definition.h        # Defines the structure of the CSV log file
+└── debug_flags.h                  # Debug flag definitions
 ```
 
 ### Adding New Features
-1. Update configuration in `config.h` if needed
-2. Implement functionality in appropriate module
-3. Add command interface in `command_processor.cpp` if required
-4. Update logging format in `log_format_definition.h` if adding new data
-5. Test thoroughly with hardware-in-the-loop
+1. Define any new configurations in `src/config.h` or `src/constants.h`.
+2. Implement core logic in a relevant existing module (e.g., `flight_logic.cpp` for state changes) or create a new `.cpp`/`.h` pair in `src/` for significant new functionality.
+3. If user interaction is needed, add commands to `src/command_processor.cpp` and update `printHelpMessage()`.
+4. If new data needs to be logged, update the `LogData` struct in `src/data_structures.h` AND the `LOG_COLUMNS` array in `src/log_format_definition.h` to maintain synchronization.
+5. Test thoroughly, utilizing serial commands and debug flags for verification.
 
 ## Troubleshooting
 
 ### Common Issues
-- **Sensor Initialization Failures**: Check I2C connections and power supply
-- **GPS Not Getting Fix**: Ensure clear sky view and allow time for cold start
-- **SD Card Issues**: Verify card is formatted as FAT32 and has sufficient free space
-- **Compilation Errors**: Ensure all libraries are installed via PlatformIO
+- **Sensor Initialization Failures**: Use `scan_i2c` to check connections. Verify power and I2C pull-up resistors.
+- **GPS Not Getting Fix**: Ensure clear sky view. Allow time for cold start (can be several minutes). Check antenna connection. Use `debug_gps on` for u-blox messages.
+- **SD Card Issues**: Verify card is FAT32 formatted. Check `sd_status` for available space and errors. Ensure `DISABLE_SDCARD_LOGGING` in `config.h` is `false`.
+- **Compilation Errors**: Ensure all libraries in `platformio.ini` are correctly installed/updated. Check for missing includes or incorrect function signatures.
+- **Unexpected State Transitions**: Enable `debug_system on` to trace state changes and sensor readings that might be causing them. Review `isSensorSuiteHealthy()` logic.
 
 ### Debug Commands
-- Use `status_sensors` to check sensor health
-- Enable debug flags with numeric commands (1-9) for detailed output
-- Check storage with `f` command
-- Use `scan_i2c` to verify sensor connections
+- Use `status_sensors` (or `b`) to check overall sensor health and initialization status.
+- Enable specific debug flags (e.g., `debug_imu on`, `debug_gps on`, `debug_baro on`) for detailed output from sensor modules.
+- Use `debug_serial_csv on` (or `0`) to see raw data being logged.
+- Check SD card status and free space with `sd_status` (or `f`).
+- Use `scan_i2c` to verify I2C device detection and addresses.
+- Use `sensor_requirements` to understand what sensors are needed for each flight state.
+- If in `ERROR` state, `clear_errors` or `clear_to_calibration` can be used after addressing the underlying issue.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the `LICENSE` file (if present, otherwise assume MIT).
 
 ## Acknowledgments
 
-- Original inspiration from BPS.Space flight computer projects
-- SparkFun and Adafruit for excellent sensor libraries
-- PJRC for the powerful Teensy 4.1 platform
-- PlatformIO for the excellent development environment
+- Original inspiration from BPS.Space flight computer projects.
+- SparkFun and Adafruit for excellent sensor libraries and example code.
+- PJRC (Paul Stoffregen) for the powerful Teensy 4.1 platform and core libraries.
+- PlatformIO for the excellent development environment.
 
 ## Support
 
 For issues, questions, or contributions, please use the GitHub repository's issue tracker and pull request system.
 
-## Recent Changes (Latest)
+## Recent Changes (Reflects codebase state around v0.48)
 
-### Enhanced Error Recovery & Web Interface Improvements - January 2025
-- **Intelligent Web Interface Message Filtering**
-  - Added smart message categorization (CSV data vs. informational messages)
-  - Prevents INFO messages from interfering with data visualization
-  - CSV data now shows condensed format in terminal: `CSV: 1,1678886400,3... (48 fields)`
-  - Comprehensive pattern matching for 25+ message types
-  
-- **Comprehensive Error State Recovery System**
-  - Enhanced `clear_errors` command with detailed diagnostic feedback
-  - Added `clear_to_calibration` for barometer calibration issues
-  - New `sensor_requirements` command shows needs for each flight state
-  - Visual status indicators (✓, ❌, ⚠) for easy problem identification
-  - Specific troubleshooting steps for each sensor failure type
-  
-- **Improved Sensor Health Diagnostics**
-  - Detailed verbose output from `isSensorSuiteHealthy()` function
-  - Clear explanation of state transition requirements
-  - Alternative recovery paths when standard error clearing fails
-  
-- **ERROR State Recovery Improvements** 
-  - Added 5-second grace period after `clear_errors` to prevent immediate re-triggering
-  - Enhanced diagnostic output always shows detailed sensor health on failures
-  - System debug enabled by default for better troubleshooting
-  - Improved timing and frequency of health check messages
-  - **CRITICAL ARCHITECTURAL FIX**: Properly restructured setup() function
-    - Removed state transition logic from setup() (Arduino setup should only run once)
-    - Created `handleInitialStateManagement()` for state decisions
-    - setup() now only handles true hardware initialization as intended
-    - State management runs once at start of loop() instead of repeatedly
-    - Fixed servo pin definitions and cleaned up initialization sequence
-  
-- **User Experience Enhancements**
-  - Clear guidance when error clearing fails due to sensor issues
-  - Better understanding of barometer calibration requirements
-  - Actionable troubleshooting steps for common problems
-  - Reduced console spam with optimized message timing
+### Key Enhancements & Fixes:
+- **Kalman Filter**: Now the sole, robust orientation filter using accelerometer, gyroscope, and magnetometer. Includes tilt-compensation for yaw.
+- **Magnetometer Calibration Persistence**: Calibration data saved to and loaded from EEPROM.
+- **Dual Accelerometer Logic**: Uses KX134 for high-G scenarios and ICM-20948 otherwise, integrated into Kalman filter input.
+- **Dynamic Main Deployment Altitude**: `g_main_deploy_altitude_m_agl` calculated at ARMED state.
+- **GNC Data Logging**: Target orientation, PID integrals, and actuator outputs are now part of the CSV log.
+- **Error Handling**: Automatic recovery from `ERROR` state implemented with a grace period. `clear_errors` and `clear_to_calibration` commands refined.
+- **State Management**: `FlightStateData` in EEPROM includes `mainDeployAltitudeAgl`. `recoverFromPowerLoss` logic updated.
+- **Command Processor**: Added commands for magnetometer (`calibrate_mag`, `save_mag_cal`) and gyroscope (`calibrate_gyro`) calibration.
+- **Refactoring**: Significant code organization, moving functions to appropriate modules (e.g., `utility_functions.cpp`, `state_management.cpp`). Global variable usage reduced by passing context/objects as parameters where feasible.
+- **Documentation**: Ongoing updates to align with current codebase.
 
-### Final Compilation Fixes - January 2025
-- **Fixed duplicate variable definitions** in `TripleT_Flight_Firmware.cpp`
-  - Removed duplicate declarations of `g_baroCalibrated`, `g_currentFlightState`, `g_previousFlightState`
-  - Removed duplicate declarations of `g_launchAltitude`, `g_maxAltitudeReached`, `g_currentAltitude`
-- **Compilation now fully successful** with no errors or warnings
-- **All linker errors resolved** from previous session
-- **Firmware ready for upload** to Teensy 4.1 hardware
+### Architectural Changes:
+- **Centralized Configuration**: `config.h` and `constants.h` for parameters.
+- **Modular Design**: Clearer separation of concerns across different `.cpp` files (sensors, flight logic, state management, command processing, etc.).
+- **Data Structures**: Defined `LogData` and `FlightStateData` in `data_structures.h`.
+- **Logging Definition**: `log_format_definition.h` now drives CSV header and `logDataToString()` structure.
 
-### Previous Major Changes
-#### Watchdog Timer Removal and Compilation Fixes
-- **Removed all watchdog timer functionality** as requested
-- **Disabled ENABLE_WATCHDOG** in `src/config.h` 
-- **Deleted Watchdog_t4 library** from `lib/` directory
-- **Fixed multiple compilation errors** including:
-  - Missing global variable declarations (`g_pixels`, `g_ms5611Sensor`)
-  - SystemStatusContext member access issues
-  - Function signature mismatches
-  - Jump to case label errors in switch statements
-  - Missing function parameters for `kalman_init()`
-- **Re-enabled Madgwick filter configuration** macros in config.h
-- **Updated command processor** to use correct pointer syntax for SystemStatusContext
-- **Fixed GPS object naming inconsistencies** (changed `g_myGNSS` to `myGNSS`)
-- **Implemented missing SD card initialization** function
-- **Added all required global variable definitions** for cross-module dependencies
+### Known Issues / Areas for Improvement (from `UPDATED_GAP_ANALYSIS_2025.md`):
+- **Live Telemetry**: Not yet implemented.
+- **Advanced Guidance**: Only basic attitude hold exists.
+- **Recovery System**: Basic; needs GPS beacon, advanced audio/visuals.
+- **Sensor Validation**: Orientation accuracy requires physical testing.
+
+*This "Recent Changes" section provides a summary based on the code analysis for updating documentation to v0.48. For a detailed historical changelog, refer to commit history.*
 
 

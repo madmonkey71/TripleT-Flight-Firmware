@@ -147,9 +147,32 @@ function isCSVDataMessage(message) {
 }
 
 /**
+ * Parses servo command messages from the firmware debug output.
+ * @param {string} message - The message to parse
+ * @returns {object|null} Parsed servo data or null if not a servo command
+ */
+function parseServoCommand(message) {
+    // Pattern: "Servo CMDs (P,R,Y): 66, 86, 81"
+    const servoPattern = /^Servo CMDs \(P,R,Y\):\s*(\d+),\s*(\d+),\s*(\d+)$/;
+    const match = message.match(servoPattern);
+    
+    if (match) {
+        return {
+            isServoCommand: true,
+            timestamp: Date.now(), // Use current time since servo commands don't have timestamps
+            pitchServo: parseInt(match[1]),
+            rollServo: parseInt(match[2]),
+            yawServo: parseInt(match[3])
+        };
+    }
+    
+    return null;
+}
+
+/**
  * Categorizes a message type for appropriate handling.
  * @param {string} message - The incoming message to categorize
- * @returns {string} Message category: 'csv_data', 'info', 'system', 'unknown'
+ * @returns {string} Message category: 'csv_data', 'servo_command', 'info', 'system', 'unknown'
  */
 function categorizeMessage(message) {
     if (!message || typeof message !== 'string') {
@@ -158,6 +181,11 @@ function categorizeMessage(message) {
     
     if (isCSVDataMessage(message)) {
         return 'csv_data';
+    }
+    
+    // Check for servo command messages
+    if (parseServoCommand(message)) {
+        return 'servo_command';
     }
     
     if (shouldIgnoreMessage(message)) {
@@ -206,7 +234,7 @@ async function initDataParser() {
 
 /**
  * Parses a single line of text from the serial port.
- * It can handle both full CSV lines and the special JSON state messages.
+ * It can handle both full CSV lines, servo command messages, and special JSON state messages.
  * @param {string} line - The raw line of text from the serial port.
  * @returns {object|null} A structured data object or null if the line is not valid data.
  */
@@ -228,7 +256,13 @@ function parseData(line) {
         }
     }
 
-    // 2. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
+    // 2. Handle servo command messages: "Servo CMDs (P,R,Y): 66, 86, 81"
+    const servoData = parseServoCommand(trimmedLine);
+    if (servoData) {
+        return servoData;
+    }
+
+    // 3. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
     // We identify them by checking if the first part is a number (sequence number).
     const parts = trimmedLine.split(',');
     if (parts.length > 1 && !isNaN(parts[0])) {

@@ -20,6 +20,7 @@
     <button onclick="testRealData()">Test Real Serial Data</button>
     <button onclick="testCSVDetection()">Test CSV Detection</button>
     <button onclick="testDataParsing()">Test Data Parsing</button>
+    <button onclick="testServoCommands()">Test Servo Commands</button>
     
     <div id="testResults"></div>
 
@@ -146,6 +147,27 @@
             } catch (error) {
                 addTestResult('Parser Error', error.message, 'error');
             }
+        }
+
+        function testServoCommands() {
+            addResult("Testing Servo Command Parsing", "info");
+            
+            const servoTestCases = [
+                "Servo CMDs (P,R,Y): 66, 86, 81",
+                "Servo CMDs (P,R,Y): 78, 79, 82", 
+                "Servo CMDs (P,R,Y): 135, 52, 85",
+                "Servo CMDs (P,R,Y): 72, 58, 93"
+            ];
+            
+                         servoTestCases.forEach(testCase => {
+                 const result = parseServoCommand(testCase);
+                 if (result) {
+                     addResult(`✓ Parsed: "${testCase}"`, "success");
+                     addResult(`  → P:${result.pitchServo}, R:${result.rollServo}, Y:${result.yawServo}`, "info");
+                 } else {
+                     addResult(`✗ Failed to parse: "${testCase}"`, "error");
+                 }
+             });
         }
     </script>
 </body>

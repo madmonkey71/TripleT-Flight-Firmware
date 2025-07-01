@@ -84,6 +84,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             return;
         }
+        
+        if (parsedData.isServoCommand) {
+            logToTerminal(`Servo CMDs (P,R,Y): ${parsedData.pitchServo}, ${parsedData.rollServo}, ${parsedData.yawServo}`, 'received');
+            if (typeof updateUI === 'function') {
+                updateUI(parsedData);
+            }
+            return;
+        }
 
         const parts = data.trim().split(',');
         const condensed = parts.slice(0, 3).join(',') + `... (${parts.length} fields)`;
@@ -146,3 +154,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 });
+
+// Utility function for timestamped logging
+function getCurrentTimeString() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+}

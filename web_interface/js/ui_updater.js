@@ -73,6 +73,18 @@ function updateUI(parsedData) {
         return;
     }
 
+    // --- Handle Servo Command Data ---
+    if (parsedData.isServoCommand) {
+        // Update actuator chart with servo angle data (0-180 degrees)
+        if (actuatorChartInstance) {
+            updateChart(actuatorChartInstance, { 
+                timestamp: parsedData.timestamp, 
+                values: [parsedData.rollServo, parsedData.pitchServo, parsedData.yawServo] 
+            });
+        }
+        return; // Don't process further for servo commands
+    }
+
     // --- Update Charts ---
     const timestamp = parsedData.Timestamp;
     const toDegrees = (radians) => (radians * 180 / Math.PI);

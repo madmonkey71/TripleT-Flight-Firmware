@@ -301,7 +301,7 @@ function initICMMagChart(ctx) {
 }
 
 /**
- * Initializes a new Chart.js line chart for Actuator Control (placeholder).
+ * Initializes a new Chart.js line chart for Actuator Control.
  * @param {CanvasRenderingContext2D} ctx - The canvas 2D rendering context.
  * @returns {Chart} The Chart.js instance.
  */
@@ -313,24 +313,32 @@ function initActuatorChart(ctx) {
             labels: [], // Timestamps
             datasets: [
                 {
-                    label: 'Actuator Output 1',
+                    label: 'Roll Actuator',
                     data: [], 
-                    borderColor: 'rgb(153, 102, 255)', // Purple
-                    backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                    borderColor: 'rgb(255, 99, 132)', // Red
+                    backgroundColor: 'rgba(255, 99, 132, 0.5)',
                     tension: 0.1,
                     pointRadius: 1,
                     borderWidth: 1
                 },
                 {
-                    label: 'Actuator Output 2',
+                    label: 'Pitch Actuator',
                     data: [], 
-                    borderColor: 'rgb(255, 159, 64)', // Orange (already used, consider different)
-                    backgroundColor: 'rgba(255, 159, 64, 0.5)',
+                    borderColor: 'rgb(54, 162, 235)', // Blue
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    tension: 0.1,
+                    pointRadius: 1,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Yaw Actuator',
+                    data: [], 
+                    borderColor: 'rgb(75, 192, 192)', // Green
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
                     tension: 0.1,
                     pointRadius: 1,
                     borderWidth: 1
                 }
-                // Add more datasets if needed for actuators
             ]
         },
         options: {
@@ -346,8 +354,20 @@ function initActuatorChart(ctx) {
                 y: {
                     title: {
                         display: true,
-                        text: 'Actuator Output (%)' // Or appropriate unit
-                    }
+                        text: 'Actuator Command'
+                    },
+                    // Allow for both normalized outputs (-1 to 1) and servo angles (0 to 180)
+                    suggestedMin: -1,
+                    suggestedMax: 180
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
                 }
             }
         }

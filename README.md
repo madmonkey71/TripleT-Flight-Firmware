@@ -1,27 +1,25 @@
 # TripleT Flight Firmware
 
 **Current Version:** v0.50  
-**Current State:** Beta  
-**Last Updated:** June 2025 (Updated for v0.50 features)
+**Current State:** Beta (Ready for Controlled Test Flights)
+**Last Updated:** January 2025
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
 
-## Project Status - Beta (Ready for Controlled Test Flights)
-**Current Version**: v0.50
-
 ### Recent Updates (v0.50)
+- ✅ **Critical Bug Fixes**: Fixed multiple compilation errors including missing extern declarations, variable naming inconsistencies, and function structure issues.
 - ✅ **Enhanced Recovery State**: Implemented SOS audible beacon pattern.
 - ✅ **Enhanced Recovery State**: Added visual LED strobe pattern for location.
 - ✅ **Enhanced Recovery State**: Added mock-up GPS coordinate serial beacon output.
 - ✅ **Battery Voltage Monitoring**: Implemented basic battery voltage reading, logging, and serial debug output.
-- ✅ **Kalman Filter as Primary**: Kalman filter is the sole orientation filter, integrating accelerometer, gyroscope, and magnetometer data. Yaw drift corrected using tilt-compensated magnetometer. (Carried over from v0.48)
-- ✅ **Magnetometer Calibration Persistence**: Bias and scale factors saved to EEPROM. (Carried over from v0.48)
-- ✅ **Dual Accelerometer Fusion**: Using KX134 for high-G and ICM-20948 otherwise. (Carried over from v0.48)
-- ✅ **Dynamic Main Parachute Deployment**: Altitude calculated dynamically. (Carried over from v0.48)
-- ✅ **Enhanced Error Recovery**: Automatic error recovery with grace period. (Carried over from v0.48)
-- ✅ **Comprehensive GNC Data Logging**: PID data logged. (Carried over from v0.48)
-
+- ✅ **Kalman Filter as Primary**: Kalman filter is the sole orientation filter, integrating accelerometer, gyroscope, and magnetometer data. Yaw drift corrected using tilt-compensated magnetometer.
+- ✅ **Magnetometer Calibration Persistence**: Bias and scale factors saved to EEPROM.
+- ✅ **Dual Accelerometer Fusion**: Using KX134 for high-G and ICM-20948 otherwise.
+- ✅ **Dynamic Main Parachute Deployment**: Altitude calculated dynamically.
+- ✅ **Enhanced Error Recovery**: Automatic error recovery with grace period.
+- ✅ **Comprehensive GNC Data Logging**: PID data logged.
+- ✅ **Code Quality Improvements**: Fixed compilation errors, improved variable naming consistency, and ensured proper function structure organization.
 
 ### Development Status Assessment (Based on Updated Gap Analysis)
 
@@ -40,6 +38,8 @@
 - ✅ **Orientation Filtering**: Robust Kalman filter implemented for 9-DOF sensor fusion, including magnetometer for yaw correction.
 - ✅ **Magnetometer Calibration**: Interactive magnetometer calibration routine with EEPROM persistence.
 - ✅ **Dual Accelerometer Strategy**: Intelligent switching between KX134 (high-G) and ICM-20948 accelerometers.
+- ✅ **Recovery Beacon System**: Comprehensive recovery aids including SOS audio pattern, LED strobe, and GPS coordinate beacon.
+- ✅ **Code Quality**: Clean, well-structured code with proper error handling and variable naming consistency.
 
 #### ✅ BASIC FLIGHT CONTROL READY
 - ✅ **PID Control System**: 3-axis PID controllers (configurable via `PID_ROLL_KP` etc.) with state-based activation (BOOST/COAST only).
@@ -47,18 +47,34 @@
 - ✅ **Actuator Integration**: PWM servo control (`ACTUATOR_PITCH_PIN`, `ACTUATOR_ROLL_PIN`, `ACTUATOR_YAW_PIN`) with configurable mapping and limits.
 
 #### 🔴 HIGH PRIORITY - MISSING FEATURES
+- ❌ **Hardware reference design**: Hardware platform design is still being worked on. 
 - ❌ **Live Telemetry**: Radio communication system not implemented (critical for operational flights). Plan exists for ESP32 bridge.
 - ❌ **Advanced Guidance**: Only basic attitude hold implemented; lacks trajectory following, gravity turns, wind compensation.
 
 #### 🟡 MEDIUM PRIORITY - ENHANCEMENTS NEEDED
-- 🚧 **Recovery System**: Basic implementation; lacks GPS beacon transmission, advanced audio locator patterns, visual strobes in `RECOVERY` state.
-- 🚧 **Enhanced Diagnostics**: Basic error handling; could benefit from more specific error codes and more nuanced recovery procedures.
 - 🚧 **Sensor Fusion Validation**: Kalman filter and sensor fusion implemented, but orientation accuracy needs validation against known reference data (physical testing).
+- 🚧 **Expanded Sensor Support**: Extend the platform to allow for a wider variety of sensor hardware and eventually the microprocessor platform (Long term)
 
-**Current Capability Assessment**: Ready for controlled test flights with robust attitude hold and data logging. Advanced operational flights require telemetry and more sophisticated guidance algorithms.
+**Current Capability Assessment**: Code quality issues resolved. Ready for controlled test flights with robust attitude hold, comprehensive recovery systems, and extensive data logging. Advanced operational flights require telemetry and more sophisticated stabilisation / guidance algorithms.
+
+### Compilation Status
+- ✅ **Fixed Critical Compilation Errors**: 
+  - Added missing `extern ErrorCode_t g_last_error_code;` declarations in `command_processor.cpp` and `icm_20948_functions.cpp`
+  - Corrected variable naming inconsistencies in SOS pattern implementation
+  - Removed duplicate static variable declarations 
+  - Fixed function structure issues (functions now properly defined outside of parent functions)
+  - Corrected variable name typos in GPS altitude detection
+
+### Recovery System Enhancements
+The Recovery state now includes comprehensive location aids:
+
+1. **SOS Audio Beacon**: Repeating SOS pattern (···---···) using buzzer at configurable frequency
+2. **LED Strobe Pattern**: High-visibility strobe pattern for visual location assistance
+3. **GPS Coordinate Beacon**: Serial output of GPS coordinates for recovery teams
+4. **Configurable Timing**: All patterns have individually configurable timing constants
 
 ### Redundant Apogee Detection
-To ensure the highest reliability for parachute deployment, the firmware now employs a multi-method apogee detection strategy. This system is designed to detect apogee accurately, even in the case of a single sensor malfunction. Apogee is triggered if any of the following conditions are met:
+To ensure the highest reliability for parachute deployment, the firmware employs a multi-method apogee detection strategy. This system is designed to detect apogee accurately, even in the case of a single sensor malfunction. Apogee is triggered if any of the following conditions are met:
 
 1.  **Primary: Barometric Pressure (`APOGEE_CONFIRMATION_COUNT`):**
     *   Tracks maximum altitude from MS5611. Apogee if current altitude is consistently lower than max.
@@ -74,12 +90,6 @@ This layered approach ensures that the flight computer can reliably detect the p
 ## State Machine
 The firmware operates on a 14-state state machine (see `State Machine.md` and `src/data_structures.h`) that dictates the rocket's behavior throughout its flight, from startup to recovery.
 
-### AI Assistance
-This project utilizes AI assistance for:
-- Code documentation and implementation.
-- System architecture design and review.
-- Gap analysis and project planning.
-
 ## Overview
 
 This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets. The system manages all phases of flight from launch detection through recovery, utilizing a Kalman filter for sensor fusion, robust data logging, and extensive safety features.
@@ -92,13 +102,14 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 - **Kalman Orientation Filtering**: Sole orientation filter providing roll, pitch, and tilt-compensated yaw from magnetometer data. Magnetometer calibration data is persisted to EEPROM.
 - **Redundant Apogee Detection**: Four distinct methods: barometric, accelerometer, GPS, and a backup timer.
 - **Configurable Parachute Deployment**: Supports single or dual-deploy configurations with dynamic calculation of main parachute deployment altitude based on ground level.
+- **Comprehensive Recovery System**: SOS audio beacon, LED strobe patterns, and GPS coordinate transmission for post-flight recovery.
 - **Comprehensive Data Logging**: Real-time CSV logging to SD card with 50+ data points, including detailed GNC (PID targets, integrals, actuator outputs), Kalman filter orientation, and battery voltage.
 - **Interactive Command Interface**: Serial commands for configuration, calibration (gyro, magnetometer with persistence), diagnostics, and system control.
 - **Visual Status Indicators**: NeoPixel LEDs for clear flight state indication, including recovery strobe pattern.
 - **Audio Feedback**: Buzzer patterns for different states and alerts, including SOS beacon in `RECOVERY` state.
 - **Robust Error Recovery**: Automatic sensor health monitoring, transition to `ERROR` state on critical failures, and automatic recovery attempts with a grace period. Manual recovery commands available.
 - **EEPROM State Persistence**: Critical flight state information (`FlightStateData` struct) saved to EEPROM for recovery after power loss.
-- **Battery Voltage Monitoring**: Reads and logs battery voltage.
+- **Battery Voltage Monitoring**: Reads and logs battery voltage for system health monitoring.
 
 ## Hardware Requirements
 
@@ -418,3 +429,8 @@ The firmware uses a system of error codes to help diagnose issues. When the syst
 | 250        | `CONFIG_ERROR_MAIN_PARACHUTE`     | Example: `MAIN_PRESENT` is false in `config.h` (not currently enforced by an error code).    |
 | 255        | `UNKNOWN_ERROR`                   | An unspecified error occurred.                                                                 |
 
+## AI Assistance
+This project utilizes AI assistance for:
+- Code documentation and implementation.
+- System architecture design and review.
+- Gap analysis and project planning.

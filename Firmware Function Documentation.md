@@ -234,8 +234,9 @@ This section details key functions, primarily focusing on those in `TripleT_Flig
 *   **`get_accel_magnitude(...)`:** Calculates acceleration magnitude, preferring KX134 if available, else ICM-20948.
 *   **`logDataToString(const LogData& data)`:** Converts `LogData` struct to a CSV string based on `LOG_COLUMNS`.
 *   **`convertQuaternionToEuler(...)` and `convertEulerToQuaternion(...)`:** Quaternion/Euler angle conversion utilities.
-*   **`isSensorSuiteHealthy(FlightState currentState, bool verbose)`:** Checks health of critical sensors based on current flight state requirements.
+*   **`isSensorSuiteHealthy(FlightState currentState, bool verbose)`:** Checks health of critical sensors based on current flight state requirements. Note: This function itself does not set `g_last_error_code`; the calling function is responsible for interpreting the boolean result and setting a specific error code if appropriate (e.g., `STATE_TRANSITION_INVALID_HEALTH`).
 *   **`getStateName(FlightState state)`:** Returns human-readable string for a `FlightState` enum.
+*   **`getErrorCodeName(ErrorCode_t code)`:** Returns a human-readable string for a given `ErrorCode_t` enum value. Used for serial display of errors.
 *   **`read_battery_voltage()`:** Reads the analog pin defined by `BATTERY_VOLTAGE_PIN`, applies voltage divider calculation using `VOLTAGE_DIVIDER_R1`, `VOLTAGE_DIVIDER_R2`, `ADC_REFERENCE_VOLTAGE`, and `ADC_RESOLUTION` to return the calculated battery voltage. Returns `0.0f` if `ENABLE_BATTERY_MONITORING` is `0`.
     *   **Voltage Divider Construction Note:** Connect Battery(+) to R1. Connect the junction of R1 and R2 to the `BATTERY_VOLTAGE_PIN`. Connect R2 to Ground. The formula used is `V_battery = V_adc * (R1 + R2) / R2`. Ensure the voltage at the ADC pin (`V_adc`) does not exceed `ADC_REFERENCE_VOLTAGE`.
 *   **Debug print functions (`printDebugHeader`, `printDebugValue`, etc.):** Helpers for formatted serial output.
@@ -244,7 +245,7 @@ This section details key functions, primarily focusing on those in `TripleT_Flig
 ### Command Processor (`src/command_processor.cpp`)
 *   **`processCommand(String command, FlightState& currentFlightState_ref, ...)`:** Parses serial input and executes corresponding actions (toggling debug flags including `enableBatteryDebug`, initiating calibration, arming, error clearing, status reports, etc.). Interacts with most other modules.
 *   **Helper functions:**
-    *   `printHelpMessage()`, `printSDCardStatus()`, `attemptToStartLogging()`, `printStorageStatistics()`, `toggleDebugFlag()`, `performCalibration()`, `printSystemStatus()`, `prepareForShutdown()`, `setOrientationFilter()`, `getOrientationFilterStatus()`. These are called by `processCommand`.
+    *   `printHelpMessage()`, `printSDCardStatus()`, `attemptToStartLogging()`, `printStorageStatistics()`, `toggleDebugFlag()`, `performCalibration()`, `printSystemStatus()` (now displays last error code), `prepareForShutdown()`, `setOrientationFilter()`, `getOrientationFilterStatus()`. These are called by `processCommand`.
 
 ---
 ### Potentially Orphaned/Unused Functions (Summary from previous analysis)

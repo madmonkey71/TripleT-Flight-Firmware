@@ -31,6 +31,9 @@ bool GPS_time_valid = false;
 // Add reference to debug flag
 extern volatile bool enableGPSDebug;
 
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For setting error codes
+
 // Create a single persistent NullStream that doesn't output anything
 class NullStream : public Stream {
 public:
@@ -80,7 +83,14 @@ void gps_init() {
   setGPSDebugging(enableGPSDebug);
   
   // Direct initialization without checking connection
-  myGNSS.begin(Wire);
+  if (!myGNSS.begin(Wire)) {
+    Serial.println(F("ERROR: GPS module (myGNSS.begin()) failed to initialize!"));
+    g_last_error_code = SENSOR_INIT_FAIL_GPS;
+    // Note: Unlike other sensors, we might not want to 'return' here,
+    // as the system might still attempt to configure and use it later.
+    // The g_icm20948_ready or equivalent for GPS isn't explicitly set here,
+    // but isSensorSuiteHealthy would catch this if GPS is vital.
+  }
   
   // Configure the GPS module
   Serial.print(F("Configuring GPS..."));

@@ -197,6 +197,14 @@ void printSystemStatus(const SystemStatusContext& statusCtx) {
     Serial.print("Barometer (MS5611): "); Serial.println(statusCtx.ms5611_initialized_ok ? (statusCtx.ms5611Sensor_ref.isConnected() ? "Connected" : "Init OK, Not Connected") : "Not Initialized");
     Serial.print("Accelerometer (KX134): "); Serial.println(statusCtx.kx134_initialized_ok ? "Initialized" : "Not Initialized");
     Serial.print("IMU (ICM20948): "); Serial.println(statusCtx.icm20948_ready ? "Ready" : "Not Ready");
+    // Display last error code if one is set
+    if (g_last_error_code != NO_ERROR) {
+        Serial.print("Last Error Code: ");
+        Serial.print(static_cast<int>(g_last_error_code));
+        Serial.print(" (");
+        Serial.print(getErrorCodeName(g_last_error_code)); // Assumes getErrorCodeName is available globally or via include
+        Serial.println(")");
+    }
 }
 
 void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updated

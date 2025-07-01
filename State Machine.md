@@ -277,8 +277,12 @@ The illustrative C++ code blocks for testing (`testStateRecovery`, `testApogeeDe
     *   Verify automatic recovery from `ERROR` state when sensor health is restored.
     *   Test manual recovery commands (`clear_errors`, `clear_to_calibration`).
     *   Check the 5-second grace period after error clearing.
+    *   Verify that specific error codes (e.g., `STATE_TRANSITION_INVALID_HEALTH`) are set and logged when `isSensorSuiteHealthy` causes a transition to `ERROR`.
 2.  **State Timeouts:** While specific state timeouts (like `ARMED_TIMEOUT_MS`) are defined in `config.h`, their direct implementation in `ProcessFlightState` for automatic transitions (other than `LANDED_TIMEOUT_MS` and `RECOVERY_TIMEOUT_MS`) is not explicitly detailed in the provided `flight_logic.cpp`. Testing would involve verifying implemented timeouts.
 3.  **Self-Test Sequence:** The firmware does not currently have an explicit "daily or pre-flight self-test sequence" command. Testing individual components is done via status commands and debug flags.
+4.  **Error Code Display:**
+    *   Verify that the `ERROR` state in `ProcessFlightState` periodically prints the last error code and its string name.
+    *   Verify that the `status` (`b`) command correctly displays the last error code via `printSystemStatus`.
 
 ## Additional Enhancements
 This section reflects the status based on the `UPDATED_GAP_ANALYSIS_2025.md` and the v0.48 codebase.

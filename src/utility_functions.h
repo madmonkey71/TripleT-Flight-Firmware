@@ -75,4 +75,8 @@ const char* getStateName(FlightState state);
 // Battery Voltage Reading
 float read_battery_voltage();
 
+// Error Code to String Conversion
+#include "error_codes.h" // Include ErrorCode_t definition
+const char* getErrorCodeName(ErrorCode_t code);
+
 #endif // UTILITY_FUNCTIONS_H 

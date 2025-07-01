@@ -80,6 +80,10 @@ float g_main_deploy_altitude_m_agl = 0.0f;
 // Global variable for battery voltage
 float g_battery_voltage = 0.0f;
 
+// Global variable for last recorded error code
+#include "error_codes.h" // Include the error code definitions
+ErrorCode_t g_last_error_code = NO_ERROR;
+
 const char* BOARD_NAME = "Teensy 4.1"; // This is a const, often uppercased, g_ prefix is optional by convention
 
 // Orientation Filter Selection - Always use Kalman filter
@@ -235,6 +239,7 @@ bool createNewLogFile(SdFat& sd_obj, SFE_UBLOX_GNSS& gnss, FsFile& logFile_obj_r
   // Open the file using the passed FsFile reference
   if (!logFile_obj_ref.open(local_fileName_buf, O_RDWR | O_CREAT | O_EXCL)) {
     Serial.println(F("Error: Failed to create new log file. SD card might be full, unformatted, or corrupted. Please check the SD card."));
+    g_last_error_code = LOG_FILE_CREATE_FAIL;
     // Do NOT modify global loggingEnabled here. Caller (attemptToStartLogging) will do that.
     return false;
   }
@@ -367,6 +372,9 @@ void WriteLogData(bool forceLog) {
   // Battery Voltage
   logEntry.battery_voltage = g_battery_voltage;
 
+  // Last Error Code
+  logEntry.last_error_code = static_cast<uint8_t>(g_last_error_code);
+
   // Populate Guidance Control Data
   // Target Euler angles and PID integrals are static in guidance_control.cpp.
   // Without dedicated getter functions, we log placeholders or last known values if available.
@@ -431,6 +439,7 @@ void WriteLogData(bool forceLog) {
   String logString = logDataToString(logEntry);
   if (!g_LogDataFile.println(logString)) {
     Serial.println(F("ERROR: Failed to write data to log file. Current log file might be closed or corrupted."));
+    g_last_error_code = SD_CARD_WRITE_FAIL;
     lastLogWriteErrorTime = millis(); // Record time of write error
 
     // Attempt to recover: Close current file and try to open a new one.
@@ -691,8 +700,11 @@ void handleInitialStateManagement() {
       }
     } else {
       Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
+      g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error if identifiable here
       g_currentFlightState = ERROR;
       g_stateEntryTime = millis();
+      saveStateToEEPROM(); // Save state
+      WriteLogData(true);  // Log error immediately
     }
   } else if (g_currentFlightState == ERROR && systemHealthy) {
     // Check if barometer is already calibrated to skip CALIBRATION state
@@ -709,8 +721,11 @@ void handleInitialStateManagement() {
     saveStateToEEPROM();
   } else if (!systemHealthy && g_currentFlightState != ERROR) {
     Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
+    g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error
     g_currentFlightState = ERROR;
     g_stateEntryTime = millis();
+    saveStateToEEPROM(); // Save state
+    WriteLogData(true);  // Log error immediately
   }
 
   if (g_debugFlags.enableSystemDebug) {
@@ -969,6 +984,7 @@ bool initSDCard(SdFat& sd_obj, bool& sdCardMounted_out, bool& sdCardPresent_out)
   // Try to initialize the SD card
   if (!sd_obj.begin(SdioConfig(FIFO_SDIO))) {
     Serial.println(F("SD Card initialization failed!"));
+    g_last_error_code = SD_CARD_INIT_FAIL; // Or SD_CARD_MOUNT_FAIL depending on interpretation
     return false;
   }
   

@@ -9,18 +9,23 @@ float kx134_accel[3] = {0, 0, 0};  // Initialize array to zeros
 // Add reference to debug flag
 extern bool enableSensorDebug;
 
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For setting error codes
+
 bool kx134_init() {
     Serial.println("Initializing KX134 accelerometer...");
     
     // First try to begin communication
     if (!kxAccel.begin()) {
         Serial.println("KX134 initialization failed - could not communicate with device");
+        g_last_error_code = SENSOR_INIT_FAIL_KX134;
         return false;
     }
     
     // Perform software reset
     if (!kxAccel.softwareReset()) {
         Serial.println("KX134 software reset failed");
+        g_last_error_code = SENSOR_INIT_FAIL_KX134; // Could be a more specific error if desired
         return false;
     }
     

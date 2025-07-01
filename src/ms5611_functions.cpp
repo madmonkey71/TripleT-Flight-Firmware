@@ -36,6 +36,8 @@ bool ms5611_initialized_ok = false;
 
 // Declare the global variable from main
 extern bool baroCalibrated;
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For setting error codes
 
 // Add reference to debug flag
 extern bool enableSensorDebug;
@@ -80,11 +82,13 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
             // Re-check the new pressure
             if (pressure < MIN_VALID_CALIBRATION_PRESSURE_HPA || pressure > MAX_VALID_CALIBRATION_PRESSURE_HPA) {
                  Serial.println(F("New pressure reading still invalid. Calibration aborted."));
+                 g_last_error_code = SENSOR_READ_FAIL_MS5611; // Or a specific BARO_CAL_INVALID_PRESSURE
                  return false;
             }
         } else {
             Serial.print(F("MS5611 read error: "));
             Serial.println(result);
+            g_last_error_code = SENSOR_READ_FAIL_MS5611;
             return false;
         }
     }
@@ -171,6 +175,12 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
     Serial.print(GPS_fixType);
     Serial.print(F(", pDOP: "));
     Serial.println(pDOP / 100.0, 2);
+
+    if (GPS_fixType < MIN_GPS_FIX_TYPE_FOR_CALIBRATION || pDOP >= MAX_PDOP_FOR_CALIBRATION) {
+        g_last_error_code = BARO_CALIBRATION_FAIL_NO_GPS;
+    } else {
+        g_last_error_code = BARO_CALIBRATION_FAIL_TIMEOUT; // General timeout if GPS was good but still failed
+    }
     
     return false;  // Timeout occurred
 }
@@ -229,6 +239,7 @@ void ms5611_init() {
         Serial.println(ms5611Sensor.getAddress());
     } else {
         Serial.println(F("ERROR: MS5611 not found! Check connections."));
+        g_last_error_code = SENSOR_INIT_FAIL_MS5611;
         ms5611_initialized_ok = false;
         delay(INIT_ERROR_DELAY_MS);
         return;
@@ -265,6 +276,7 @@ void ms5611_init() {
         Serial.print(F("ERROR: MS5611 stabilization failed. Last pressure: "));
         Serial.print(pressure);
         Serial.println(F(" hPa. Check sensor."));
+        g_last_error_code = SENSOR_READ_FAIL_MS5611; // Could also be SENSOR_INIT_FAIL if considered part of init
         ms5611_initialized_ok = false;
         return;
     }

@@ -121,12 +121,17 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
 
 // Initialize ICM-20948 IMU
 void ICM_20948_init() {
+  #include "error_codes.h" // For ErrorCode_t
+  extern ErrorCode_t g_last_error_code; // For setting error codes
+
   // Initialize ICM-20948 with I2C interface
-  Wire.begin();
+  Wire.begin(); // Ensure Wire is initialized, though it's likely done in main setup
   myICM.begin(Wire, 1); // 1 = ADO high
   
   if (myICM.status != ICM_20948_Stat_Ok) {
     Serial.println("ICM-20948 initialization failed");
+    g_last_error_code = SENSOR_INIT_FAIL_ICM20948;
+    g_icm20948_ready = false; // Ensure this is set if init fails
     return;
   }
   
@@ -506,6 +511,7 @@ bool icm_20948_load_calibration() {
         return true;
     } else {
         Serial.println(F("No valid calibration data found in EEPROM."));
+        g_last_error_code = MAG_CALIBRATION_LOAD_FAIL;
         return false;
     }
 }

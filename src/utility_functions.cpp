@@ -533,3 +533,31 @@ float read_battery_voltage() {
     return 0.0f; // Return 0 if monitoring is disabled
   #endif
 }
+
+const char* getErrorCodeName(ErrorCode_t code) {
+    switch (code) {
+        case NO_ERROR: return "NO_ERROR";
+        case SENSOR_INIT_FAIL_MS5611: return "SENSOR_INIT_FAIL_MS5611";
+        case SENSOR_INIT_FAIL_ICM20948: return "SENSOR_INIT_FAIL_ICM20948";
+        case SENSOR_INIT_FAIL_KX134: return "SENSOR_INIT_FAIL_KX134";
+        case SENSOR_INIT_FAIL_GPS: return "SENSOR_INIT_FAIL_GPS";
+        case SENSOR_READ_FAIL_MS5611: return "SENSOR_READ_FAIL_MS5611";
+        case SENSOR_READ_FAIL_ICM20948: return "SENSOR_READ_FAIL_ICM20948";
+        case SENSOR_READ_FAIL_KX134: return "SENSOR_READ_FAIL_KX134";
+        case SENSOR_READ_FAIL_GPS: return "SENSOR_READ_FAIL_GPS";
+        case SD_CARD_INIT_FAIL: return "SD_CARD_INIT_FAIL";
+        case SD_CARD_MOUNT_FAIL: return "SD_CARD_MOUNT_FAIL";
+        case LOG_FILE_CREATE_FAIL: return "LOG_FILE_CREATE_FAIL";
+        case SD_CARD_WRITE_FAIL: return "SD_CARD_WRITE_FAIL";
+        case SD_CARD_LOW_SPACE: return "SD_CARD_LOW_SPACE";
+        case BARO_CALIBRATION_FAIL_NO_GPS: return "BARO_CALIBRATION_FAIL_NO_GPS";
+        case BARO_CALIBRATION_FAIL_TIMEOUT: return "BARO_CALIBRATION_FAIL_TIMEOUT";
+        case MAG_CALIBRATION_LOAD_FAIL: return "MAG_CALIBRATION_LOAD_FAIL";
+        case STATE_TRANSITION_INVALID_HEALTH: return "STATE_TRANSITION_INVALID_HEALTH";
+        case ARM_FAIL_HEALTH_CHECK: return "ARM_FAIL_HEALTH_CHECK";
+        case EEPROM_SIGNATURE_INVALID: return "EEPROM_SIGNATURE_INVALID";
+        case CONFIG_ERROR_MAIN_PARACHUTE: return "CONFIG_ERROR_MAIN_PARACHUTE";
+        case UNKNOWN_ERROR: return "UNKNOWN_ERROR";
+        default: return "UNDEFINED_ERROR_CODE";
+    }
+}

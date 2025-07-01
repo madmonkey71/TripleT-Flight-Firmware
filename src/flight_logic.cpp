@@ -16,6 +16,8 @@
 #include "icm_20948_functions.h"
 
 // Externs for variables globally defined in TripleT_Flight_Firmware.cpp
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For accessing last error code
 extern FlightState g_currentFlightState;
 extern FlightState g_previousFlightState;
 extern unsigned long g_stateEntryTime;
@@ -122,12 +124,15 @@ void ProcessFlightState() {
                 Serial.println(F("Use 'clear_errors' command to attempt recovery."));
                 Serial.println(F("--------------------------------------------------"));
                 
+                g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Set error code
                 g_currentFlightState = ERROR;
-                // When we transition to error, we should immediately save and return
-                // to avoid any other logic processing in this loop cycle.
+                g_stateEntryTime = millis(); // Ensure state entry time is updated
+                // When we transition to error, we should immediately save and log.
                 saveStateToEEPROM();
+                WriteLogData(true); // Log immediately with the error code
                 setFlightStateLED(g_currentFlightState);
-                return;
+                g_pixels.show(); // Explicitly show error LED
+                return; // Avoid further processing this cycle
             } else {
                 // Add periodic health status when things are OK
                 static unsigned long lastHealthOkTime = 0;
@@ -311,24 +316,34 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("RECOVERY: System in post-flight recovery mode."));
                 break;
             case ERROR: {
-                // Simple error buzzer pattern
+                // Buzzer Pattern for ERROR state
                 static unsigned long lastErrorBuzzerTime = 0;
                 static bool errorBeepState = false;
-                unsigned long currentTime = millis();
-
-                // Simple fast beeping for error state
-                if (currentTime - lastErrorBuzzerTime > 200) {
-                    lastErrorBuzzerTime = currentTime;
+                unsigned long currentTimeMillis_error = millis(); // Use a distinct name to avoid conflict if currentTimeMillis is used elsewhere in a larger scope
+                if (currentTimeMillis_error - lastErrorBuzzerTime > 200) { // Fast beeping
+                    lastErrorBuzzerTime = currentTimeMillis_error;
                     errorBeepState = !errorBeepState;
                     if (errorBeepState && BUZZER_OUTPUT) {
-                        tone(BUZZER_PIN, 2500);
+                        tone(BUZZER_PIN, 2500); // Example error frequency
                     } else if (BUZZER_OUTPUT) {
                         noTone(BUZZER_PIN);
                     }
                 }
 
-                // ERROR recovery is now handled by automatic recovery logic above
-                // and clear_errors command as backup
+                // Periodic Error Code Printout
+                static unsigned long lastErrorSerialPrintTime = 0;
+                // Use g_debugFlags.enableSystemDebug or a new specific flag if desired
+                if (g_debugFlags.enableSystemDebug && (currentTimeMillis_error - lastErrorSerialPrintTime > 5000)) { // Print every 5 seconds
+                    lastErrorSerialPrintTime = currentTimeMillis_error;
+                    Serial.print(F("SYSTEM ERROR STATE - Last Error Code: "));
+                    Serial.print(static_cast<int>(g_last_error_code));
+                    Serial.print(F(" ("));
+                    Serial.print(getErrorCodeName(g_last_error_code)); // Assumes getErrorCodeName is available
+                    Serial.println(F(")"));
+                    Serial.println(F("Use 'clear_errors' or check 'status_sensors'/'b' command for more info."));
+                }
+                // Note: Automatic recovery logic is handled in the main part of ProcessFlightState
+                // before the switch statement if g_currentFlightState is ERROR.
             }
                 break;
             default:

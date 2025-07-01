@@ -388,4 +388,33 @@ For issues, questions, or contributions, please use the GitHub repository's issu
 
 *This "Recent Changes" section provides a summary based on the code analysis for updating documentation to v0.48. For a detailed historical changelog, refer to commit history.*
 
+---
+## Error Codes
+
+The firmware uses a system of error codes to help diagnose issues. When the system enters an `ERROR` state, or through certain status commands, the last recorded error code will be displayed. These codes are defined in `src/error_codes.h`.
+
+| Code (Dec) | Enum Name                         | Description & Potential Causes                                                                 |
+|------------|-----------------------------------|------------------------------------------------------------------------------------------------|
+| 0          | `NO_ERROR`                        | No error recorded.                                                                             |
+| 10         | `SENSOR_INIT_FAIL_MS5611`         | Failed to initialize the MS5611 barometer. Check I2C wiring, power, sensor health.             |
+| 11         | `SENSOR_INIT_FAIL_ICM20948`       | Failed to initialize the ICM-20948 IMU. Check I2C wiring, power, sensor health.                 |
+| 12         | `SENSOR_INIT_FAIL_KX134`          | Failed to initialize the KX134 accelerometer. Check I2C wiring, power, sensor health.           |
+| 13         | `SENSOR_INIT_FAIL_GPS`            | Failed to initialize the GPS module (e.g., `myGNSS.begin()` failed). Check I2C/UART, power.    |
+| 30         | `SENSOR_READ_FAIL_MS5611`         | Failed to read data from MS5611 (e.g., during stabilization or calibration). Sensor might be faulty. |
+| 31         | `SENSOR_READ_FAIL_ICM20948`       | Failed to read data from ICM-20948.                                                            |
+| 32         | `SENSOR_READ_FAIL_KX134`          | Failed to read data from KX134.                                                                |
+| 33         | `SENSOR_READ_FAIL_GPS`            | Failed to get PVT data from GPS repeatedly.                                                    |
+| 50         | `SD_CARD_INIT_FAIL`               | SD card initialization failed (e.g., `sd.begin()` returned false). Check card, format (FAT32).   |
+| 51         | `SD_CARD_MOUNT_FAIL`              | Could be synonymous with `SD_CARD_INIT_FAIL` depending on library specifics.                   |
+| 52         | `LOG_FILE_CREATE_FAIL`            | Failed to create a new log file on the SD card. Card might be full or write-protected.         |
+| 53         | `SD_CARD_WRITE_FAIL`              | Failed to write data to the open log file. Card might be full or corrupted.                    |
+| 54         | `SD_CARD_LOW_SPACE`               | Warning: SD card free space is below the configured minimum.                                   |
+| 60         | `BARO_CALIBRATION_FAIL_NO_GPS`    | Barometer calibration attempted but failed due to insufficient GPS fix (type or pDOP).         |
+| 61         | `BARO_CALIBRATION_FAIL_TIMEOUT`   | Barometer calibration timed out waiting for a good GPS fix or valid pressure.                  |
+| 62         | `MAG_CALIBRATION_LOAD_FAIL`       | Failed to load magnetometer calibration data from EEPROM (invalid signature/magic number).     |
+| 70         | `STATE_TRANSITION_INVALID_HEALTH` | System health check (`isSensorSuiteHealthy`) failed, preventing a critical state transition or during initialization. |
+| 71         | `ARM_FAIL_HEALTH_CHECK`           | Attempt to `arm` the system failed due to a health check failure for the ARMED state.          |
+| 80         | `EEPROM_SIGNATURE_INVALID`        | EEPROM data for flight state recovery was found but had an invalid signature. Default state used. |
+| 250        | `CONFIG_ERROR_MAIN_PARACHUTE`     | Example: `MAIN_PRESENT` is false in `config.h` (not currently enforced by an error code).    |
+| 255        | `UNKNOWN_ERROR`                   | An unspecified error occurred.                                                                 |
 

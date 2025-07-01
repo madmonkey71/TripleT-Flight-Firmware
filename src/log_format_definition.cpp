@@ -59,7 +59,8 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"ActuatorOutRoll", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_roll)},
     {"ActuatorOutPitch", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_pitch)},
     {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)},
-    {"BattVoltage", TYPE_FLOAT_P2, offsetof(LogData, battery_voltage)} // Added Battery Voltage
+    {"BattVoltage", TYPE_FLOAT_P2, offsetof(LogData, battery_voltage)},
+    {"LastErrorCode", TYPE_UINT8, offsetof(LogData, last_error_code)} // Added Last Error Code
 };
 
 // Definition of the log column count

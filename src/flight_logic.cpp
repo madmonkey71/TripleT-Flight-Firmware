@@ -650,62 +650,60 @@ void ProcessFlightState() {
                         }
                         break;
                 }
-            }
 
-            // --- LED Strobe Logic ---
-            // Note: LED strobe variables are declared once at the beginning of the RECOVERY case
-
-            // Initialize/reset LED strobe timing when first entering RECOVERY state (using newStateSignal)
-            // or if recoveryLedStrobeStartTime hasn't been set yet (e.g., if buzzer was off and newStateSignal was missed)
-            if (newStateSignal || recoveryLedStrobeStartTime == 0) {
-                recoveryLedStrobeStartTime = currentTimeMillis; // currentTimeMillis is already defined above for buzzer
-                isLedStrobeOn = false;
-                // Ensure LEDs are off at the start of the strobe cycle within RECOVERY
-                g_pixels.setPixelColor(0, g_pixels.Color(0,0,0));
-                if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(0,0,0));
-                g_pixels.show();
-            }
-
-            unsigned long timeInLedCycle = currentTimeMillis - recoveryLedStrobeStartTime;
-
-            if (isLedStrobeOn) { // LED is currently ON
-                if (timeInLedCycle >= RECOVERY_STROBE_ON_MS) {
-                    // Time to turn OFF
+                // --- LED Strobe Logic ---
+                // Initialize/reset LED strobe timing when first entering RECOVERY state (using newStateSignal)
+                // or if recoveryLedStrobeStartTime hasn't been set yet (e.g., if buzzer was off and newStateSignal was missed)
+                if (newStateSignal || recoveryLedStrobeStartTime == 0) {
+                    recoveryLedStrobeStartTime = currentTimeMillis; // currentTimeMillis is already defined above for buzzer
+                    isLedStrobeOn = false;
+                    // Ensure LEDs are off at the start of the strobe cycle within RECOVERY
                     g_pixels.setPixelColor(0, g_pixels.Color(0,0,0));
                     if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(0,0,0));
                     g_pixels.show();
-                    isLedStrobeOn = false;
-                    recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the OFF period
                 }
-            } else { // LED is currently OFF
-                if (timeInLedCycle >= RECOVERY_STROBE_OFF_MS) {
-                    // Time to turn ON
-                    g_pixels.setPixelColor(0, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
-                    if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
-                    // Consider RECOVERY_STROBE_BRIGHTNESS. If it's different from global, it should be set here.
-                    // For now, assuming global brightness is acceptable or RECOVERY_STROBE_BRIGHTNESS matches it.
-                    // If specific brightness needed: g_pixels.setBrightness(RECOVERY_STROBE_BRIGHTNESS);
-                    g_pixels.show();
-                    // If brightness was changed: g_pixels.setBrightness(global_brightness_variable); // Restore
-                    isLedStrobeOn = true;
-                    recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the ON period
-                }
-            }
 
-            // --- GPS Beacon Serial Output Logic ---
-            if (currentTimeMillis - lastGpsBeaconTime >= RECOVERY_GPS_BEACON_INTERVAL_MS) {
-                lastGpsBeaconTime = currentTimeMillis;
-                if (getFixType() > 0) { // Check for a valid GPS fix
-                    Serial.print(F("GPS_BEACON: Lat="));
-                    Serial.print(GPS_latitude / 10000000.0, 7);
-                    Serial.print(F(", Lon="));
-                    Serial.print(GPS_longitude / 10000000.0, 7);
-                    Serial.print(F(", AltMSL="));
-                    Serial.print(GPS_altitudeMSL / 1000.0, 2);
-                    Serial.print(F("m, Sats="));
-                    Serial.println(SIV);
-                } else {
-                    Serial.println(F("GPS_BEACON: No valid GPS fix for beacon."));
+                unsigned long timeInLedCycle = currentTimeMillis - recoveryLedStrobeStartTime;
+
+                if (isLedStrobeOn) { // LED is currently ON
+                    if (timeInLedCycle >= RECOVERY_STROBE_ON_MS) {
+                        // Time to turn OFF
+                        g_pixels.setPixelColor(0, g_pixels.Color(0,0,0));
+                        if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(0,0,0));
+                        g_pixels.show();
+                        isLedStrobeOn = false;
+                        recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the OFF period
+                    }
+                } else { // LED is currently OFF
+                    if (timeInLedCycle >= RECOVERY_STROBE_OFF_MS) {
+                        // Time to turn ON
+                        g_pixels.setPixelColor(0, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
+                        if (NEOPIXEL_COUNT > 1) g_pixels.setPixelColor(1, g_pixels.Color(RECOVERY_STROBE_R, RECOVERY_STROBE_G, RECOVERY_STROBE_B));
+                        // Consider RECOVERY_STROBE_BRIGHTNESS. If it's different from global, it should be set here.
+                        // For now, assuming global brightness is acceptable or RECOVERY_STROBE_BRIGHTNESS matches it.
+                        // If specific brightness needed: g_pixels.setBrightness(RECOVERY_STROBE_BRIGHTNESS);
+                        g_pixels.show();
+                        // If brightness was changed: g_pixels.setBrightness(global_brightness_variable); // Restore
+                        isLedStrobeOn = true;
+                        recoveryLedStrobeStartTime = currentTimeMillis; // Reset timer for the ON period
+                    }
+                }
+
+                // --- GPS Beacon Serial Output Logic ---
+                if (currentTimeMillis - lastGpsBeaconTime >= RECOVERY_GPS_BEACON_INTERVAL_MS) {
+                    lastGpsBeaconTime = currentTimeMillis;
+                    if (getFixType() > 0) { // Check for a valid GPS fix
+                        Serial.print(F("GPS_BEACON: Lat="));
+                        Serial.print(GPS_latitude / 10000000.0, 7);
+                        Serial.print(F(", Lon="));
+                        Serial.print(GPS_longitude / 10000000.0, 7);
+                        Serial.print(F(", AltMSL="));
+                        Serial.print(GPS_altitudeMSL / 1000.0, 2);
+                        Serial.print(F("m, Sats="));
+                        Serial.println(SIV);
+                    } else {
+                        Serial.println(F("GPS_BEACON: No valid GPS fix for beacon."));
+                    }
                 }
             }
             break;

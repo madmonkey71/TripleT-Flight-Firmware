@@ -2,7 +2,7 @@
 
 **Current Version:** v0.50  
 **Current State:** Beta (Ready for Controlled Test Flights)
-**Last Updated:** January 2025
+**Last Updated:** July 2025
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer

@@ -9,7 +9,13 @@
 
 ## Overview
 
-This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets. The system manages all phases of flight from launch detection through recovery, utilizing a Kalman filter for sensor fusion, robust data logging, and extensive safety features.
+This firmware is designed for the **Teensy 4.1** microcontroller and provides comprehensive flight control capabilities for model rockets.
+The system manages all phases of flight from launch detection through recovery, utilizing a Kalman filter for sensor fusion, robust data logging, and extensive safety features.
+
+It's been a while since I merged once of the dev branches back into the master but I thought it was time.
+The current state is ready for more extensive testing and is now held back by the hardware reference design more than the completeness of this code.
+
+**I'm hoping to have the hardware in a better state in the coming few weeks**
 
 ## Key Features
 

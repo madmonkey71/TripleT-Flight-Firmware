@@ -7,6 +7,8 @@
 #include "ICM_20948.h"
 #include "data_structures.h"
 
+extern ErrorCode_t g_last_error_code; // For setting error codes
+
 // Add extern declarations for the debug flags
 extern bool enableSensorDebug;
 extern bool enableICMRawDebug; // New flag to control ICM raw data output
@@ -122,7 +124,6 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
 // Initialize ICM-20948 IMU
 void ICM_20948_init() {
   #include "error_codes.h" // For ErrorCode_t
-  extern ErrorCode_t g_last_error_code; // For setting error codes
 
   // Initialize ICM-20948 with I2C interface
   Wire.begin(); // Ensure Wire is initialized, though it's likely done in main setup

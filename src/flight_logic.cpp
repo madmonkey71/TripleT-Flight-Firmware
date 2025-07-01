@@ -522,140 +522,138 @@ void ProcessFlightState() {
                     // S
                     case 1: // Start S - Dot 1
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis; // Reset timer for pause
-                            recoveryPatternStep = 2;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis; // Reset timer for pause
+                            recoveryBuzzerPatternStep = 2;
                         }
                         break;
                     case 2: // Pause after Dot 1
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 3;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 3;
                         }
                         break;
                     case 3: // Dot 2
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 4;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 4;
                         }
                         break;
                     case 4: // Pause after Dot 2
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 5;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 5;
                         }
                         break;
                     case 5: // Dot 3
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 6;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 6;
                         }
                         break;
                     case 6: // Pause after S (before O)
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 7;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 7;
                         }
                         break;
 
                     // O
                     case 7: // Start O - Dash 1
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 8;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 8;
                         }
                         break;
                     case 8: // Pause after Dash 1
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 9;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 9;
                         }
                         break;
                     case 9: // Dash 2
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 10;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 10;
                         }
                         break;
                     case 10: // Pause after Dash 2
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 11;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 11;
                         }
                         break;
                     case 11: // Dash 3
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DASH_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 12;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 12;
                         }
                         break;
                     case 12: // Pause after O (before S)
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 13;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_LETTER_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 13;
                         }
                         break;
 
                     // S (again)
                     case 13: // Start S - Dot 1
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 14;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 14;
                         }
                         break;
                     case 14: // Pause after Dot 1
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 15;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 15;
                         }
                         break;
                     case 15: // Dot 2
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 16;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 16;
                         }
                         break;
                     case 16: // Pause after Dot 2
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 17;
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_SYMBOL_PAUSE_MS) {
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 17;
                         }
                         break;
                     case 17: // Dot 3
                         tone(BUZZER_PIN, RECOVERY_BEACON_FREQUENCY_HZ);
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_DOT_MS) {
                             noTone(BUZZER_PIN);
-                            recoveryPatternStartTime = currentTimeMillis;
-                            recoveryPatternStep = 18;
+                            recoveryBuzzerPatternStartTime = currentTimeMillis;
+                            recoveryBuzzerPatternStep = 18;
                         }
                         break;
                     case 18: // Pause after full SOS (word pause)
-                        if (timeInPattern >= RECOVERY_BEACON_SOS_WORD_PAUSE_MS) {
-                            recoveryPatternStep = 0; // Reset to restart pattern
+                        if (timeInBuzzerPattern >= RECOVERY_BEACON_SOS_WORD_PAUSE_MS) {
+                            recoveryBuzzerPatternStep = 0; // Reset to restart pattern
                         }
                         break;
                 }
             }
 
             // --- LED Strobe Logic ---
-            // Static variables for LED strobe, separate from buzzer logic
-            static unsigned long recoveryLedStrobeStartTime = 0;
-            static bool isLedStrobeOn = false;
+            // Note: LED strobe variables are declared once at the beginning of the RECOVERY case
 
             // Initialize/reset LED strobe timing when first entering RECOVERY state (using newStateSignal)
             // or if recoveryLedStrobeStartTime hasn't been set yet (e.g., if buzzer was off and newStateSignal was missed)

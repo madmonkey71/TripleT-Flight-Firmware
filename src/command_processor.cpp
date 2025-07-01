@@ -12,6 +12,10 @@
 #include "state_management.h"    // For FlightState, getStateName, saveStateToEEPROM, isSensorSuiteHealthy
 #include "kalman_filter.h"       // For kalman_init
 #include "data_structures.h"
+#include "log_format_definition.h"
+#include "flight_logic.h"
+
+extern ErrorCode_t g_last_error_code; // For accessing last error code
 
 // Functions defined in TripleT_Flight_Firmware.cpp that command_processor needs.
 // These declarations signal that the linker should find them elsewhere.

@@ -9,18 +9,23 @@ float kx134_accel[3] = {0, 0, 0};  // Initialize array to zeros
 // Add reference to debug flag
 extern bool enableSensorDebug;
 
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For setting error codes
+
 bool kx134_init() {
     Serial.println("Initializing KX134 accelerometer...");
     
     // First try to begin communication
     if (!kxAccel.begin()) {
         Serial.println("KX134 initialization failed - could not communicate with device");
+        g_last_error_code = SENSOR_INIT_FAIL_KX134;
         return false;
     }
     
     // Perform software reset
     if (!kxAccel.softwareReset()) {
         Serial.println("KX134 software reset failed");
+        g_last_error_code = SENSOR_INIT_FAIL_KX134; // Could be a more specific error if desired
         return false;
     }
     
@@ -66,15 +71,19 @@ void kx134_read(){
   }
 }
 
-void kx134_print(){
-  // Only print if sensor debug is enabled
-  if (!enableSensorDebug) return;
-  
-  Serial.print(F("  KX134: X:"));
-  Serial.print(kx134_accel[0], 2);
-  Serial.print(F("g Y:"));
-  Serial.print(kx134_accel[1], 2);
-  Serial.print(F("g Z:"));
-  Serial.print(kx134_accel[2], 2);
-  Serial.print(F("g"));
-} 
+// void kx134_print(){ // REMOVED as unused
+//   // Only print if sensor debug is enabled
+//   if (!enableSensorDebug) return;
+//
+//   Serial.print(F("  KX134: X:"));
+//   Serial.print(kx134_accel[0], 2);
+//   Serial.print(F("g Y:"));
+//   Serial.print(kx134_accel[1], 2);
+//   Serial.print(F("g Z:"));
+//   Serial.print(kx134_accel[2], 2);
+//   Serial.print(F("g"));
+// }
+
+void kx134_get_accel(float* accel) {
+  memcpy(accel, kx134_accel, sizeof(float) * 3);
+}

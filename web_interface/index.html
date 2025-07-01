@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripleT Flight Data Visualizer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>TripleT Flight Data Visualizer</h1>
+        <div id="connectionControls">
+            <div id="connectionStatus">Status: Disconnected</div>
+            <div>
+                <button id="connectButton">Connect Serial</button>
+                <button id="disconnectButton">Disconnect Serial</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Flight State Display Section -->
+        <section id="flightStateSection">
+            <h2>Current Flight State</h2>
+            <div id="flightStateDisplayContainer">
+                 <span id="currentFlightStateValue">N/A</span>
+            </div>
+        </section>
+
+        <!-- 3D Visualizer Section -->
+        <section id="visualizer3DSection">
+            <h2>3D Orientation</h2>
+            <div id="visualizer3DContainer"></div>
+        </section>
+
+        <!-- 1. Real-time Data Panel -->
+        <section id="numericalDataPanelContainer"> <!-- New wrapper for just numerical data -->
+            <h2>Real-time Data</h2>
+            <div id="numericalDataPanel"> <!-- This ID is already styled -->
+                <div id="gpsData">
+                    <h3>GPS</h3>
+                    Lat: <span id="valLat">N/A</span>, 
+                    Long: <span id="valLong">N/A</span><br>
+                    Speed: <span id="valSpeed">N/A</span> knots, 
+                    Sats: <span id="valSats">N/A</span><br>
+                    Alt (GPS): <span id="valAltGps">N/A</span> m
+                </div>
+                <div id="orientationData">
+                    <h3>Orientation</h3>
+                    Roll: <span id="valRoll">N/A</span>&deg;, 
+                    Pitch: <span id="valPitch">N/A</span>&deg;, 
+                    Yaw: <span id="valYaw">N/A</span>&deg;
+                </div>
+                <div id="sensorData">
+                    <h3>Sensors</h3>
+                    Pressure: <span id="valPressure">N/A</span> hPa<br>
+                    Temp: <span id="valTemp">N/A</span> &deg;C<br>
+                    Alt (Baro): <span id="valAltBaro">N/A</span> m
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Visualizations Panel -->
+        <section id="visualizationsContainer"> <!-- This ID is already styled for heading + chartsPanel -->
+            <h2>Visualizations</h2>
+            <div id="chartsPanel"> <!-- This ID is styled for the grid -->
+                <div class="chart-container">
+                    <h3>Altitude (Calibrated)</h3>
+                    <canvas id="altitudeChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Acceleration (KX134)</h3>
+                    <canvas id="accelerationChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Acceleration</h3>
+                    <canvas id="icmAccelChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Gyroscope</h3>
+                    <canvas id="icmGyroChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>ICM20948 Magnetometer</h3>
+                    <canvas id="icmMagChart"></canvas>
+                </div>
+                <!-- Add a placeholder for the 6th chart if needed for 3x2 grid -->
+                <div class="chart-container">
+                    <h3>Actuator Control</h3> <!-- Placeholder for the 6th chart -->
+                    <canvas id="actuatorChart"></canvas> <!-- Make sure this ID is unique and handled -->
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Serial Terminal Panel -->
+        <section id="serialTerminalSection">
+            <h2>Serial Terminal</h2>
+            <div id="serialTerminalOutput" class="terminal-output"></div>
+            <div id="serialTerminalInputContainer">
+                <input type="text" id="serialCommandInput" placeholder="Enter command and press Enter">
+                <button id="serialSendCommandButton">Send</button>
+            </div>
+        </section>
+
+        <!-- Removed the old #content div as its purpose is now served by main or specific sections -->
+    </main>
+
+    <footer>
+        <p>Web Serial Interface for TripleT Flight Controller</p>
+    </footer>
+
+    <script src="js/serial_handler.js"></script>
+    <script src="js/data_parser.js"></script>
+    <script src="js/visualizations.js"></script>
+    <script src="js/ui_updater.js"></script>
+    <script src="js/visualizer_3d.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

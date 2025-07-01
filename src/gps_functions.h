@@ -39,6 +39,10 @@ extern bool checkGPSConnection();
 // Function to get GPS date/time safely (uses defaults if no valid time)
 extern void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute, byte& second);
 
+// Functions to get specific GPS data safely
+uint8_t getFixType();
+float getGPSAltitude();
+
 // New function to control GPS debugging
 void setGPSDebugging(bool enable);
 

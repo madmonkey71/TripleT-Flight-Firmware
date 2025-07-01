@@ -5,8 +5,8 @@ This document outlines the state machine design for the TripleT Flight Controlle
 
 ## Arduino Framework Alignment
 The state machine is implemented within the Arduino framework:
-- **setup()**: Handles the STARTUP and CALIBRATION states
-- **loop()**: Manages all flight states from PAD_IDLE through RECOVERY
+- **`setup()`**: Handles the `STARTUP` and `CALIBRATION` states.
+- **`loop()`**: Manages all flight states from `PAD_IDLE` through `RECOVERY`, and handles `ERROR` states.
 
 ## State Machine Diagram
 ```mermaid
@@ -19,38 +19,57 @@ graph TD
     end
 
     C -- "Setup OK" --> PI[PAD_IDLE];
-    C -- "Abort/Test/Data" --> LND[LANDED]; // Special case path
+    C -- "Sensor/Config Error" --> ERR[ERROR];
+    C -- "Abort/Test/Data" --> LND[LANDED]; // Special case path for ground ops
 
     subgraph loop [LOOP FUNCTION]
         direction TD
-        PI --> ARM[ARMED]
-        ARM --> BST[BOOST]
-        BST --> CST[COAST]
-        CST --> APG[APOGEE]
-        APG --> DD[DROGUE_DEPLOY]
-        DD --> DDS[DROGUE_DESCENT]
-        DDS --> MD[MAIN_DEPLOY]
-        MD --> MDS[MAIN_DESCENT]
-        MDS --> LND // LANDED node shared with setup path
-        LND --> RCV[RECOVERY]
-        // Error states omitted for simplicity, shown in firmware doc diagram
+        PI --> ARM[ARMED];
+        ARM --> BST[BOOST];
+        BST --> CST[COAST];
+        CST --> APG[APOGEE];
+        APG --> DD[DROGUE_DEPLOY];
+        DD --> DDS[DROGUE_DESCENT];
+        DDS --> MD[MAIN_DEPLOY];
+        MD --> MDS[MAIN_DESCENT];
+        MDS --> LND; // LANDED node shared with setup path
+        LND --> RCV[RECOVERY];
+        RCV --> PI; // Option to re-arm or stay in RECOVERY for data download
+
+        // Generic Error Transitions (can occur from most states)
+        PI --> ERR;
+        ARM --> ERR;
+        BST --> ERR;
+        CST --> ERR;
+        APG --> ERR;
+        DD --> ERR;
+        DDS --> ERR;
+        MD --> ERR;
+        MDS --> ERR;
+        LND --> ERR;
+        RCV --> ERR;
+        ERR -- "Attempt Recovery/Clear" --> PI; // Attempt to return to PAD_IDLE
     end
 ```
 
 **Note on CALIBRATION to LANDED direct path:**
-The direct path from CALIBRATION to LANDED represents special scenarios:
-1. Abort handling - Used when critical errors are detected during calibration
-2. Ground testing - Allows testing recovery systems without a full flight sequence
-3. Data retrieval - Enables downloading calibration data before a launch without power cycling
+The direct path from `CALIBRATION` to `LANDED` represents special scenarios:
+1.  **Abort handling**: Used when critical errors are detected during calibration that don't warrant a full `ERROR` state but prevent flight.
+2.  **Ground testing**: Allows testing recovery systems without a full flight sequence.
+3.  **Data retrieval**: Enables downloading calibration data before a launch without power cycling.
 
 This path ensures the system can safely close logs and prepare for inspection regardless of when an abort becomes necessary.
+
+**Error State Handling:**
+The `ERROR` state can be entered from most other states if a critical sensor failure, configuration issue, or unexpected event occurs. The system will attempt to enter a safe mode. Depending on the error's nature and system configuration, it might attempt to recover or require manual intervention (e.g., via a serial command to clear errors and return to `PAD_IDLE`).
 
 ## Implementation Details
 
 ### State Definition
-Modify the existing `FlightState` enum in `TripleT_Flight_Firmware.cpp`:
+The `FlightState` enum is defined in `src/data_structures.h`:
 ```cpp
-enum FlightState {
+// In src/data_structures.h
+enum FlightState : uint8_t {
   STARTUP,        // Initial state during power-on
   CALIBRATION,    // Sensor calibration state
   PAD_IDLE,       // On pad waiting for arm command
@@ -69,1142 +88,207 @@ enum FlightState {
 ```
 
 ### Configuration Parameters
-Add these at the top of the file after other definitions:
+Key configuration parameters affecting the state machine are primarily located in `src/config.h`. These include, but are not limited to:
+
 ```cpp
+// In src/config.h (example parameters, refer to actual file for complete list)
+
 // Recovery system configuration
 #define DROGUE_PRESENT true        // Set to true if drogue deployment is needed
 #define MAIN_PRESENT true          // Set to true if main deployment is needed
-#define PYRO_CHANNEL_1 2           // GPIO pin for drogue deployment
-#define PYRO_CHANNEL_2 3           // GPIO pin for main deployment
-#define MAIN_DEPLOY_ALTITUDE 300   // Deploy main at this height (meters) above ground
-#define BOOST_ACCEL_THRESHOLD 1.5  // Acceleration threshold for liftoff detection (g)
-#define COAST_ACCEL_THRESHOLD 1.0  // Acceleration threshold for motor burnout (g)
+#define PYRO_CHANNEL_1 2           // GPIO pin for drogue deployment (actual pin defined in config.h)
+#define PYRO_CHANNEL_2 3           // GPIO pin for main deployment (actual pin defined in config.h)
+#define MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M 100.0f // Default height in meters AGL for main parachute deployment (actual value from config.h)
 
-// Error detection configuration
+// Flight detection thresholds (values from config.h)
+#define BOOST_ACCEL_THRESHOLD 2.0f  // Acceleration threshold for liftoff detection (g)
+#define COAST_ACCEL_THRESHOLD 0.5f  // Acceleration threshold indicating motor burnout (g)
+// Note: APOGEE_VELOCITY_THRESHOLD is not directly used in the current apogee detection logic.
+// Landing detection uses LANDING_ACCEL_MIN_G, LANDING_ACCEL_MAX_G, LANDING_CONFIRMATION_TIME_MS, LANDING_ALTITUDE_STABLE_THRESHOLD.
+
+// Error detection configuration (values from config.h)
 #define MAX_SENSOR_FAILURES 3      // Maximum number of consecutive sensor failures before error state
-#define WATCHDOG_TIMEOUT_MS 1000   // Watchdog timer timeout in milliseconds
-#define BAROMETER_ERROR_THRESHOLD 10.0  // Barometer error threshold (m) between readings
-#define ACCEL_ERROR_THRESHOLD 10.0      // Accelerometer error threshold (g) between readings
-#define GPS_TIMEOUT_MS 5000             // GPS timeout in milliseconds
+// Note: Watchdog is not currently implemented in the v0.48 codebase provided. WATCHDOG_TIMEOUT_MS is in config.h but not used.
 
-// EEPROM configuration for non-volatile storage
-#define EEPROM_STATE_ADDR 0           // EEPROM address for flight state
-#define EEPROM_ALTITUDE_ADDR 4        // EEPROM address for last altitude
-#define EEPROM_TIMESTAMP_ADDR 8       // EEPROM address for timestamp
-#define EEPROM_SIGNATURE_ADDR 12      // EEPROM address for signature
-#define EEPROM_SIGNATURE_VALUE 0xABCD // Signature to validate EEPROM data
-#define EEPROM_UPDATE_INTERVAL 5000   // Save state every 5 seconds
+// EEPROM configuration for non-volatile storage (values from config.h and constants.h)
+#define EEPROM_STATE_ADDR 0                // EEPROM address for FlightStateData struct
+#define EEPROM_SIGNATURE_VALUE 0xBEEF      // Signature to validate EEPROM data
+#define EEPROM_UPDATE_INTERVAL 5000        // Save state every 5 seconds (from constants.h)
 
-// Redundant sensing configuration
-#define APOGEE_CONFIRMATION_COUNT 3   // Number of consecutive readings to confirm apogee
-#define LANDING_CONFIRMATION_COUNT 5  // Number of consecutive readings to confirm landing
-#define BACKUP_APOGEE_TIME 15000      // Backup time-based apogee detection (ms after boost)
+// Redundant sensing configuration (values from config.h)
+#define APOGEE_CONFIRMATION_COUNT 5        // Barometer readings for apogee
+#define APOGEE_ACCEL_CONFIRMATION_COUNT 5  // Accelerometer readings for apogee
+#define APOGEE_GPS_CONFIRMATION_COUNT 3    // GPS readings for apogee
+#define BACKUP_APOGEE_TIME_MS 20000        // Backup time-based apogee detection (ms after boost)
+// Note: LANDING_CONFIRMATION_COUNT is in config.h, but flight_logic.cpp uses LANDING_CONFIRMATION_TIME_MS.
 ```
+**Note:** The C++ code blocks for `Non-Volatile Storage Implementation`, `Redundant Sensing for Critical Events`, `Enhanced Flight State Processing`, `Setup Function Enhancement`, and `Testing Considerations` are illustrative examples based on the structure of the provided firmware files (`src/state_management.cpp`, `src/flight_logic.cpp`, etc.). Refer to the actual source code for the most up-to-date and complete implementation details.
 
 ### Non-Volatile Storage Implementation
+(Corresponds to `src/state_management.cpp`)
 
-Add EEPROM storage for critical flight data to recover from power loss:
+EEPROM storage is used for critical flight data to enable recovery from power loss.
+- The `FlightStateData` struct (defined in `src/data_structures.h`) stores the current `FlightState` (as `uint8_t`), `launchAltitude`, `maxAltitude`, `currentAltitude`, `mainDeployAltitudeAgl`, a `timestamp`, and a validation `signature`.
+- `saveStateToEEPROM()` updates this struct with current global values and writes it to EEPROM address `EEPROM_STATE_ADDR`. Saves occur periodically (defined by `EEPROM_UPDATE_INTERVAL` in `constants.h`) and immediately during critical state transitions like `APOGEE`, `DROGUE_DEPLOY`, `MAIN_DEPLOY`, and `LANDED`.
+- `loadStateFromEEPROM()` (static helper in `state_management.cpp`) reads the struct from EEPROM and validates it using `EEPROM_SIGNATURE_VALUE`.
+- `recoverFromPowerLoss()` is called during `setup()` (via `handleInitialStateManagement()` in `TripleT_Flight_Firmware.cpp`).
+    - If valid data is loaded, it restores `currentFlightState`, `launchAltitude`, `maxAltitudeReached`, and `g_main_deploy_altitude_m_agl`.
+    - It then determines the appropriate state to resume in based on the saved state (e.g., `BOOST`/`COAST` resumes to `DROGUE_DESCENT`, `ARMED` resumes to `PAD_IDLE`).
 
 ```cpp
-#include <EEPROM.h>
-
-// Flight state storage structure
+// In src/data_structures.h
 struct FlightStateData {
-  FlightState state;        // Current flight state
+  uint8_t state;            // Current flight state (cast to/from FlightState)
   float launchAltitude;     // Stored launch altitude
   float maxAltitude;        // Maximum altitude reached
   float currentAltitude;    // Current altitude
+  float mainDeployAltitudeAgl; // Dynamic main deployment altitude
   unsigned long timestamp;  // Timestamp of last save
-  uint16_t signature;       // Validation signature
+  uint16_t signature;       // Validation signature (EEPROM_SIGNATURE_VALUE from config.h)
 };
 
-FlightStateData stateData;
-unsigned long lastStateSave = 0;
+// In src/state_management.cpp
+// extern FlightState currentFlightState; // (Actually g_currentFlightState from TripleT_Flight_Firmware.cpp)
+// extern float launchAltitude;
+// extern float maxAltitudeReached;
+// extern float currentAltitude; // (Actually g_currentAltitude from TripleT_Flight_Firmware.cpp)
+// extern float g_main_deploy_altitude_m_agl;
 
-// Save current state to EEPROM
-void saveStateToEEPROM() {
-  unsigned long currentTime = millis();
-  
-  // Only save periodically to reduce wear
-  if (currentTime - lastStateSave < EEPROM_UPDATE_INTERVAL && 
-      flightState != APOGEE && flightState != DROGUE_DEPLOY && 
-      flightState != MAIN_DEPLOY) {
-    return;
-  }
-  
-  // Update state data
-  stateData.state = flightState;
-  stateData.launchAltitude = launchAltitude;
-  stateData.maxAltitude = maxAltitudeReached;
-  stateData.currentAltitude = currentAltitude;
-  stateData.timestamp = currentTime;
-  stateData.signature = EEPROM_SIGNATURE_VALUE;
-  
-  // Write to EEPROM
-  EEPROM.put(EEPROM_STATE_ADDR, stateData);
-  
-  // Update last save timestamp
-  lastStateSave = currentTime;
-  
-  if (enableSystemDebug) {
-    Serial.print(F("Flight state saved to EEPROM: "));
-    Serial.println(getStateName(flightState));
-  }
-}
-
-// Load state from EEPROM
-bool loadStateFromEEPROM() {
-  // Read from EEPROM
-  EEPROM.get(EEPROM_STATE_ADDR, stateData);
-  
-  // Validate data
-  if (stateData.signature != EEPROM_SIGNATURE_VALUE) {
-    Serial.println(F("No valid flight state found in EEPROM"));
-    return false;
-  }
-  
-  // Data is valid
-  Serial.println(F("Found valid flight state in EEPROM:"));
-  Serial.print(F("State: "));
-  Serial.println(getStateName(stateData.state));
-  Serial.print(F("Launch altitude: "));
-  Serial.println(stateData.launchAltitude);
-  Serial.print(F("Max altitude: "));
-  Serial.println(stateData.maxAltitude);
-  Serial.print(F("Last altitude: "));
-  Serial.println(stateData.currentAltitude);
-  Serial.print(F("Timestamp: "));
-  Serial.println(stateData.timestamp);
-  
-  return true;
-}
-
-// Recover from power loss
-void recoverFromPowerLoss() {
-  if (!loadStateFromEEPROM()) {
-    // No valid data, start fresh
-    return;
-  }
-  
-  // Handle recovery based on saved state
-  switch (stateData.state) {
-    case STARTUP:
-    case CALIBRATION:
-    case PAD_IDLE:
-      // Early states - just restart
-      flightState = STARTUP;
-      break;
-      
-    case ARMED:
-      // Was armed but not launched - go back to PAD_IDLE
-      flightState = PAD_IDLE;
-      break;
-      
-    case BOOST:
-    case COAST:
-      // Power loss during ascent - try to detect if we're still ascending
-      // For safety, assume we're past apogee
-      flightState = DROGUE_DESCENT;
-      
-      // Restore launch altitude
-      launchAltitude = stateData.launchAltitude;
-      break;
-      
-    case APOGEE:
-    case DROGUE_DEPLOY:
-      // Power loss during critical deployment - deploy drogue immediately
-      flightState = DROGUE_DEPLOY;
-      break;
-      
-    case DROGUE_DESCENT:
-      // Resume drogue descent
-      flightState = DROGUE_DESCENT;
-      
-      // Restore altitude data
-      launchAltitude = stateData.launchAltitude;
-      maxAltitudeReached = stateData.maxAltitude;
-      break;
-      
-    case MAIN_DEPLOY:
-      // Power loss during main deployment - deploy main immediately
-      flightState = MAIN_DEPLOY;
-      break;
-      
-    case MAIN_DESCENT:
-    case LANDED:
-    case RECOVERY:
-      // Later flight stages - go to recovery
-      flightState = RECOVERY;
-      break;
-      
-    case ERROR:
-      // Was in error state - remain there
-      flightState = ERROR;
-      break;
-  }
-  
-  Serial.print(F("Recovered from power loss. Resuming at state: "));
-  Serial.println(getStateName(flightState));
-}
-
-// Get state name as string (for logging/debugging)
-const char* getStateName(FlightState state) {
-  switch (state) {
-    case STARTUP: return "STARTUP";
-    case CALIBRATION: return "CALIBRATION";
-    case PAD_IDLE: return "PAD_IDLE";
-    case ARMED: return "ARMED";
-    case BOOST: return "BOOST";
-    case COAST: return "COAST";
-    case APOGEE: return "APOGEE";
-    case DROGUE_DEPLOY: return "DROGUE_DEPLOY";
-    case DROGUE_DESCENT: return "DROGUE_DESCENT";
-    case MAIN_DEPLOY: return "MAIN_DEPLOY";
-    case MAIN_DESCENT: return "MAIN_DESCENT";
-    case LANDED: return "LANDED";
-    case RECOVERY: return "RECOVERY";
-    case ERROR: return "ERROR";
-    default: return "UNKNOWN";
-  }
-}
+void saveStateToEEPROM(); // Uses global flight variables
+void recoverFromPowerLoss(); // Modifies global flight variables
 ```
 
 ### Redundant Sensing for Critical Events
+(Corresponds to `src/flight_logic.cpp`)
 
-Implement redundant detection methods for critical flight events:
+Multiple methods are used to detect critical flight events to improve reliability.
+
+**Apogee Detection (`detectApogee()` in `src/flight_logic.cpp`):**
+1.  **Barometric (Primary):** Checks if the current barometric altitude (`ms5611_get_altitude()`) is less than `g_maxAltitudeReached` for `APOGEE_CONFIRMATION_COUNT` consecutive readings.
+2.  **Accelerometer (Secondary):** Checks if the Z-axis of the ICM-20948 accelerometer (`icm_accel[2]`) indicates negative Gs (freefall) for `APOGEE_ACCEL_CONFIRMATION_COUNT` consecutive readings.
+3.  **GPS Altitude (Tertiary):** Checks if the GPS altitude (`getGPSAltitude()`) is less than its recorded maximum by more than 5 meters for `APOGEE_GPS_CONFIRMATION_COUNT` consecutive readings.
+4.  **Backup Timer (Failsafe):** If `BACKUP_APOGEE_TIME_MS` has elapsed since `boostEndTime` (motor burnout) and no other method has detected apogee, it's triggered.
+
+**Landing Detection (`detectLanding()` in `src/flight_logic.cpp`):**
+- Uses a moving average of barometric altitude (`ms5611_get_altitude()`).
+- Condition 1: Average altitude is close to `g_launchAltitude` (within `LANDING_ALTITUDE_STABLE_THRESHOLD`).
+- Condition 2: Accelerometer magnitude (`get_accel_magnitude()`) is within a stable G-force range (`LANDING_ACCEL_MIN_G` to `LANDING_ACCEL_MAX_G`).
+- If both conditions are met for `LANDING_CONFIRMATION_TIME_MS`, landing is confirmed.
+
+**Motor Burnout Detection (`detectBoostEnd()` in `src/flight_logic.cpp`):**
+- Called during `BOOST` state.
+- If accelerometer magnitude (`get_accel_magnitude()`) drops below `COAST_ACCEL_THRESHOLD`, `boostEndTime` is recorded, and state transitions to `COAST`.
 
 ```cpp
-// Variables for redundant apogee detection
-float maxAltitudeReached = 0.0;
-float previousAltitude = 0.0;
-int descendingCount = 0;
-unsigned long boostEndTime = 0;
-bool backupApogeeTimerStarted = false;
+// In src/flight_logic.cpp
+// extern float g_maxAltitudeReached;
+// extern bool g_baroCalibrated; (used by ms5611_get_altitude)
+// extern float icm_accel[3];
+// extern bool g_icm20948_ready;
+// extern SFE_UBLOX_GNSS myGNSS; (used by getFixType, getGPSAltitude)
+// extern unsigned long boostEndTime;
+// extern float g_launchAltitude;
+// extern bool g_kx134_initialized_ok;
+// extern float kx134_accel[3];
 
-// Redundant apogee detection
-bool detectApogee() {
-  float currentAltitude = getBaroAltitude();
-  bool apogeeDetected = false;
-  
-  // Method 1: Barometric detection (primary)
-  if (barometerStatus.isWorking) {
-    // Track maximum altitude
-    if (currentAltitude > maxAltitudeReached) {
-      maxAltitudeReached = currentAltitude;
-      descendingCount = 0;
-    }
-    else if (currentAltitude < maxAltitudeReached - 1.0) {
-      // Altitude is decreasing significantly
-      descendingCount++;
-      
-      // Require multiple consecutive readings to confirm
-      if (descendingCount >= APOGEE_CONFIRMATION_COUNT) {
-        Serial.println(F("APOGEE DETECTED (barometric)"));
-        apogeeDetected = true;
-      }
-    }
-  }
-  
-  // Method 2: Accelerometer-based detection (backup)
-  if (!apogeeDetected && accelerometerStatus.isWorking) {
-    float accel_z = useKX134 ? kx134_accel[2] : icm_accel[2];
-    
-    // If Z acceleration is negative for several samples, we might be at apogee
-    static float prevAccel = 0;
-    static int accelNegativeCount = 0;
-    
-    if (accel_z < -0.1 && prevAccel < -0.1) {
-      accelNegativeCount++;
-      if (accelNegativeCount >= 5) {
-        Serial.println(F("APOGEE DETECTED (accelerometer)"));
-        apogeeDetected = true;
-        accelNegativeCount = 0;
-      }
-    } else if (accel_z > 0) {
-      accelNegativeCount = 0;
-    }
-    
-    prevAccel = accel_z;
-  }
-  
-  // Method 3: Time-based detection (last resort)
-  if (!apogeeDetected && boostEndTime > 0) {
-    // If we know when the boost phase ended, we can estimate apogee
-    if (millis() - boostEndTime > BACKUP_APOGEE_TIME) {
-      Serial.println(F("APOGEE DETECTED (time-based)"));
-      apogeeDetected = true;
-    }
-  }
-  
-  // If apogee detected, save state immediately
-  if (apogeeDetected) {
-    saveStateToEEPROM();
-  }
-  
-  return apogeeDetected;
-}
 
-// Redundant landing detection
-bool detectLanding() {
-  static int stableCount = 0;
-  bool landingDetected = false;
-  
-  // Method 1: Accelerometer stability (primary)
-  if (accelerometerStatus.isWorking) {
-    float accel_magnitude = GetAccelMagnitude();
-    
-    // Check if acceleration is close to 1g (just gravity)
-    if (accel_magnitude > 0.95 && accel_magnitude < 1.05) {
-      stableCount++;
-    } else {
-      stableCount = 0;
-    }
-    
-    // Require extended stability to confirm landing
-    if (stableCount >= LANDING_CONFIRMATION_COUNT) {
-      landingDetected = true;
-    }
-  }
-  
-  // Method 2: Barometric stability (backup)
-  if (!landingDetected && barometerStatus.isWorking) {
-    static float lastAltitude = 0.0;
-    static int altitudeStableCount = 0;
-    
-    float currentAltitude = getBaroAltitude();
-    
-    // Check if altitude is stable
-    if (fabs(currentAltitude - lastAltitude) < 1.0) {
-      altitudeStableCount++;
-    } else {
-      altitudeStableCount = 0;
-    }
-    
-    lastAltitude = currentAltitude;
-    
-    // Require extended stability to confirm landing
-    if (altitudeStableCount >= LANDING_CONFIRMATION_COUNT) {
-      landingDetected = true;
-    }
-  }
-  
-  // Method 3: Timeout-based detection (last resort)
-  // This is handled by the state timeout system
-  
-  // If landing detected, save state
-  if (landingDetected && !landingDetectedFlag) {
-    Serial.println(F("LANDING DETECTED"));
-    landingDetectedFlag = true;
-    saveStateToEEPROM();
-  }
-  
-  return landingDetected;
-}
-
-// Track boost end for time-based apogee detection
-void detectBoostEnd() {
-  float accel_magnitude = GetAccelMagnitude();
-  
-  // When acceleration drops below threshold, record the time
-  if (accel_magnitude < COAST_ACCEL_THRESHOLD && boostEndTime == 0) {
-    boostEndTime = millis();
-    Serial.println(F("BOOST END DETECTED"));
-    Serial.print(F("Time since startup: "));
-    Serial.print(boostEndTime / 1000.0);
-    Serial.println(F(" seconds"));
-    
-    // Start backup apogee timer
-    backupApogeeTimerStarted = true;
-  }
-}
+bool detectApogee();
+bool detectLanding();
+void detectBoostEnd();
 ```
 
 ### Enhanced Flight State Processing with Redundant Sensing
+(Corresponds to `ProcessFlightState()` in `src/flight_logic.cpp`)
 
-Update the `ProcessFlightState()` function to use redundant detection:
+The `ProcessFlightState()` function in `src/flight_logic.cpp` orchestrates the state machine:
+- **Health Checks:** Periodically calls `isSensorSuiteHealthy()` (from `utility_functions.cpp`). If unhealthy for the current operational state (and not within the error clear grace period), transitions to `ERROR`.
+- **Automatic Error Recovery:** If in `ERROR` state, periodically checks if health is restored to transition back to `PAD_IDLE` or `CALIBRATION`. A grace period (`errorClearGracePeriod`) prevents immediate re-entry to `ERROR`.
+- **State Transitions:**
+    - On entering a new state, `g_stateEntryTime` is recorded, `setFlightStateLED()` updates NeoPixel status, data is logged, and state is saved to EEPROM.
+    - **CALIBRATION:** Waits for `g_baroCalibrated` to become true (via `calibrate` command), then moves to `PAD_IDLE`.
+    - **PAD_IDLE:** Sets `g_launchAltitude`, resets flight metrics. Awaits `arm` command.
+    - **ARMED:** Calculates `g_main_deploy_altitude_m_agl`. Transitions to `BOOST` if `get_accel_magnitude()` exceeds `BOOST_ACCEL_THRESHOLD`.
+    - **BOOST:** Calls `detectBoostEnd()`. If burnout detected, captures current orientation (Kalman or ICM) using `guidance_set_target_orientation_euler()` for attitude hold, then transitions to `COAST`. Updates `g_maxAltitudeReached`.
+    - **COAST:** Calls `detectApogee()`. If apogee detected, transitions to `APOGEE`. Updates `g_maxAltitudeReached`.
+    - **APOGEE:** Transitions to `DROGUE_DEPLOY` (if `DROGUE_PRESENT`), else `MAIN_DEPLOY` (if `MAIN_PRESENT`), else `DROGUE_DESCENT` (warning if no chutes).
+    - **DROGUE_DEPLOY:** Activates `PYRO_CHANNEL_1` for `PYRO_FIRE_DURATION`. Transitions to `DROGUE_DESCENT`.
+    - **DROGUE_DESCENT:** If `MAIN_PRESENT`, transitions to `MAIN_DEPLOY` if current AGL altitude is below `g_main_deploy_altitude_m_agl`. If no main, calls `detectLanding()`.
+    - **MAIN_DEPLOY:** Activates `PYRO_CHANNEL_2` for `PYRO_FIRE_DURATION`. Transitions to `MAIN_DESCENT`.
+    - **MAIN_DESCENT:** Calls `detectLanding()`. If landing detected, transitions to `LANDED`.
+    - **LANDED:** After `LANDED_TIMEOUT_MS`, transitions to `RECOVERY`.
+    - **RECOVERY:** Activates buzzer pattern (`RECOVERY_BEEP_DURATION_MS`, `RECOVERY_SILENCE_DURATION_MS`, `RECOVERY_BEEP_FREQUENCY_HZ`).
+    - **ERROR:** Manages error buzzer. Automatic recovery logic is active.
+- **LED Indicators:** `setFlightStateLED()` in `flight_logic.cpp` sets NeoPixel colors based on the current state.
 
 ```cpp
-void ProcessFlightState() {
-  static float launchAltitude = 0.0;
-  static unsigned long stateEntryTime = 0;
-  static bool newState = true;
-  static FlightState previousState = STARTUP;
-  
-  // Get current altitude
-  float currentAltitude = getBaroAltitude();
-  
-  // Save current state periodically
-  saveStateToEEPROM();
-  
-  // Check if state has changed
-  if (flightState != previousState) {
-    newState = true;
-    previousState = flightState;
-    
-    // Set timeout for the new state
-    setStateTimeout(flightState);
-    
-    // Log state transition
-    Serial.print(F("STATE TRANSITION: "));
-    Serial.print(getStateName(previousState));
-    Serial.print(F(" -> "));
-    Serial.println(getStateName(flightState));
-    
-    // Force a log entry for the transition
-    WriteLogData(true);
-    
-    // Save state immediately on transition
-    saveStateToEEPROM();
-  }
-  
-  // Is this the first time in this state?
-  if (newState) {
-    stateEntryTime = millis();
-    newState = false;
-    
-    // State entry actions
-    switch(flightState) {
-      case PAD_IDLE:
-        Serial.println(F("PAD_IDLE state"));
-        launchAltitude = currentAltitude; // Store ground level
-        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green
-        pixels.show();
-        break;
-        
-      case ARMED:
-        Serial.println(F("ARMED state"));
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red
-        pixels.show();
-        // Start arming beeps
-        tone(BUZZER_PIN, 2000, 100);
-        break;
-        
-      case BOOST:
-        Serial.println(F("BOOST state"));
-        pixels.setPixelColor(0, pixels.Color(50, 0, 50)); // Purple
-        pixels.show();
-        WriteLogData(true); // Force immediate log entry for liftoff
-        
-        // Reset boost end detection
-        boostEndTime = 0;
-        
-        // Reset apogee detection
-        maxAltitudeReached = currentAltitude;
-        descendingCount = 0;
-        break;
-        
-      case COAST:
-        Serial.println(F("COAST state"));
-        pixels.setPixelColor(0, pixels.Color(0, 50, 50)); // Cyan
-        pixels.show();
-        
-        // Reset apogee detection variables
-        maxAltitudeReached = currentAltitude;
-        descendingCount = 0;
-        break;
-        
-      case APOGEE:
-        Serial.println(F("APOGEE state"));
-        pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow
-        pixels.show();
-        
-        // Record maximum altitude
-        maxAltitudeReached = currentAltitude;
-        WriteLogData(true); // Log apogee event
-        break;
-        
-      case DROGUE_DEPLOY:
-        Serial.println(F("DROGUE_DEPLOY state"));
-        pixels.setPixelColor(0, pixels.Color(50, 25, 0)); // Orange
-        pixels.show();
-        break;
-        
-      case DROGUE_DESCENT:
-        Serial.println(F("DROGUE_DESCENT state"));
-        pixels.setPixelColor(0, pixels.Color(0, 0, 50)); // Blue
-        pixels.show();
-        break;
-        
-      case MAIN_DEPLOY:
-        Serial.println(F("MAIN_DEPLOY state"));
-        pixels.setPixelColor(0, pixels.Color(25, 0, 50)); // Purple
-        pixels.show();
-        break;
-        
-      case MAIN_DESCENT:
-        Serial.println(F("MAIN_DESCENT state"));
-        pixels.setPixelColor(0, pixels.Color(0, 25, 50)); // Light blue
-        pixels.show();
-        break;
-        
-      case LANDED:
-        Serial.println(F("LANDED state"));
-        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green
-        pixels.show();
-        break;
-        
-      case RECOVERY:
-        Serial.println(F("RECOVERY state"));
-        pixels.setPixelColor(0, pixels.Color(0, 50, 25)); // Teal
-        pixels.show();
-        break;
-        
-      case ERROR:
-        Serial.println(F("ERROR state - System in safe mode"));
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red
-        pixels.show();
-        
-        // Make error beep
-        tone(BUZZER_PIN, 500, 1000);
-        break;
-    }
-    
-    // Update logging rate for the new state
-    updateLoggingRate(flightState);
-  }
-  
-  // Process the current state
-  switch(flightState) {
-    case PAD_IDLE:
-      // In PAD_IDLE we wait for arm command
-      break;
-      
-    case ARMED:
-      // Check for liftoff using redundant detection
-      {
-        float accel_magnitude = GetAccelMagnitude();
-        
-        // Primary detection: acceleration threshold
-        if (accel_magnitude > BOOST_ACCEL_THRESHOLD) {
-          // Confirm with a second reading
-          delay(10);
-          accel_magnitude = GetAccelMagnitude();
-          
-          if (accel_magnitude > BOOST_ACCEL_THRESHOLD) {
-            flightState = BOOST;
-            newState = true;
-          }
-        }
-      }
-      break;
-      
-    case BOOST:
-      // Detect motor burnout with redundant methods
-      detectBoostEnd();
-      
-      // Check if we've transitioned to coast phase
-      if (boostEndTime > 0) {
-        flightState = COAST;
-        newState = true;
-      }
-      break;
-      
-    case COAST:
-      // Check for apogee using redundant detection
-      if (detectApogee()) {
-        flightState = APOGEE;
-        newState = true;
-      }
-      break;
-      
-    case APOGEE:
-      // Deploy drogue if present, otherwise go to drogue descent
-      if (DROGUE_PRESENT) {
-        flightState = DROGUE_DEPLOY;
-      } else {
-        flightState = DROGUE_DESCENT;
-      }
-      newState = true;
-      break;
-      
-    case DROGUE_DEPLOY:
-      // Activate drogue deployment channel with redundancy
-      {
-        // First attempt
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
-        delay(1000);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
-        
-        // Brief pause
-        delay(500);
-        
-        // Secondary pulse for redundancy
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
-        delay(500);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
-        
-        // Log deployment
-        Serial.println(F("DROGUE DEPLOYMENT COMPLETE"));
-        WriteLogData(true);
-        
-        flightState = DROGUE_DESCENT;
-        newState = true;
-      }
-      break;
-      
-    case DROGUE_DESCENT:
-      // Monitor altitude for main deployment
-      {
-        // Primary method: altitude above ground
-        if ((currentAltitude - launchAltitude) < MAIN_DEPLOY_ALTITUDE) {
-          flightState = MAIN_DEPLOY;
-          newState = true;
-        }
-        
-        // Backup method: time-based
-        if (millis() - stateEntryTime > 30000) {
-          // If we've been descending for 30+ seconds, check current descent rate
-          static float lastCheckAlt = 0;
-          static unsigned long lastCheckTime = 0;
-          
-          if (millis() - lastCheckTime > 1000) {
-            float descentRate = (lastCheckAlt - currentAltitude) / ((millis() - lastCheckTime) / 1000.0);
-            lastCheckAlt = currentAltitude;
-            lastCheckTime = millis();
-            
-            // If descending slower than 10 m/s, consider deploying main
-            if (descentRate > 0 && descentRate < 10.0) {
-              flightState = MAIN_DEPLOY;
-              newState = true;
-              Serial.println(F("MAIN DEPLOY triggered by descent rate"));
-            }
-          }
-        }
-      }
-      break;
-      
-    case MAIN_DEPLOY:
-      // Deploy main if present, with redundancy
-      if (MAIN_PRESENT) {
-        // First attempt
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
-        delay(1000);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
-        
-        // Brief pause
-        delay(500);
-        
-        // Secondary pulse for redundancy
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
-        delay(500);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
-        
-        // Log deployment
-        Serial.println(F("MAIN DEPLOYMENT COMPLETE"));
-        WriteLogData(true);
-      }
-      
-      flightState = MAIN_DESCENT;
-      newState = true;
-      break;
-      
-    case MAIN_DESCENT:
-      // Check for landing with redundant detection
-      if (detectLanding()) {
-        flightState = LANDED;
-        newState = true;
-      }
-      break;
-      
-    case LANDED:
-      // Wait a bit, then go to recovery mode
-      if (millis() - stateEntryTime > 10000) {
-        flightState = RECOVERY;
-        newState = true;
-      }
-      break;
-      
-    case RECOVERY:
-      // Log final data and prepare for shutdown
-      if (millis() - stateEntryTime > 30000) {
-        PrepareForShutdown();
-      }
-      
-      // Beeping pattern for recovery
-      if ((millis() / 2000) % 2 == 0) {
-        tone(BUZZER_PIN, 3000);
-      } else {
-        noTone(BUZZER_PIN);
-      }
-      break;
-      
-    case ERROR:
-      // Error handling - blink LED rapidly
-      if ((millis() / 250) % 2 == 0) {
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0));
-      } else {
-        pixels.setPixelColor(0, pixels.Color(0, 0, 0));
-      }
-      pixels.show();
-      
-      // Check if sensors have recovered
-      if (isSensorSuiteHealthy(PAD_IDLE)) {
-        // If we've been in error state for a while and sensors recovered, try to resume
-        if (millis() - stateEntryTime > 10000) {
-          flightState = PAD_IDLE;
-          newState = true;
-          Serial.println(F("Sensors recovered - resuming normal operation"));
-        }
-      }
-      break;
-  }
-}
+// In src/flight_logic.cpp
+// Uses many global variables like g_currentFlightState, g_launchAltitude, g_maxAltitudeReached,
+// g_baroCalibrated, g_main_deploy_altitude_m_agl, g_pixels, etc.
+// and constants from config.h and constants.h
+
+void ProcessFlightState();
+void setFlightStateLED(FlightState state); // Helper within flight_logic.cpp
 ```
 
-### Setup Function Enhancement for State Recovery
+### Arduino Framework Alignment & Setup Function Enhancement
+(Corresponds to `setup()` and `handleInitialStateManagement()` in `src/TripleT_Flight_Firmware.cpp`, and `recoverFromPowerLoss()` in `src/state_management.cpp`)
 
-Modify the `setup()` function to include power loss recovery:
+- **`setup()` (in `TripleT_Flight_Firmware.cpp`):**
+    - Initializes hardware: Serial, I2C, NeoPixel (`initNeoPixel`), pyro pins, servos, buzzer.
+    - Calls `recoverFromPowerLoss()` to load and process any saved state from EEPROM. This sets `g_currentFlightState` based on saved data.
+    - Initializes SD card (`initSDCard`), GPS (`gps_init`), sensors (`ms5611_init`, `ICM_20948_init`, `kx134_init`), Kalman filter (`kalman_init`), and guidance system (`guidance_init`).
+    - Attempts to create an initial log file.
+    - Prints initial sensor status.
+- **`handleInitialStateManagement()` (in `TripleT_Flight_Firmware.cpp`, called once at the start of `loop()`):**
+    - Performs a system health check (`isSensorSuiteHealthy()`).
+    - If `g_currentFlightState` is `STARTUP` (fresh start or EEPROM indicated restart):
+        - If healthy and barometer calibrated, transitions to `PAD_IDLE`.
+        - If healthy but barometer not calibrated, transitions to `CALIBRATION`.
+        - If unhealthy, transitions to `ERROR`.
+    - If `g_currentFlightState` was `ERROR` (from EEPROM or previous issue) and system is now healthy:
+        - Transitions to `PAD_IDLE` or `CALIBRATION` as appropriate.
+    - If system becomes unhealthy during this initial management, transitions to `ERROR`.
+- **`loop()` (in `TripleT_Flight_Firmware.cpp`):**
+    - Calls `handleInitialStateManagement()` once.
+    - Processes serial commands (`processCommand()`).
+    - Reads sensor data periodically.
+    - Updates Kalman filter and guidance system.
+    - Calls `ProcessFlightState()` to manage the main state machine logic.
+    - Writes log data (`WriteLogData()`).
 
 ```cpp
-void setup() {
-  // Initialize variables
-  flightState = STARTUP;
-  
-  // Wait for the Serial monitor to be opened
-  Serial.begin(115200);
-  delay(500); // Give the serial port time to initialize
-  
-  // Initialize system and debug settings
-  enableDetailedOutput = false;
-  enableSystemDebug = false;
-  // ... (other debug flags)
-  
-  // Initialize the watchdog
-  initWatchdog();
-  
-  // STARTUP state actions
-  Serial.println(F("STARTUP state"));
-  pixels.begin();
-  pixels.clear();
-  pixels.setPixelColor(0, pixels.Color(20, 0, 0)); // Red during startup
-  pixels.show();
-  
-  // Pet the watchdog
-  petWatchdog();
-  
-  // Check for previous flight state in EEPROM
-  Serial.println(F("Checking for flight state recovery..."));
-  recoverFromPowerLoss();
-  
-  // If we're not starting fresh, skip some initialization
-  if (flightState != STARTUP) {
-    Serial.println(F("Resuming from saved state"));
-    
-    // Prepare for resumed operation
-    switch (flightState) {
-      case DROGUE_DEPLOY:
-        // If resuming during deployment, do it now
-        digitalWrite(PYRO_CHANNEL_1, HIGH);
-        delay(1000);
-        digitalWrite(PYRO_CHANNEL_1, LOW);
-        flightState = DROGUE_DESCENT;
-        break;
-        
-      case MAIN_DEPLOY:
-        // If resuming during deployment, do it now
-        digitalWrite(PYRO_CHANNEL_2, HIGH);
-        delay(1000);
-        digitalWrite(PYRO_CHANNEL_2, LOW);
-        flightState = MAIN_DESCENT;
-        break;
-        
-      default:
-        // Other states handled normally
-        break;
-    }
-    
-    // Continue with normal initialization
-  }
-  
-  // Startup Tone
-  tone(BUZZER_PIN, 2000); delay(50); noTone(BUZZER_PIN);
-  
-  // Initialize recovery system channels
-  pinMode(PYRO_CHANNEL_1, OUTPUT);
-  pinMode(PYRO_CHANNEL_2, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_1, LOW);
-  digitalWrite(PYRO_CHANNEL_2, LOW);
-  
-  // Initialize I2C, SPI, etc.
-  Wire.begin();
-  Wire.setClock(400000);
-  // ... (other init code)
-  
-  // Pet the watchdog
-  petWatchdog();
-  
-  // Initialize sensors
-  Serial.println(F("Initializing sensors..."));
-  
-  // Initialize KX134 with error checking
-  if (!kx134_init()) {
-    Serial.println(F("WARNING: KX134 accelerometer initialization failed"));
-    accelerometerStatus.isWorking = false;
-  } else {
-    Serial.println(F("KX134 accelerometer initialized"));
-    accelerometerStatus.isWorking = true;
-    accelerometerStatus.lastValidReading = millis();
-  }
-  
-  // Initialize ICM-20948 with error checking
-  if (ICM_20948_init()) {
-    Serial.println(F("ICM-20948 initialized"));
-    gyroscopeStatus.isWorking = true;
-    gyroscopeStatus.lastValidReading = millis();
-    magnetometerStatus.isWorking = true;
-    magnetometerStatus.lastValidReading = millis();
-  } else {
-    Serial.println(F("WARNING: ICM-20948 initialization failed"));
-    gyroscopeStatus.isWorking = false;
-    magnetometerStatus.isWorking = false;
-  }
-  
-  // Initialize MS5611 with error checking
-  if (ms5611_init()) {
-    Serial.println(F("MS5611 initialized"));
-    barometerStatus.isWorking = true;
-    barometerStatus.lastValidReading = millis();
-  } else {
-    Serial.println(F("WARNING: MS5611 initialization failed"));
-    barometerStatus.isWorking = false;
-  }
-  
-  // Pet the watchdog
-  petWatchdog();
-  
-  // Transition to CALIBRATION state
-  flightState = CALIBRATION;
-  Serial.println(F("CALIBRATION state"));
-  pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow during calibration
-  pixels.show();
-  
-  // Set state timeout for calibration
-  setStateTimeout(CALIBRATION);
-  
-  // Set logging rate for calibration
-  updateLoggingRate(flightState);
-  
-  // Initialize GPS and wait for a fix
-  if (gps_init()) {
-    Serial.println(F("GPS initialized"));
-    gpsStatus.isWorking = true;
-    gpsStatus.lastValidReading = millis();
-  } else {
-    Serial.println(F("WARNING: GPS initialization failed"));
-    gpsStatus.isWorking = false;
-  }
-  
-  Serial.println(F("Waiting for GPS time sync and 3D fix..."));
-  
-  // Wait for GPS to have valid date/time and 3D fix
-  unsigned long gpsWaitStart = millis();
-  bool gpsValid = false;
-  
-  // Use a blue "breathing" pattern while waiting
-  int brightness = 0;
-  int step = 5;
-  
-  // Pet the watchdog regularly during this loop
-  lastWatchdogPet = millis();
-  
-  while (!gpsValid && (millis() - gpsWaitStart < 60000)) { // 60-second timeout
-    // Feed the watchdog
-    if (millis() - lastWatchdogPet >= (watchdogTimeout / 2)) {
-      watchdog.feed();
-      lastWatchdogPet = millis();
-    }
-    
-    // Update GPS data
-    gps_read();
-    
-    // Check sensor health
-    checkSensor(gpsStatus, SIV, 0, "GPS");
-    
-    // Check GPS conditions (year, fix type, satellites)
-    if (myGNSS.getYear() >= 2025 && GPS_fixType >= 3 && SIV >= 7) {
-      gpsValid = true;
-      pixels.setPixelColor(0, pixels.Color(0, 50, 50)); // Cyan indicates valid GPS
-      pixels.show();
-      
-      // Calibrate barometer with GPS altitude
-      Serial.println(F("Calibrating barometer with GPS altitude..."));
-      if (ms5611_calibrate_with_gps(10000)) { // 10-second timeout
-        baroCalibrated = true;
-        Serial.println(F("Barometer calibration successful!"));
-      } else {
-        Serial.println(F("Barometer calibration failed!"));
-        // Check if we need to abort
-        if (!isSensorSuiteHealthy(CALIBRATION)) {
-          handleSensorFailure(CALIBRATION);
-          break;
-        }
-      }
-      break;
-    }
-    
-    // Update LED breathing effect
-    if (millis() % 50 == 0) {
-      brightness += step;
-      if (brightness >= 50 || brightness <= 0) {
-        step = -step;
-        brightness = constrain(brightness, 0, 50);
-      }
-      pixels.setPixelColor(0, pixels.Color(0, 0, brightness));
-      pixels.show();
-    }
-    
-    delay(100); // Small delay to avoid hogging CPU
-  }
-  
-  // Handle GPS timeout
-  if (!gpsValid) {
-    Serial.println(F("WARNING: GPS time sync timeout"));
-    // Check if this is a critical error
-    if (!isSensorSuiteHealthy(CALIBRATION)) {
-      handleSensorFailure(CALIBRATION);
-    }
-  }
-  
-  // Pet the watchdog
-  petWatchdog();
-  
-  // Initialize storage
-  Serial.println(F("Initializing storage..."));
-  sdCardAvailable = initSDCard();
-  
-  if (sdCardAvailable) {
-    Serial.println(F("Creating log file..."));
-    if (createNewLogFile()) {
-      Serial.println(F("Log file created successfully"));
-    } else {
-      Serial.println(F("Failed to create log file"));
-    }
-  }
-  
-  // Store initial altitude for reference
-  float launchAltitude = getBaroAltitude();
-  
-  // Final system check before entering main loop
-  bool systemHealthy = isSensorSuiteHealthy(PAD_IDLE);
-  
-  // Transition to PAD_IDLE state for the loop() function
-  flightState = systemHealthy ? PAD_IDLE : ERROR;
-  
-  if (flightState == PAD_IDLE) {
-    Serial.println(F("Entering PAD_IDLE state"));
-    pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for ready
-  } else {
-    Serial.println(F("Entering ERROR state - Critical sensor failure"));
-    pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for error
-  }
-  pixels.show();
-  
-  // Update logging rate for the new state
-  updateLoggingRate(flightState);
-  
-  // Log startup complete
-  Serial.println(F("Setup complete - entering main loop"));
-  
-  // Final watchdog pet before entering loop
-  watchdog.feed();
-  lastWatchdogPet = millis();
-}
+// In TripleT_Flight_Firmware.cpp
+void setup();
+void handleInitialStateManagement();
+void loop();
+
+// In src/state_management.cpp
+void recoverFromPowerLoss(); // Called by setup() via handleInitialStateManagement()
 ```
 
 ### Testing Considerations for Additional Features
-
-Add tests for the new features:
-
-```cpp
-// Test EEPROM state saving and recovery
-void testStateRecovery() {
-  Serial.println(F("Testing state recovery..."));
-  
-  // Save current state
-  saveStateToEEPROM();
-  
-  // Change state temporarily
-  FlightState originalState = flightState;
-  flightState = ERROR;
-  
-  // Reset and recover
-  Serial.println(F("Simulating power cycle..."));
-  delay(1000);
-  
-  // Attempt to load state
-  recoverFromPowerLoss();
-  
-  // Check if state was restored correctly
-  Serial.print(F("Recovery test result: "));
-  if (flightState == originalState) {
-    Serial.println(F("PASS"));
-  } else {
-    Serial.println(F("FAIL"));
-    // Restore original state
-    flightState = originalState;
-  }
-}
-
-// Test redundant apogee detection
-void testApogeeDetection() {
-  Serial.println(F("Testing redundant apogee detection..."));
-  
-  // Save original values
-  float originalMaxAlt = maxAltitudeReached;
-  int originalDescCount = descendingCount;
-  
-  // Test barometric detection
-  Serial.print(F("Barometric detection: "));
-  maxAltitudeReached = 1000.0;
-  descendingCount = 0;
-  
-  // Simulate several descending readings
-  for (int i = 0; i < APOGEE_CONFIRMATION_COUNT; i++) {
-    float simulatedAlt = maxAltitudeReached - 2.0;
-    barometerStatus.isWorking = true;
-    
-    // Manually call detection logic
-    float currentAltitude = simulatedAlt;
-    if (currentAltitude > maxAltitudeReached) {
-      maxAltitudeReached = currentAltitude;
-      descendingCount = 0;
-    }
-    else if (currentAltitude < maxAltitudeReached - 1.0) {
-      descendingCount++;
-    }
-  }
-  
-  Serial.println(descendingCount >= APOGEE_CONFIRMATION_COUNT ? F("PASS") : F("FAIL"));
-  
-  // Test time-based detection
-  Serial.print(F("Time-based detection: "));
-  unsigned long originalBoostEnd = boostEndTime;
-  boostEndTime = millis() - (BACKUP_APOGEE_TIME + 1000);
-  
-  bool timeDetection = (millis() - boostEndTime > BACKUP_APOGEE_TIME);
-  Serial.println(timeDetection ? F("PASS") : F("FAIL"));
-  
-  // Restore original values
-  maxAltitudeReached = originalMaxAlt;
-  descendingCount = originalDescCount;
-  boostEndTime = originalBoostEnd;
-}
-
-// Add to processCommand()
-else if (command.startsWith("test ")) {
-  if (command == "test recovery") {
-    testStateRecovery();
-  }
-  else if (command == "test apogee") {
-    testApogeeDetection();
-  }
-  else if (command == "test landing") {
-    bool result = detectLanding();
-    Serial.print(F("Landing detection test: "));
-    Serial.println(result ? F("DETECTED") : F("NOT DETECTED"));
-  }
-}
-```
+The illustrative C++ code blocks for testing (`testStateRecovery`, `testApogeeDetection`, etc.) are examples of how features *could* be tested via serial commands. The actual `processCommand` function in `src/command_processor.cpp` does not currently include these specific "test" commands. The "Testing Considerations" section below the code blocks provides more general advice on testing.
 
 ## Testing Considerations
+(General advice, not specific test functions currently in `command_processor.cpp`)
 
-1. Add a specific test mode for error detection and recovery:
-   ```cpp
-   // Add to processCommand()
-   else if (command.startsWith("test error ")) {
-     if (command == "test error barometer") {
-       // Simulate barometer failure
-       barometerStatus.failureCount = MAX_SENSOR_FAILURES;
-       barometerStatus.isWorking = false;
-       Serial.println(F("Simulated barometer failure"));
-     }
-     else if (command == "test error accel") {
-       // Simulate accelerometer failure
-       accelerometerStatus.failureCount = MAX_SENSOR_FAILURES;
-       accelerometerStatus.isWorking = false;
-       Serial.println(F("Simulated accelerometer failure"));
-     }
-     else if (command == "test error watchdog") {
-       // Simulate watchdog timeout
-       Serial.println(F("Simulating watchdog timeout by entering infinite loop"));
-       watchdogTriggered = true;  // Set flag first so we can recover
-       while(1) { } // Force watchdog to trigger
-     }
-   }
-   ```
-
-2. Test the state timeout function by setting shorter timeouts in test mode.
-
-3. Implement a daily or pre-flight self-test sequence:
-   ```cpp
-   void performSystemTest() {
-     Serial.println(F("Running system test..."));
-     
-     // Test each sensor
-     bool allPass = true;
-     
-     // Test barometer
-     Serial.print(F("Testing barometer..."));
-     ms5611_read();
-     if (pressure > 100 && pressure < 1100) {
-       Serial.println(F("PASS"));
-     } else {
-       Serial.println(F("FAIL"));
-       allPass = false;
-     }
-     
-     // Test accelerometer
-     Serial.print(F("Testing accelerometer..."));
-     kx134_read();
-     float kx134_magnitude = sqrt(
-       kx134_accel[0] * kx134_accel[0] + 
-       kx134_accel[1] * kx134_accel[1] + 
-       kx134_accel[2] * kx134_accel[2]
-     );
-     if (kx134_magnitude > 0.9 && kx134_magnitude < 1.1) {
-       Serial.println(F("PASS"));
-     } else {
-       Serial.println(F("FAIL"));
-       allPass = false;
-     }
-     
-     // Test recovery channels
-     Serial.print(F("Testing pyro channels (simulated)..."));
-     // In a real test, you might check continuity without firing
-     Serial.println(F("PASS"));
-     
-     // Test SD card
-     Serial.print(F("Testing SD card..."));
-     if (sdCardAvailable) {
-       Serial.println(F("PASS"));
-     } else {
-       Serial.println(F("FAIL"));
-       allPass = false;
-     }
-     
-     // Test EEPROM state saving
-     Serial.print(F("Testing EEPROM..."));
-     bool eepromPass = testStateRecovery();
-     Serial.println(eepromPass ? F("PASS") : F("FAIL"));
-     if (!eepromPass) allPass = false;
-     
-     // Test redundant apogee detection
-     Serial.print(F("Testing redundant detection..."));
-     testApogeeDetection();
-     
-     Serial.print(F("System test result: "));
-     Serial.println(allPass ? F("PASS") : F("FAIL"));
-     
-     // Update LED based on result
-     pixels.setPixelColor(0, allPass ? pixels.Color(0, 50, 0) : pixels.Color(50, 0, 0));
-     pixels.show();
-   }
-   ```
+1.  **Error Detection and Recovery:**
+    *   Test by simulating sensor failures (e.g., disconnecting a sensor) to ensure transition to `ERROR` state.
+    *   Verify automatic recovery from `ERROR` state when sensor health is restored.
+    *   Test manual recovery commands (`clear_errors`, `clear_to_calibration`).
+    *   Check the 5-second grace period after error clearing.
+    *   Verify that specific error codes (e.g., `STATE_TRANSITION_INVALID_HEALTH`) are set and logged when `isSensorSuiteHealthy` causes a transition to `ERROR`.
+2.  **State Timeouts:** While specific state timeouts (like `ARMED_TIMEOUT_MS`) are defined in `config.h`, their direct implementation in `ProcessFlightState` for automatic transitions (other than `LANDED_TIMEOUT_MS` and `RECOVERY_TIMEOUT_MS`) is not explicitly detailed in the provided `flight_logic.cpp`. Testing would involve verifying implemented timeouts.
+3.  **Self-Test Sequence:** The firmware does not currently have an explicit "daily or pre-flight self-test sequence" command. Testing individual components is done via status commands and debug flags.
+4.  **Error Code Display:**
+    *   Verify that the `ERROR` state in `ProcessFlightState` periodically prints the last error code and its string name.
+    *   Verify that the `status` (`b`) command correctly displays the last error code via `printSystemStatus`.
 
 ## Additional Enhancements
+This section reflects the status based on the `UPDATED_GAP_ANALYSIS_2025.md` and the v0.48 codebase.
 
-1. ✅ Add error detection for sensor failures and recovery actions.
-2. ✅ Implement watchdog timer for system stability.
-3. ✅ Add non-volatile storage of flight state to recover from power loss.
-4. ✅ Consider adding redundant sensing for critical events like apogee detection.
-5. ✅ Implement timeout fallbacks for critical actions (e.g., if apogee isn't detected in a reasonable time).
+1. ✅ Add error detection for sensor failures and recovery actions. (Implemented: `isSensorSuiteHealthy`, `ERROR` state, auto/manual recovery)
+2. ➖ Implement watchdog timer for system stability. (Watchdog mentioned in old docs/config but not actively used/fed in main loop of current `TripleT_Flight_Firmware.cpp` or `flight_logic.cpp`. `Watchdog_t4` library was removed.)
+3. ✅ Add non-volatile storage of flight state to recover from power loss. (Implemented: `FlightStateData` in EEPROM via `state_management.cpp`)
+4. ✅ Consider adding redundant sensing for critical events like apogee detection. (Implemented: Multi-method apogee and landing detection in `flight_logic.cpp`)
+5. ✅ Implement timeout fallbacks for critical actions (e.g., if apogee isn't detected in a reasonable time). (Implemented: `BACKUP_APOGEE_TIME_MS`)

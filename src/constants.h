@@ -25,5 +25,8 @@ static constexpr uint32_t STATE_TIMEOUT_MS           = 30000; // Timeout for cri
 static constexpr uint32_t UKF_PROCESS_INTERVAL       = 50;    // Process UKF data at 20Hz
 
 // Flight Logic Related (Consider moving to a flight_config.h later if needed)
-static constexpr uint32_t BACKUP_APOGEE_TIME         = 5000;  // Time since boost end to assume apogee (ms)
+// BACKUP_APOGEE_TIME has been moved to config.h
 static constexpr uint32_t EXPECTED_APOGEE_TIME       = 10000; // Expected time from liftoff to apogee (ms) 
+
+// --- Physical Constants ---
+static constexpr float STANDARD_SEA_LEVEL_PRESSURE  = 1013.25f; // Standard sea level pressure in hPa (millibars) 

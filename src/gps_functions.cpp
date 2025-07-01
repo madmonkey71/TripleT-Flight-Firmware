@@ -31,6 +31,9 @@ bool GPS_time_valid = false;
 // Add reference to debug flag
 extern volatile bool enableGPSDebug;
 
+#include "error_codes.h" // For ErrorCode_t
+extern ErrorCode_t g_last_error_code; // For setting error codes
+
 // Create a single persistent NullStream that doesn't output anything
 class NullStream : public Stream {
 public:
@@ -80,7 +83,14 @@ void gps_init() {
   setGPSDebugging(enableGPSDebug);
   
   // Direct initialization without checking connection
-  myGNSS.begin(Wire);
+  if (!myGNSS.begin(Wire)) {
+    Serial.println(F("ERROR: GPS module (myGNSS.begin()) failed to initialize!"));
+    g_last_error_code = SENSOR_INIT_FAIL_GPS;
+    // Note: Unlike other sensors, we might not want to 'return' here,
+    // as the system might still attempt to configure and use it later.
+    // The g_icm20948_ready or equivalent for GPS isn't explicitly set here,
+    // but isSensorSuiteHealthy would catch this if GPS is vital.
+  }
   
   // Configure the GPS module
   Serial.print(F("Configuring GPS..."));
@@ -103,15 +113,14 @@ void gps_init() {
   setGPSDebugging(enableGPSDebug);
 }
 
-// Original checkGPSConnection function was redundant - replaced with simpler version
-bool checkGPSConnection() {
-  // Ensure debug settings are consistent
-  setGPSDebugging(enableGPSDebug);
-  
-  // Just verify we can get data from the GPS
-  byte rate = myGNSS.getNavigationFrequency();
-  return (rate > 0);
-}
+// bool checkGPSConnection() { // REMOVED as unused
+//   // Ensure debug settings are consistent
+//   setGPSDebugging(enableGPSDebug);
+//
+//   // Just verify we can get data from the GPS
+//   byte rate = myGNSS.getNavigationFrequency();
+//   return (rate > 0);
+// }
 
 bool gps_read() {
   // Update GPS data if available
@@ -197,5 +206,16 @@ void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute,
   hour = GPS_hour;
   minute = GPS_minute;
   second = GPS_second;
+}
+
+// Safely get the GPS fix type
+uint8_t getFixType() {
+    return GPS_fixType;
+}
+
+// Safely get the GPS altitude in meters
+float getGPSAltitude() {
+    // The u-blox modules report altitude in millimeters. Convert to meters.
+    return (float)GPS_altitude / 1000.0f;
 }
 

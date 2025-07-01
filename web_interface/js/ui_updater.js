@@ -11,7 +11,7 @@ let actuatorChartInstance = null; // Added for Actuator Control chart
 // DOM elements for numerical data
 let valLat, valLong, valSpeed, valSats, valAltGps;
 let valRoll, valPitch, valYaw;
-let valPressure, valTemp, valAltBaro;
+let valPressure, valTemp, valAltBaro, valBattVoltage;
 let currentFlightStateValueElement; // Added for flight state
 
 /**
@@ -48,6 +48,7 @@ function initUI() {
     valPressure = document.getElementById('valPressure');
     valTemp = document.getElementById('valTemp');
     valAltBaro = document.getElementById('valAltBaro');
+    valBattVoltage = document.getElementById('valBattVoltage');
     currentFlightStateValueElement = document.getElementById('currentFlightStateValue');
 
     if (typeof init3DVisualizer === 'function') {
@@ -133,6 +134,7 @@ function updateUI(parsedData) {
     updateElementText(valPressure, parsedData.Pressure, 'N/A', 2);
     updateElementText(valTemp, parsedData.Temperature, 'N/A', 1);
     updateElementText(valAltBaro, parsedData.CalibratedAltitude, 'N/A', 1);
+    updateElementText(valBattVoltage, parsedData.BattVoltage, 'N/A', 2);
 }
 
 // Example of how main.js might call this after parsing data:

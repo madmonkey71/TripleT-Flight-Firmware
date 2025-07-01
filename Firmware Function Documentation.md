@@ -1,7 +1,7 @@
 # TripleT Flight Firmware Function Documentation
-## Version 0.50
+## Version 0.51
 
-## Flow Diagram (Conceptual v0.50)
+## Flow Diagram (Conceptual v0.51)
 
 ```mermaid
 graph TD

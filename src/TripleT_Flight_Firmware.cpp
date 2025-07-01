@@ -31,7 +31,7 @@
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
 // Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.48
+#define TRIPLET_FLIGHT_VERSION 0.51
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41

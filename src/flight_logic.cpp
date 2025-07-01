@@ -83,6 +83,7 @@ void ProcessFlightState() {
     const unsigned long errorCheckInterval = 1000; // 1 second
     const unsigned long errorClearGracePeriod = 5000; // 5 seconds grace period after clearing errors
     const unsigned long stateBroadcastInterval = 1000; // 1 second
+    unsigned long currentTimeMillis = millis(); // Declare here to avoid case label crossing issues
 
     // If CSV is OFF, periodically send the current state to the web UI
     if (!g_debugFlags.enableSerialCSV) {
@@ -477,21 +478,16 @@ void ProcessFlightState() {
             break;
         case RECOVERY:
             {
+                // Declare all variables at the beginning of the case block
+                static unsigned long recoveryBuzzerPatternStartTime = 0;
+                static int recoveryBuzzerPatternStep = 0;
+                static unsigned long recoveryLedStrobeStartTime = 0;
+                static bool isLedStrobeOn = false;
+                static unsigned long lastGpsBeaconTime = 0;
+                
                 // SOS Pattern: ... --- ... (S O S)
                 // S: Dot Dot Dot
                 // O: Dash Dash Dash
-                // --- SOS Buzzer Pattern ---
-                static unsigned long recoveryBuzzerPatternStartTime = 0;
-                static int recoveryBuzzerPatternStep = 0;
-
-                // --- LED Strobe Pattern ---
-                static unsigned long recoveryLedStrobeStartTime = 0;
-                static bool isLedStrobeOn = false;
-
-                // --- GPS Beacon Serial Output ---
-                static unsigned long lastGpsBeaconTime = 0;
-
-                unsigned long currentTimeMillis = millis();
 
                 // --- Buzzer Logic ---
                 if (BUZZER_OUTPUT) {
@@ -650,6 +646,7 @@ void ProcessFlightState() {
                         }
                         break;
                 }
+            } // Close the if (BUZZER_OUTPUT) block
 
                 // --- LED Strobe Logic ---
                 // Initialize/reset LED strobe timing when first entering RECOVERY state (using newStateSignal)

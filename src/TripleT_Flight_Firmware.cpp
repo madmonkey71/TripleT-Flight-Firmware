@@ -91,6 +91,9 @@ bool g_useKalmanFilter = true; // Always true - Kalman is the only orientation f
 float g_kalmanRoll = 0.0f;
 float g_kalmanPitch = 0.0f;
 float g_kalmanYaw = 0.0f;
+float g_kalmanRollRate = 0.0f;  // Angular rate from gyro (rad/s)
+float g_kalmanPitchRate = 0.0f; // Angular rate from gyro (rad/s)
+float g_kalmanYawRate = 0.0f;   // Angular rate from gyro (rad/s)
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
 // External declarations for sensor data
@@ -877,6 +880,11 @@ void loop() {
             float kf_calibrated_gyro[3];
             ICM_20948_get_calibrated_gyro(kf_calibrated_gyro); // Get calibrated gyro data
 
+            // Update global Kalman rate variables with calibrated gyro data
+            g_kalmanRollRate = kf_calibrated_gyro[0];   // X-axis (roll rate)
+            g_kalmanPitchRate = kf_calibrated_gyro[1];  // Y-axis (pitch rate)
+            g_kalmanYawRate = kf_calibrated_gyro[2];    // Z-axis (yaw rate)
+
             // Accel data for Kalman is now in current_accel_for_kalman (g's)
 
             kalman_predict(kf_calibrated_gyro[0], kf_calibrated_gyro[1], kf_calibrated_gyro[2], dt_kalman);
@@ -911,6 +919,7 @@ void loop() {
 
       guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
                       gu_calibrated_gyro[0], gu_calibrated_gyro[1], gu_calibrated_gyro[2],
+                      GPS_latitude, GPS_longitude, GPS_altitudeMSL / 1000.0f,
                       dt_guidance);
 
       float pitch_command_norm, roll_command_norm, yaw_command_norm; // Normalized (-1 to 1)

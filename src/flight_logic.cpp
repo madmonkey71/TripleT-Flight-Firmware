@@ -41,6 +41,9 @@ extern bool ms5611_initialized_ok; // Declared extern for isSensorSuiteHealthy f
 extern float g_kalmanRoll;
 extern float g_kalmanPitch;
 extern float g_kalmanYaw;
+extern float g_kalmanRollRate;
+extern float g_kalmanPitchRate;
+extern float g_kalmanYawRate;
 
 // Global variables for flight logic state progression, defined in this file
 unsigned long boostEndTime = 0;
@@ -368,7 +371,7 @@ void ProcessFlightState() {
                 // reset_max_stability_metrics(); // Already done when transitioning to ARMED, and again from ARMED to BOOST
                 // guidance_reset_stability_status();
                 break;
-            case COAST:
+            case COAST: {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("COAST: Motor burnout. Coasting to apogee."));
                 descendingCount = 0;
                 previousApogeeDetectAltitude = currentAbsoluteBaroAlt; // Capture altitude at start of coast for some apogee logic
@@ -399,6 +402,7 @@ void ProcessFlightState() {
                     Serial.print(F(" Y:")); Serial.println(targetYawRad * (180.0f/PI), 2);
                 }
                 break;
+            }
             case APOGEE:
                 if (g_debugFlags.enableSystemDebug) {
                     Serial.print(F("APOGEE: Peak altitude reached: "));

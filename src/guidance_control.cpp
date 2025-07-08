@@ -2,6 +2,10 @@
 #include "config.h" // For PID gains and limits
 #include <math.h>   // For fabs, if needed for integral windup or other math functions
 
+// Forward declarations for GPS utility functions
+static float gps_distance_m(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_e7, int32_t lon2_e7);
+static float gps_bearing_rad(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_e7, int32_t lon2_e7);
+
 // --- Static Global Variables for Guidance Control ---
 
 // Target orientation (desired state)

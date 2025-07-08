@@ -1,3 +1,5 @@
+#ifndef DATA_STRUCTURES_H
+#define DATA_STRUCTURES_H
 
 #include <Arduino.h>
 #include <stdint.h>

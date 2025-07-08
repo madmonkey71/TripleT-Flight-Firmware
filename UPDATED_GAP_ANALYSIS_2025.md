@@ -103,21 +103,21 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
 **Tasks Required:**
 
 **Guidance System Failsafe Mechanisms:**
-    - [x] Design failsafe mechanisms (max deflection, stability monitoring: rates, attitude error, saturation). *(Implemented in `guidance_control.cpp`, config in `config.h`)*
-    - [x] Implement core stability checking logic in `guidance_control.cpp`.
-    - [x] Integrate stability checks into `flight_logic.cpp` for `BOOST` and `COAST` states.
-    - [x] System transitions to `ERROR` state with `GUIDANCE_STABILITY_FAIL` upon violation.
-    - [x] Add new log fields for stability metrics to `LogData` and `log_format_definition.cpp`.
+    - ✅ Design failsafe mechanisms (max deflection, stability monitoring: rates, attitude error, saturation). *(Implemented in `guidance_control.cpp`, config in `config.h`)*
+    - ✅ Implement core stability checking logic in `guidance_control.cpp`.
+    - ✅ Integrate stability checks into `flight_logic.cpp` for `BOOST` and `COAST` states.
+    - ✅ System transitions to `ERROR` state with `GUIDANCE_STABILITY_FAIL` upon violation.
+    - ✅ Add new log fields for stability metrics to `LogData` and `log_format_definition.cpp`.
     - [ ] Finalize population of stability metric log fields (e.g., `stability_flags`, `max_..._so_far`) in `TripleT_Flight_Firmware.cpp` main loop before `WriteLogData`.
     - [ ] Write unit tests for failsafe mechanisms.
 
 **Trajectory Following Algorithms (Go-to-Waypoint Approach):**
-    - [x] Design trajectory representation (Waypoints: Lat, Lon, Alt) and data structures (`Trajectory_t`, `TrajectoryWaypoint_t`). *(In `data_structures.h`)*
-    - [x] Implement core "go-to-waypoint" logic using PIDs for heading and altitude control in `guidance_control.cpp`. *(Initial version targeting waypoint bearing and altitude)*
-    - [x] Add configuration parameters for trajectory PIDs and general settings (e.g., `MAX_TRAJECTORY_WAYPOINTS`, acceptance radius) to `config.h`.
-    - [x] Implement basic GPS math helper functions (distance, bearing) in `guidance_control.cpp`.
-    - [x] Implement basic waypoint switching logic based on acceptance radius in `guidance_update()`.
-    - [x] Add new log fields for trajectory performance to `LogData` and `log_format_definition.cpp`.
+    - ✅ Design trajectory representation (Waypoints: Lat, Lon, Alt) and data structures (`Trajectory_t`, `TrajectoryWaypoint_t`). *(In `data_structures.h`)*
+    - ✅ Implement core "go-to-waypoint" logic using PIDs for heading and altitude control in `guidance_control.cpp`. *(Initial version targeting waypoint bearing and altitude)*
+    - ✅ Add configuration parameters for trajectory PIDs and general settings (e.g., `MAX_TRAJECTORY_WAYPOINTS`, acceptance radius) to `config.h`.
+    - ✅ Implement basic GPS math helper functions (distance, bearing) in `guidance_control.cpp`.
+    - ✅ Implement basic waypoint switching logic based on acceptance radius in `guidance_update()`.
+    - ✅ Add new log fields for trajectory performance to `LogData` and `log_format_definition.cpp`.
     - [ ] Robustly implement and test GPS math functions (distance, bearing, potentially XTE).
     - [ ] Finalize population of trajectory performance log fields in `TripleT_Flight_Firmware.cpp` main loop.
     - [ ] Develop serial commands for trajectory management (e.g., `traj_loadsd <file>`, `traj_activate`, `traj_deactivate`, `traj_list`).
@@ -136,10 +136,10 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
 **Status:** Paused development, basic implementation exists
 **Impact:** Medium-High - Affects guidance accuracy and reliability
 **Tasks Required:**
-- [x] **Complete Kalman filter implementation for orientation estimation** - *Kalman filter now integrates accelerometer, gyroscope, and magnetometer data. Yaw drift is corrected using a tilt-compensated magnetometer reading.*
-- [x] **Integrate magnetometer calibration persistence** - *Magnetometer bias and scale factors are now saved to EEPROM and loaded on startup, eliminating the need for frequent recalibration.*
-- [x] **Implement sensor fusion for redundant acceleration sources (ICM-20948 + KX134)** - *A new sensor fusion module (`sensor_fusion.cpp`) has been implemented.*
-- [x] **Add dynamic sensor switching based on flight phase and reliability** - *The system now automatically switches to the high-g KX134 accelerometer during the BOOST phase and uses the ICM-20948 otherwise.*
+- ✅ **Complete Kalman filter implementation for orientation estimation** - *Kalman filter now integrates accelerometer, gyroscope, and magnetometer data. Yaw drift is corrected using a tilt-compensated magnetometer reading.*
+- ✅ **Integrate magnetometer calibration persistence** - *Magnetometer bias and scale factors are now saved to EEPROM and loaded on startup, eliminating the need for frequent recalibration.*
+- ✅ **Implement sensor fusion for redundant acceleration sources (ICM-20948 + KX134)** - *A new sensor fusion module (`sensor_fusion.cpp`) has been implemented.*
+- ✅ **Add dynamic sensor switching based on flight phase and reliability** - *The system now automatically switches to the high-g KX134 accelerometer during the BOOST phase and uses the ICM-20948 otherwise.*
 - [ ] **Validate orientation accuracy against known reference data** - *Validation remains an outstanding task requiring physical test data.*
 
 ### 3.2. 🟡 MEDIUM PRIORITY - System Enhancement

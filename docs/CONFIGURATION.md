@@ -308,3 +308,119 @@ This PID controller aims to minimize the altitude error between the vehicle's cu
 #define TRAJ_ALT_PID_INTEGRAL_LIMIT 0.2f // Anti-windup for Altitude PID integral term
 #define TRAJ_ALT_PID_OUTPUT_LIMIT 0.3f   // Max output (radians, e.g., approx +/-17 degrees for target_pitch_rad_g)
 ```
+
+## Guidance System Configuration
+
+The TripleT Flight Firmware includes an advanced guidance and control system that can provide active flight stabilization using servo-controlled fins or canards. This system can be completely disabled for passive rockets that don't have actuators.
+
+### Guidance Enable/Disable
+
+**Location:** `src/config.h`
+
+```cpp
+// --- Guidance System Configuration ---
+// Enable/disable the entire guidance system including servos and stability control
+// Set to 1 to enable guidance (requires servos/actuators), 0 to disable for passive rockets
+#define ENABLE_GUIDANCE 1  // 1=Enable guidance system, 0=Disable for passive flights
+```
+
+### Configuration Options
+
+#### Enabled Guidance (`ENABLE_GUIDANCE 1`)
+When guidance is enabled, the system will:
+- Initialize servo/actuator objects for pitch, roll, and yaw control
+- Run PID controllers for attitude stabilization
+- Perform stability monitoring during BOOST and COAST phases
+- Command actuators during appropriate flight phases
+- Log guidance-related data (target angles, PID integrals, actuator outputs)
+- Monitor guidance stability and transition to ERROR state if compromised
+
+**Hardware Requirements:**
+- Servo-controlled fins or canards connected to:
+  - Pitch actuator: Pin 21 (`ACTUATOR_PITCH_PIN`)
+  - Roll actuator: Pin 23 (`ACTUATOR_ROLL_PIN`) 
+  - Yaw actuator: Pin 20 (`ACTUATOR_YAW_PIN`)
+- ICM20948 IMU for orientation feedback
+- Optional: GPS for navigation guidance
+
+#### Disabled Guidance (`ENABLE_GUIDANCE 0`)
+When guidance is disabled, the system will:
+- Skip all guidance-related initialization
+- Disable servo/actuator control
+- Skip stability monitoring and PID calculations
+- Zero out guidance-related log fields
+- Operate as a passive rocket with full data logging capability
+
+**Use Cases:**
+- Small rockets without room for actuators
+- Initial test flights before adding guidance hardware
+- Backup/recovery mode for guidance hardware failures
+- Research flights focused on aerodynamics without control
+
+### PID Controller Configuration
+
+**Location:** `src/config.h`
+
+When guidance is enabled, you can tune the PID controllers:
+
+```cpp
+// --- PID Controller Gains ---
+
+// Roll Axis PID
+#define PID_ROLL_KP 1.0f
+#define PID_ROLL_KI 0.1f
+#define PID_ROLL_KD 0.05f
+
+// Pitch Axis PID
+#define PID_PITCH_KP 1.0f
+#define PID_PITCH_KI 0.1f
+#define PID_PITCH_KD 0.05f
+
+// Yaw Axis PID
+#define PID_YAW_KP 0.8f
+#define PID_YAW_KI 0.08f
+#define PID_YAW_KD 0.03f
+```
+
+### Actuator Configuration
+
+**Location:** `src/config.h`
+
+```cpp
+// --- Actuator Configuration ---
+#define ACTUATOR_PITCH_PIN 21 // Teensy pin 21
+#define ACTUATOR_ROLL_PIN  23 // Teensy pin 23
+#define ACTUATOR_YAW_PIN   20 // Teensy pin 20
+#define SERVO_MIN_PULSE_WIDTH 1000 // Microseconds
+#define SERVO_MAX_PULSE_WIDTH 2000 // Microseconds
+#define SERVO_DEFAULT_ANGLE 90     // Default angle for servos (degrees)
+```
+
+### Active Flight Phases
+
+When guidance is enabled, active control occurs during:
+- **COAST**: Attitude hold based on orientation at motor burnout
+- **DROGUE_DESCENT**: Continued stabilization under drogue chute
+- **MAIN_DESCENT**: Stabilization under main parachute
+
+### Safety Features
+
+- **Stability Monitoring**: Continuous monitoring of attitude errors and rates
+- **Error Detection**: Automatic transition to ERROR state if stability is compromised
+- **Sensor Validation**: Guidance requires healthy ICM20948 IMU
+- **Ground Safety**: No actuator commands when rocket is stationary on ground
+
+### Migration Guide
+
+To convert from guided to passive rocket configuration:
+1. Set `ENABLE_GUIDANCE 0` in `src/config.h`
+2. Remove servo hardware if desired
+3. Recompile and flash firmware
+4. All other functionality (logging, recovery, etc.) remains unchanged
+
+To add guidance to an existing passive rocket:
+1. Install servo-controlled fins/canards
+2. Connect servos to designated pins
+3. Set `ENABLE_GUIDANCE 1` in `src/config.h`
+4. Tune PID parameters for your specific airframe
+5. Test guidance on ground before flight

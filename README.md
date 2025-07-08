@@ -53,8 +53,12 @@ The firmware operates on a 14-state flight state machine:
 
 See [Flight Operations](docs/FLIGHT_OPERATIONS.md) for detailed state descriptions.
 
-## Recent Updates (v0.51)
+## Recent Updates (v0.52)
 
+- ✅ **Configurable Guidance System**: Added ability to completely disable guidance for passive rockets
+  - Set `ENABLE_GUIDANCE 0` for passive rockets without actuators
+  - Set `ENABLE_GUIDANCE 1` for guided rockets with servo-controlled fins
+  - All other functions (logging, recovery, etc.) work in both modes
 - ✅ **Critical Compilation Fixes**: Resolved all compiler errors including missing braces, variable scope issues, and function structure problems
 - ✅ **Header Guards Implementation**: Added proper header guards to prevent multiple inclusions
 - ✅ **Missing Variable Declarations**: Added missing Kalman rate variables and extern declarations

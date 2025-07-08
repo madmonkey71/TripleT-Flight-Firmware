@@ -10,6 +10,12 @@
 #endif
 
 // --- Features & Hardware Presence ---
+
+// --- Guidance System Configuration ---
+// Enable/disable the entire guidance system including servos and stability control
+// Set to 1 to enable guidance (requires servos/actuators), 0 to disable for passive rockets
+#define ENABLE_GUIDANCE 1  // 1=Enable guidance system, 0=Disable for passive flights
+
 // Configure parachute presence. At least MAIN must be present.
 #define DROGUE_PRESENT true // Set to true if drogue deployment is needed
 #define MAIN_PRESENT true   // Set to true if main deployment is needed

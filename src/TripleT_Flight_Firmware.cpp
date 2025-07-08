@@ -55,7 +55,9 @@
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
+#if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance and control functions
+#endif
 #include "flight_logic.h"     // For update_guidance_targets()
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
@@ -91,9 +93,11 @@ bool g_useKalmanFilter = true; // Always true - Kalman is the only orientation f
 float g_kalmanRoll = 0.0f;
 float g_kalmanPitch = 0.0f;
 float g_kalmanYaw = 0.0f;
+#if ENABLE_GUIDANCE == 1
 float g_kalmanRollRate = 0.0f;  // Angular rate from gyro (rad/s)
 float g_kalmanPitchRate = 0.0f; // Angular rate from gyro (rad/s)
 float g_kalmanYawRate = 0.0f;   // Angular rate from gyro (rad/s)
+#endif
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
 // External declarations for sensor data
@@ -120,11 +124,13 @@ bool baroCalibrated = false;               // Alias for g_baroCalibrated
 // Define sensor objects
 SparkFun_KX134 g_kx134Accel;  // Add KX134 accelerometer object definition
 
-// Servo objects for actuators
+// Servo objects for actuators (only if guidance is enabled)
+#if ENABLE_GUIDANCE == 1
 #include <PWMServo.h> // Ensure it's included (already there)
 PWMServo g_servo_pitch;
 PWMServo g_servo_roll;
 PWMServo g_servo_yaw;
+#endif
 
 // NeoPixel object
 Adafruit_NeoPixel g_pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -383,14 +389,27 @@ void WriteLogData(bool forceLog) {
   // Without dedicated getter functions, we log placeholders or last known values if available.
   // For now, logging placeholders (0.0f).
   // A more complete solution would involve adding getters to guidance_control.cpp.
+  #if ENABLE_GUIDANCE == 1
   guidance_get_target_euler_angles(logEntry.target_roll,
-                                   logEntry.target_pitch,
-                                   logEntry.target_yaw);
+                                    logEntry.target_pitch,
+                                    logEntry.target_yaw);
   guidance_get_pid_integrals(logEntry.pid_roll_integral,
                              logEntry.pid_pitch_integral,
                              logEntry.pid_yaw_integral);
-  
+
   guidance_get_actuator_outputs(logEntry.actuator_output_roll, logEntry.actuator_output_pitch, logEntry.actuator_output_yaw);
+#else
+  // Guidance disabled - zero out guidance-related log fields
+  logEntry.target_roll = 0.0f;
+  logEntry.target_pitch = 0.0f;
+  logEntry.target_yaw = 0.0f;
+  logEntry.pid_roll_integral = 0.0f;
+  logEntry.pid_pitch_integral = 0.0f;
+  logEntry.pid_yaw_integral = 0.0f;
+  logEntry.actuator_output_roll = 0.0f;
+  logEntry.actuator_output_pitch = 0.0f;
+  logEntry.actuator_output_yaw = 0.0f;
+#endif
 
   // Output to serial if enabled
   if (g_debugFlags.enableSerialCSV) {
@@ -592,9 +611,11 @@ void setup() {
   digitalWrite(PYRO_CHANNEL_2, LOW);
 
   // Initialize servo objects
+#if ENABLE_GUIDANCE == 1
   g_servo_pitch.attach(ACTUATOR_PITCH_PIN);
   g_servo_roll.attach(ACTUATOR_ROLL_PIN);
   g_servo_yaw.attach(ACTUATOR_YAW_PIN);
+#endif
 
   // Set servos to default positions
   g_servo_pitch.write(SERVO_DEFAULT_ANGLE);
@@ -631,7 +652,9 @@ void setup() {
   kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
 
   // Initialize guidance system
+#if ENABLE_GUIDANCE == 1
   guidance_init(); // Reset PID controllers and guidance state
+#endif
 
   // Create initial log file
   if (g_sdCardAvailable) {
@@ -880,10 +903,12 @@ void loop() {
             float kf_calibrated_gyro[3];
             ICM_20948_get_calibrated_gyro(kf_calibrated_gyro); // Get calibrated gyro data
 
+#if ENABLE_GUIDANCE == 1
             // Update global Kalman rate variables with calibrated gyro data
             g_kalmanRollRate = kf_calibrated_gyro[0];   // X-axis (roll rate)
             g_kalmanPitchRate = kf_calibrated_gyro[1];  // Y-axis (pitch rate)
             g_kalmanYawRate = kf_calibrated_gyro[2];    // Z-axis (yaw rate)
+#endif
 
             // Accel data for Kalman is now in current_accel_for_kalman (g's)
 
@@ -904,6 +929,7 @@ void loop() {
   }
 
   // --- Guidance Control Update ---
+  #if ENABLE_GUIDANCE == 1
   static unsigned long g_lastGuidanceUpdateTime = 0;
   if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
       float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
@@ -956,6 +982,10 @@ void loop() {
            }
       }
   }
+  #else
+  // Guidance system disabled - passive rocket mode
+  // No guidance updates or servo commands will be processed
+  #endif
 
   // --- Flight State Processing ---
   ProcessFlightState(); // Handle flight state machine logic

@@ -6,7 +6,9 @@
 #include "utility_functions.h" // For get_accel_magnitude(), getStateName(), isSensorSuiteHealthy()
 #include "state_management.h" // For saveStateToEEPROM()
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
+#if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance_set_target_orientation_euler()
+#endif
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
 #include "gps_functions.h" // For getGPSAltitude() and getFixType()
 #include <Adafruit_NeoPixel.h>
@@ -41,9 +43,11 @@ extern bool ms5611_initialized_ok; // Declared extern for isSensorSuiteHealthy f
 extern float g_kalmanRoll;
 extern float g_kalmanPitch;
 extern float g_kalmanYaw;
+#if ENABLE_GUIDANCE == 1
 extern float g_kalmanRollRate;
 extern float g_kalmanPitchRate;
 extern float g_kalmanYawRate;
+#endif
 
 // Global variables for flight logic state progression, defined in this file
 unsigned long boostEndTime = 0;
@@ -263,7 +267,9 @@ void ProcessFlightState() {
         g_previousFlightState = g_currentFlightState;
         g_stateEntryTime = millis();
         reset_max_stability_metrics(); // Reset here for any state change
+        #if ENABLE_GUIDANCE == 1
         guidance_reset_stability_status(); // Also reset guidance internal stability timers
+        #endif
 
         if (g_debugFlags.enableSystemDebug) {
             Serial.print(F("Transitioning to state: "));
@@ -293,6 +299,7 @@ void ProcessFlightState() {
     // .icm_gyro[0,1,2] are fresh for this cycle.
 
     if (g_currentFlightState == BOOST || g_currentFlightState == COAST) {
+        #if ENABLE_GUIDANCE == 1
         if (fabs(g_kalmanPitchRate) > fabs(max_pitch_rate_current_state_rps)) max_pitch_rate_current_state_rps = g_kalmanPitchRate;
         if (fabs(g_kalmanRollRate) > fabs(max_roll_rate_current_state_rps)) max_roll_rate_current_state_rps = g_kalmanRollRate;
         if (fabs(g_kalmanYawRate) > fabs(max_yaw_rate_current_state_rps)) max_yaw_rate_current_state_rps = g_kalmanYawRate;
@@ -308,10 +315,10 @@ void ProcessFlightState() {
         while (yaw_err < -M_PI) yaw_err += 2.0f * M_PI;
         yaw_err = fabs(yaw_err);
 
-
         if (pitch_err > max_pitch_att_err_current_state_rad) max_pitch_att_err_current_state_rad = pitch_err;
         if (roll_err > max_roll_att_err_current_state_rad) max_roll_att_err_current_state_rad = roll_err;
         if (yaw_err > max_yaw_att_err_current_state_rad) max_yaw_att_err_current_state_rad = yaw_err;
+        #endif // ENABLE_GUIDANCE
     }
     // current_stability_flags is updated if a stability error occurs.
     // The max_..._current_state_rps etc. are updated above. These will be used
@@ -356,7 +363,9 @@ void ProcessFlightState() {
                 }
                 // Reset stability monitoring for the upcoming flight
                 reset_max_stability_metrics();
+                #if ENABLE_GUIDANCE == 1
                 guidance_reset_stability_status();
+                #endif
                 break;
             case BOOST:
                 if (g_useKalmanFilter && !g_icm20948_ready) {
@@ -376,8 +385,10 @@ void ProcessFlightState() {
                 descendingCount = 0;
                 previousApogeeDetectAltitude = currentAbsoluteBaroAlt; // Capture altitude at start of coast for some apogee logic
 
-                // Set attitude hold target based on orientation at motor burnout (end of BOOST)
-                float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
+                #if ENABLE_GUIDANCE == 1
+                {
+                    // Set attitude hold target based on orientation at motor burnout (end of BOOST)
+                    float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
                 if (g_useKalmanFilter && g_icm20948_ready) {
                     targetRollRad = g_kalmanRoll;    // These are current values at transition
                     targetPitchRad = g_kalmanPitch;
@@ -401,6 +412,12 @@ void ProcessFlightState() {
                     Serial.print(F(" P:")); Serial.print(targetPitchRad * (180.0f/PI), 2);
                     Serial.print(F(" Y:")); Serial.println(targetYawRad * (180.0f/PI), 2);
                 }
+                }
+                #else
+                if (g_debugFlags.enableSystemDebug) {
+                    Serial.println(F("COAST: Guidance disabled - passive flight mode"));
+                }
+                #endif
                 break;
             }
             case APOGEE:
@@ -500,6 +517,7 @@ void ProcessFlightState() {
             }
             break;
         case BOOST:
+            #if ENABLE_GUIDANCE == 1
             { // Scope for act_x, act_y, act_z
                 float act_x, act_y, act_z; // x=pitch, y=roll, z=yaw (from guidance_get_actuator_outputs)
                 guidance_get_actuator_outputs(act_x, act_y, act_z);
@@ -518,6 +536,7 @@ void ProcessFlightState() {
                     break; // Exit switch case, newStateSignal block will handle logging/saving
                 }
             }
+            #endif
 
             if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt > g_maxAltitudeReached) {
                  g_maxAltitudeReached = currentAglAlt;
@@ -526,6 +545,7 @@ void ProcessFlightState() {
             break;
 
         case COAST:
+            #if ENABLE_GUIDANCE == 1
             { // Scope for act_x_c, act_y_c, act_z_c
                 float act_x_c, act_y_c, act_z_c; // x=pitch, y=roll, z=yaw
                 guidance_get_actuator_outputs(act_x_c, act_y_c, act_z_c);
@@ -543,6 +563,7 @@ void ProcessFlightState() {
                     break; // Exit switch case
                 }
             }
+            #endif
 
             if (detectApogee()) {
                 g_currentFlightState = APOGEE;

@@ -60,25 +60,28 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
 ### 3.1. 🔴 HIGH PRIORITY - Critical Functional Gaps
 
 #### 3.1.1. Live Telemetry System
-**Status:** Not implemented - On Hold as this will require changes to the hardware architecture
+**Status:** Not implemented - On Hold as this will require changes to the hardware architecture. **Constraint: Only one UART connection is available on the Teensy 4.1 for this purpose.**
 **Impact:** High - Essential for real-time flight monitoring and safety
-**Proposed Architecture:** Implement an "ESP32 Wireless Bridge" using a pair of ESP32 devices. An onboard ESP32 will act as a telemetry coprocessor, receiving log data from the Teensy 4.1 via UART and transmitting it via the ESP-NOW protocol. A second ground-based ESP32 will receive the ESP-NOW data and forward it as serial CSV data to the existing web interface over USB. This leverages the current web interface without modification.
+**Proposed Architecture:** Implement an "ESP32 Wireless Bridge" using a pair of ESP32 devices. An onboard ESP32 will act as a telemetry coprocessor, receiving log data from the Teensy 4.1 via its available UART (or potentially an alternative bus like I2C/SPI) and transmitting it via the ESP-NOW protocol. A second ground-based ESP32 will receive the ESP-NOW data and forward it as serial CSV data to the existing web interface over USB. This leverages the current web interface without modification.
 **Tasks Required:**
 **3.1.1.1 - Hardware & Setup:**
     - [ ] Procure two ESP32 development boards.
-    - [ ] Connect one ESP32 to the Teensy 4.1 via a hardware UART (Serial) port.
+    - [ ] Design connection strategy for Teensy 4.1 to ESP32 telemetry transmitter using the single available UART. This may involve sharing the UART with other peripherals (e.g., GPS, serial console) or investigating alternative communication buses (I2C, SPI) if UART sharing is not feasible.
+    - [ ] Connect one ESP32 to the Teensy 4.1 based on the chosen strategy.
     - [ ] Prepare the second ESP32 as a ground station receiver with a USB connection.
 
 **3.1.1.2 - Onboard Firmware (Teensy 4.1 Flight Controller):**
-    - [ ] In `TripleT_Flight_Firmware.cpp`, activate a secondary hardware serial port (e.g., `Serial1`).
-    - [ ] Create a new function `sendTelemetryData(String data)` that writes the provided log data string to the telemetry serial port.
+    - [ ] In `TripleT_Flight_Firmware.cpp`, configure the chosen communication method (UART, I2C, or SPI) for transmitting data to the ESP32 telemetry coprocessor.
+    - [ ] If using UART, this will be the primary hardware serial port. Investigate requirements for sharing this port if it's also used for GPS data input or the command console. Consider a software serial port if hardware limitations are severe, though this is less ideal.
+    - [ ] Create a new function `sendTelemetryData(String data)` that writes the provided log data string to the ESP32 telemetry coprocessor via the chosen communication channel.
     - [ ] Call `sendTelemetryData()` from the main `loop()` after the `LogDataString` is prepared, in parallel with writing to the SD card.
 
-**3.1.1.3 - Onboard Firmware (ESP32 Telemetry Coprocessor):**
+**3.1.1.3 - Onboard Firmware (ESP32 Telemetry Transmitter):**
     - [ ] Create a new PlatformIO project for the ESP32 telemetry transmitter.
+    - [ ] Initialize the chosen communication method (UART, I2C, or SPI) to receive data from the Teensy 4.1.
     - [ ] Initialize the ESP-NOW protocol and configure the peer MAC address of the ground station receiver.
-    - [ ] In the main loop, read data from its UART port until a newline character (`\n`) is received, assembling a complete CSV string.
-    - [ ] On receiving a complete string, immediately send it as an ESP-NOW packet.
+    - [ ] In the main loop, read data from the Teensy 4.1 (e.g., from UART until a newline, or handling I2C/SPI messages) assembling a complete data packet.
+    - [ ] On receiving a complete packet, immediately send it as an ESP-NOW packet.
     - [ ] Implement a status LED to indicate telemetry transmission status.
 
 **3.1.1.4 - Ground Station Firmware (ESP32 Receiver):**

@@ -227,3 +227,53 @@
 #define VOLTAGE_DIVIDER_R1 10000.0f         // Ohms (e.g., 10k)
 #define VOLTAGE_DIVIDER_R2 10000.0f         // Ohms (e.g., 10k) - results in a 1/2 divider
 #define BATTERY_VOLTAGE_READ_INTERVAL_MS 5000 // How often to read and potentially print battery voltage (5 seconds)
+
+// --- Guidance System Failsafe Mechanisms ---
+
+// Maximum Control Surface Deflection Limits (degrees)
+// These are absolute values; the control system will apply them symmetrically
+// (e.g., MAX_FIN_DEFLECTION_PITCH_DEG of 15 means +/- 15 degrees from neutral)
+#define MAX_FIN_DEFLECTION_PITCH_DEG 15.0f // Max deflection for pitch control surfaces
+#define MAX_FIN_DEFLECTION_YAW_DEG   15.0f // Max deflection for yaw control surfaces
+#define MAX_FIN_DEFLECTION_ROLL_DEG  20.0f // Max deflection for roll control surfaces (if applicable, e.g. ailerons or differential deflection)
+
+// Stability Monitoring: Angular Rates
+// If any angular rate exceeds its threshold for STABILITY_VIOLATION_DURATION_MS,
+// a stability failsafe may be triggered.
+#define STABILITY_MAX_PITCH_RATE_DPS    180.0f // Max pitch rate in degrees per second
+#define STABILITY_MAX_ROLL_RATE_DPS     360.0f // Max roll rate in degrees per second
+#define STABILITY_MAX_YAW_RATE_DPS      180.0f // Max yaw rate in degrees per second
+
+// Stability Monitoring: Attitude Error (when guidance is active and trying to hold/achieve a target)
+// If the difference between target attitude and actual attitude exceeds this for STABILITY_VIOLATION_DURATION_MS,
+// a stability failsafe may be triggered.
+#define STABILITY_MAX_ATTITUDE_ERROR_PITCH_DEG 20.0f // Max pitch error in degrees
+#define STABILITY_MAX_ATTITUDE_ERROR_ROLL_DEG  30.0f // Max roll error in degrees
+#define STABILITY_MAX_ATTITUDE_ERROR_YAW_DEG   20.0f // Max yaw error in degrees
+
+// Stability Monitoring: Control Effort (Actuator Saturation)
+// If actuators are commanded to this percentage of their MAX_FIN_DEFLECTION for STABILITY_VIOLATION_DURATION_MS,
+// a stability failsafe may be triggered. This indicates the system is struggling to maintain control.
+#define STABILITY_ACTUATOR_SATURATION_LEVEL_PERCENT 90.0f // Actuator output relative to max deflection (e.g., 90% of 15 degrees)
+
+// Common duration for stability violations
+// How long a parameter must be out of bounds to be considered a stability violation.
+#define STABILITY_VIOLATION_DURATION_MS 500 // Milliseconds
+
+// --- Trajectory Following Configuration ---
+#define MAX_TRAJECTORY_WAYPOINTS 50      // Max number of waypoints in a trajectory
+#define DEFAULT_WAYPOINT_ACCEPTANCE_RADIUS_M 10.0f // Default radius in meters to consider a waypoint "reached"
+
+// PID Gains for Cross-Track Error (XTE) Controller (outputs a heading/yaw rate adjustment or bank angle)
+#define TRAJ_XTE_PID_KP 0.5f
+#define TRAJ_XTE_PID_KI 0.05f
+#define TRAJ_XTE_PID_KD 0.01f
+#define TRAJ_XTE_PID_INTEGRAL_LIMIT 0.2f // Limit for the integral term
+#define TRAJ_XTE_PID_OUTPUT_LIMIT 0.5f   // Max output (e.g., radians for heading adjustment, or normalized bank command)
+
+// PID Gains for Altitude Controller (along trajectory, outputs a pitch adjustment)
+#define TRAJ_ALT_PID_KP 0.3f
+#define TRAJ_ALT_PID_KI 0.03f
+#define TRAJ_ALT_PID_KD 0.01f
+#define TRAJ_ALT_PID_INTEGRAL_LIMIT 0.2f // Limit for the integral term
+#define TRAJ_ALT_PID_OUTPUT_LIMIT 0.3f   // Max output (e.g., radians for pitch adjustment)

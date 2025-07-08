@@ -60,7 +60,23 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"ActuatorOutPitch", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_pitch)},
     {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)},
     {"BattVoltage", TYPE_FLOAT_P2, offsetof(LogData, battery_voltage)},
-    {"LastErrorCode", TYPE_UINT8, offsetof(LogData, last_error_code)} // Added Last Error Code
+    {"LastErrorCode", TYPE_UINT8, offsetof(LogData, last_error_code)}, // Added Last Error Code
+
+    // Guidance Stability Metrics
+    {"StabFlags", TYPE_UINT8, offsetof(LogData, stability_flags)},
+    {"MaxPitchRate", TYPE_FLOAT_P2, offsetof(LogData, max_pitch_rate_dps_so_far)},
+    {"MaxRollRate", TYPE_FLOAT_P2, offsetof(LogData, max_roll_rate_dps_so_far)},
+    {"MaxYawRate", TYPE_FLOAT_P2, offsetof(LogData, max_yaw_rate_dps_so_far)},
+    {"MaxPitchErr", TYPE_FLOAT_P2, offsetof(LogData, max_pitch_att_err_deg_so_far)},
+    {"MaxRollErr", TYPE_FLOAT_P2, offsetof(LogData, max_roll_att_err_deg_so_far)},
+    {"MaxYawErr", TYPE_FLOAT_P2, offsetof(LogData, max_yaw_att_err_deg_so_far)},
+
+    // Trajectory Following Data
+    {"TgtWPIdx", TYPE_UINT8, offsetof(LogData, current_target_wp_idx)},
+    {"DistToWP", TYPE_FLOAT_P2, offsetof(LogData, distance_to_target_wp_m)},
+    {"BearToWP", TYPE_FLOAT_P6_RAD, offsetof(LogData, bearing_to_target_wp_rad)}, // Bearing in radians
+    {"AltErrWP", TYPE_FLOAT_P2, offsetof(LogData, altitude_error_to_wp_m)}
+    // {"XTE", TYPE_FLOAT_P2, offsetof(LogData, cross_track_error_m)} // For future
 };
 
 // Definition of the log column count

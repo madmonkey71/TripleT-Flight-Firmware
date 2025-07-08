@@ -234,3 +234,77 @@ The firmware is highly configurable through parameters in `src/config.h`. This d
 - Adjust GPS beacon interval for battery life requirements
 
 This configuration system provides extensive customization while maintaining safe default values for typical rocket applications.
+
+## Advanced Guidance Configuration
+This section covers parameters related to newer guidance features, including stability failsafes and trajectory following. These values are defined in `src/config.h`.
+
+### Attitude PID Output & Integral Limits
+These limits apply to the primary attitude stabilization PIDs (Roll, Pitch, Yaw).
+```cpp
+#define PID_OUTPUT_MIN -1.0f // Min actuator command (normalized, e.g., -1.0 for full negative deflection)
+#define PID_OUTPUT_MAX  1.0f // Max actuator command (normalized, e.g., +1.0 for full positive deflection)
+
+#define PID_INTEGRAL_LIMIT_ROLL 0.5f  // Anti-windup limit for the roll PID integral term
+#define PID_INTEGRAL_LIMIT_PITCH 0.5f // Anti-windup limit for the pitch PID integral term
+#define PID_INTEGRAL_LIMIT_YAW 0.3f   // Anti-windup limit for the yaw PID integral term
+```
+
+### Guidance Failsafe Mechanisms
+These parameters control the automatic detection of unstable flight conditions. If a failsafe condition is met (a threshold is exceeded for `STABILITY_VIOLATION_DURATION_MS`), the system may transition to an `ERROR` state (logging error code `GUIDANCE_STABILITY_FAIL`) and disengage active guidance.
+
+#### Maximum Control Surface Deflection Limits (Informational for Stability Monitoring)
+These values define the expected maximum deflections for control surfaces in degrees. The stability monitor checks if commanded outputs (normalized PID outputs) represent a large percentage of these maximums (see `STABILITY_ACTUATOR_SATURATION_LEVEL_PERCENT`), which could indicate the system is struggling to maintain control.
+```cpp
+#define MAX_FIN_DEFLECTION_PITCH_DEG 15.0f // Expected max deflection for pitch control surfaces (degrees)
+#define MAX_FIN_DEFLECTION_YAW_DEG   15.0f // Expected max deflection for yaw control surfaces (degrees)
+#define MAX_FIN_DEFLECTION_ROLL_DEG  20.0f // Expected max deflection for roll control surfaces (degrees, if applicable)
+```
+
+#### Stability Monitoring Thresholds
+```cpp
+#define STABILITY_MAX_PITCH_RATE_DPS    180.0f // Max pitch angular velocity (degrees per second)
+#define STABILITY_MAX_ROLL_RATE_DPS     360.0f // Max roll angular velocity (degrees per second)
+#define STABILITY_MAX_YAW_RATE_DPS      180.0f // Max yaw angular velocity (degrees per second)
+
+#define STABILITY_MAX_ATTITUDE_ERROR_PITCH_DEG 20.0f // Max allowable error between target and actual pitch (degrees)
+#define STABILITY_MAX_ATTITUDE_ERROR_ROLL_DEG  30.0f // Max allowable error between target and actual roll (degrees)
+#define STABILITY_MAX_ATTITUDE_ERROR_YAW_DEG   20.0f // Max allowable error between target and actual yaw (degrees)
+
+// This checks if actuator commands are consistently at a high percentage of their maximum possible output (PID_OUTPUT_MAX),
+// indicating control saturation or insufficient control authority.
+#define STABILITY_ACTUATOR_SATURATION_LEVEL_PERCENT 90.0f // Actuator output as percentage of PID_OUTPUT_MAX
+```
+
+#### Common Failsafe Duration
+```cpp
+#define STABILITY_VIOLATION_DURATION_MS 500 // Duration (milliseconds) a condition must persist to trigger a failsafe
+```
+
+### Trajectory Following (Path Guidance) Configuration
+Parameters for the trajectory following feature. This feature allows the rocket to follow a pre-defined series of waypoints. Currently, it uses a simplified go-to-waypoint approach for horizontal and vertical guidance by adjusting the targets for the main attitude PIDs.
+
+#### General Trajectory Parameters
+```cpp
+#define MAX_TRAJECTORY_WAYPOINTS 50      // Maximum number of waypoints that can be defined in a single trajectory.
+#define DEFAULT_WAYPOINT_ACCEPTANCE_RADIUS_M 10.0f // Distance (meters) to a target waypoint to consider it "reached" and advance to the next.
+```
+
+#### Trajectory Heading PID Controller Gains
+This PID controller aims to minimize the heading error between the vehicle's current yaw and the bearing to the target waypoint. *(Note: Current simple implementation sets `target_yaw_rad_g` directly to bearing. These PID gains are for a more advanced XTE controller not yet fully active for yaw target setting, but are available for tuning if that logic is enabled/refined).*
+```cpp
+#define TRAJ_XTE_PID_KP 0.5f     // Proportional gain for trajectory heading control
+#define TRAJ_XTE_PID_KI 0.05f    // Integral gain
+#define TRAJ_XTE_PID_KD 0.01f    // Derivative gain
+#define TRAJ_XTE_PID_INTEGRAL_LIMIT 0.2f // Anti-windup for XTE PID integral term
+#define TRAJ_XTE_PID_OUTPUT_LIMIT 0.5f   // Max output for this PID (e.g., radians for yaw adjustment or target).
+```
+
+#### Trajectory Altitude PID Controller Gains
+This PID controller aims to minimize the altitude error between the vehicle's current altitude (MSL) and the target waypoint's altitude (MSL). Its output directly sets the `target_pitch_rad_g` for the primary attitude (pitch) PID controller.
+```cpp
+#define TRAJ_ALT_PID_KP 0.3f     // Proportional gain for trajectory altitude control
+#define TRAJ_ALT_PID_KI 0.03f    // Integral gain
+#define TRAJ_ALT_PID_KD 0.01f    // Derivative gain
+#define TRAJ_ALT_PID_INTEGRAL_LIMIT 0.2f // Anti-windup for Altitude PID integral term
+#define TRAJ_ALT_PID_OUTPUT_LIMIT 0.3f   // Max output (radians, e.g., approx +/-17 degrees for target_pitch_rad_g)
+```

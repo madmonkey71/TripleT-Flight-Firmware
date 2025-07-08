@@ -1,8 +1,7 @@
-#ifndef DATA_STRUCTURES_H
-#define DATA_STRUCTURES_H
 
 #include <Arduino.h>
 #include <stdint.h>
+#include "config.h" // Include config.h to make MAX_TRAJECTORY_WAYPOINTS available
 
 // Flight State Machine Enum
 enum FlightState : uint8_t {
@@ -69,7 +68,45 @@ typedef struct {
   float actuator_output_yaw;
   float battery_voltage;    // Battery voltage (V)
   uint8_t last_error_code;  // Last recorded error code (ErrorCode_t)
+
+  // Guidance Stability Metrics
+  uint8_t stability_flags; // Bitfield for stability violations: e.g., 1=Rate, 2=Attitude, 4=Saturation
+  float max_pitch_rate_dps_so_far; // Max observed pitch rate during current state (deg/s)
+  float max_roll_rate_dps_so_far;  // Max observed roll rate during current state (deg/s)
+  float max_yaw_rate_dps_so_far;   // Max observed yaw rate during current state (deg/s)
+  float max_pitch_att_err_deg_so_far; // Max observed pitch attitude error (deg)
+  float max_roll_att_err_deg_so_far;  // Max observed roll attitude error (deg)
+  float max_yaw_att_err_deg_so_far;   // Max observed yaw attitude error (deg)
+
+  // Trajectory Following Data
+  uint8_t current_target_wp_idx;     // Current target waypoint index
+  float   distance_to_target_wp_m;   // Distance to current target waypoint (m)
+  float   bearing_to_target_wp_rad;  // Bearing to current target waypoint (rad)
+  float   altitude_error_to_wp_m;    // Altitude error to target waypoint (m)
+  // float   cross_track_error_m;    // Cross-track error to path segment (m) - for future
 } LogData;
+
+
+// --- Trajectory Following Data Structures ---
+
+// Defines a single waypoint in a 3D trajectory
+typedef struct {
+    int32_t latitude;       // Degrees * 1e7
+    int32_t longitude;      // Degrees * 1e7
+    float altitude_msl;     // Meters above Mean Sea Level
+    // float acceptance_radius_m; // Optional: Radius in meters to consider waypoint "reached"
+} TrajectoryWaypoint_t;
+
+// Defines the overall trajectory
+typedef struct {
+    TrajectoryWaypoint_t waypoints[MAX_TRAJECTORY_WAYPOINTS]; // Uses define from config.h
+    uint8_t num_waypoints;              // Current number of waypoints defined in the trajectory
+    uint8_t current_target_wp_index;    // Index in the 'waypoints' array of the current target
+    bool    is_active;                  // Flag indicating if trajectory guidance should be active
+    bool    is_loaded;                  // Flag indicating if a trajectory has been successfully loaded
+    // char   trajectory_name[32];      // Optional: Name of the loaded trajectory file or identifier
+} Trajectory_t;
+
 
 #include <Arduino.h> // For FlightState enum if not already included, though it's defined in TripleT_Flight_Firmware.cpp
 

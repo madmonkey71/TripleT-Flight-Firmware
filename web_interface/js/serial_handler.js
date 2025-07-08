@@ -21,10 +21,27 @@ async function connectSerial(doOnConnect, doOnData, doOnDisconnect) {
     onDataReceivedCallback = doOnData;
     onDisconnectCallback = doOnDisconnect;
 
+    // Enhanced debugging for Web Serial API availability
+    console.log("Serial connection attempt - checking Web Serial API:", {
+        hasNavigatorSerial: !!navigator.serial,
+        navigatorSerial: navigator.serial,
+        navigatorSerialType: typeof navigator.serial,
+        userAgent: navigator.userAgent,
+        isSecureContext: window.isSecureContext,
+        protocol: window.location.protocol,
+        location: window.location.href
+    });
+
     if (!navigator.serial) {
         const errorMsg = "Web Serial API not supported by this browser.";
         const helpMsg = `
 ${errorMsg}
+
+DEBUG INFO:
+• navigator.serial = ${navigator.serial}
+• typeof navigator.serial = ${typeof navigator.serial}
+• Secure context: ${window.isSecureContext}
+• Protocol: ${window.location.protocol}
 
 SOLUTION:
 • Use Google Chrome (version 89+) - RECOMMENDED
@@ -36,15 +53,22 @@ NOT SUPPORTED:
 
 Current browser: ${navigator.userAgent.split(' ')[0] || 'Unknown'}
 
-Please switch to Chrome or Edge to use the serial interface.`;
+If you're using a supported browser and seeing this error, try:
+1. Updating your browser to the latest version
+2. Refreshing the page
+3. Opening the page in a new tab
+4. Checking if the page is running on HTTPS or localhost`;
         
         alert(helpMsg);
         console.warn(errorMsg);
-        console.info("Browser compatibility info:", {
+        console.error("Detailed browser compatibility info:", {
             userAgent: navigator.userAgent,
             hasSerial: !!navigator.serial,
+            navigatorSerial: navigator.serial,
             isSecureContext: window.isSecureContext,
-            protocol: window.location.protocol
+            protocol: window.location.protocol,
+            location: window.location.href,
+            timestamp: new Date().toISOString()
         });
         
         if (onDisconnectCallback) onDisconnectCallback(errorMsg, false); // false indicates not an active disconnect

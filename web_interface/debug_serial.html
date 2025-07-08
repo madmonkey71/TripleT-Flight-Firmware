@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Serial API Debug Tool</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #000;
+            color: #00ff00;
+            padding: 20px;
+            margin: 0;
+        }
+        .debug-section {
+            border: 1px solid #00ff00;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .debug-title {
+            color: #ffff00;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .debug-result {
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #001100;
+        }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .warning { color: #ffaa00; }
+        .info { color: #00aaff; }
+        button {
+            background-color: #003300;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        button:hover {
+            background-color: #004400;
+        }
+        button:disabled {
+            background-color: #330000;
+            color: #666;
+            border-color: #666;
+            cursor: not-allowed;
+        }
+        .code-block {
+            background-color: #002200;
+            border: 1px solid #004400;
+            padding: 10px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Web Serial API Debug Tool</h1>
+    <p>This page provides detailed debugging information for Web Serial API issues.</p>
+
+    <div class="debug-section">
+        <div class="debug-title">1. Basic Checks</div>
+        <div id="basicChecks"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">2. Navigator Object Analysis</div>
+        <div id="navigatorAnalysis"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">3. Browser Environment</div>
+        <div id="browserEnvironment"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">4. Security Context</div>
+        <div id="securityContext"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">5. Live Tests</div>
+        <button id="testWebSerial">Test Web Serial Availability</button>
+        <button id="testPortRequest">Test Port Request</button>
+        <button id="runFullDiagnostic">Run Full Diagnostic</button>
+        <div id="liveTestResults"></div>
+    </div>
+
+    <div class="debug-section">
+        <div class="debug-title">6. Console Commands</div>
+        <div class="debug-result info">
+            Open browser console (F12) and run these commands:
+        </div>
+        <div class="code-block">// Check Web Serial API
+console.log("navigator.serial:", navigator.serial);
+console.log("typeof navigator.serial:", typeof navigator.serial);
+console.log("!!navigator.serial:", !!navigator.serial);
+
+// Test port request
+navigator.serial?.requestPort().then(port => {
+    console.log("Port selected:", port);
+}).catch(err => {
+    console.log("Port request failed:", err);
+});
+
+// Full environment check
+debugWebSerial();</div>
+    </div>
+
+    <script>
+        // Global debug function for console use
+        window.debugWebSerial = function() {
+            console.group("🔧 Web Serial API Debug Report");
+            console.log("Timestamp:", new Date().toISOString());
+            console.log("User Agent:", navigator.userAgent);
+            console.log("navigator.serial:", navigator.serial);
+            console.log("typeof navigator.serial:", typeof navigator.serial);
+            console.log("!!navigator.serial:", !!navigator.serial);
+            console.log("Secure Context:", window.isSecureContext);
+            console.log("Protocol:", window.location.protocol);
+            console.log("Location:", window.location.href);
+            console.log("Navigator keys:", Object.keys(navigator).filter(k => k.includes('serial')));
+            
+            // Check for any serial-related properties
+            const serialProps = [];
+            for (let prop in navigator) {
+                if (prop.toLowerCase().includes('serial')) {
+                    serialProps.push({prop, value: navigator[prop], type: typeof navigator[prop]});
+                }
+            }
+            console.log("Serial-related properties:", serialProps);
+            console.groupEnd();
+            
+            return {
+                hasSerial: !!navigator.serial,
+                serialType: typeof navigator.serial,
+                isSecure: window.isSecureContext,
+                protocol: window.location.protocol,
+                userAgent: navigator.userAgent,
+                serialProps: serialProps
+            };
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const basicChecks = document.getElementById('basicChecks');
+            const navigatorAnalysis = document.getElementById('navigatorAnalysis');
+            const browserEnvironment = document.getElementById('browserEnvironment');
+            const securityContext = document.getElementById('securityContext');
+            const liveTestResults = document.getElementById('liveTestResults');
+
+            function addResult(container, text, className = 'info') {
+                const div = document.createElement('div');
+                div.className = `debug-result ${className}`;
+                div.textContent = text;
+                container.appendChild(div);
+            }
+
+            function addHtmlResult(container, html, className = 'info') {
+                const div = document.createElement('div');
+                div.className = `debug-result ${className}`;
+                div.innerHTML = html;
+                container.appendChild(div);
+            }
+
+            // Basic Checks
+            const hasSerial = !!navigator.serial;
+            addResult(basicChecks, `navigator.serial exists: ${hasSerial}`, hasSerial ? 'success' : 'error');
+            addResult(basicChecks, `navigator.serial type: ${typeof navigator.serial}`, 'info');
+            addResult(basicChecks, `navigator.serial value: ${navigator.serial}`, 'info');
+
+            // Navigator Analysis
+            const navigatorKeys = Object.keys(navigator);
+            const serialRelatedKeys = navigatorKeys.filter(k => k.toLowerCase().includes('serial'));
+            addResult(navigatorAnalysis, `Total navigator properties: ${navigatorKeys.length}`, 'info');
+            addResult(navigatorAnalysis, `Serial-related properties: ${serialRelatedKeys.join(', ') || 'None'}`, 'info');
+            
+            // Check if navigator object seems normal
+            const expectedProps = ['userAgent', 'platform', 'language'];
+            const hasExpectedProps = expectedProps.every(prop => prop in navigator);
+            addResult(navigatorAnalysis, `Navigator object seems normal: ${hasExpectedProps}`, hasExpectedProps ? 'success' : 'warning');
+
+            // Browser Environment
+            const userAgent = navigator.userAgent.toLowerCase();
+            const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+            const isEdge = userAgent.includes('edge');
+            const isFirefox = userAgent.includes('firefox');
+            const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+            
+            let browserName = 'Unknown';
+            if (isChrome) browserName = 'Chrome';
+            else if (isEdge) browserName = 'Edge';
+            else if (isFirefox) browserName = 'Firefox';
+            else if (isSafari) browserName = 'Safari';
+
+            addResult(browserEnvironment, `Detected browser: ${browserName}`, 'info');
+            addResult(browserEnvironment, `Should support Web Serial: ${isChrome || isEdge}`, (isChrome || isEdge) ? 'success' : 'warning');
+            addResult(browserEnvironment, `User Agent: ${navigator.userAgent}`, 'info');
+
+            // Security Context
+            addResult(securityContext, `Secure context: ${window.isSecureContext}`, window.isSecureContext ? 'success' : 'error');
+            addResult(securityContext, `Protocol: ${window.location.protocol}`, 'info');
+            addResult(securityContext, `Hostname: ${window.location.hostname}`, 'info');
+            addResult(securityContext, `Origin: ${window.location.origin}`, 'info');
+
+            // Feature Detection
+            const features = {
+                'Web Serial API': !!navigator.serial,
+                'Service Workers': 'serviceWorker' in navigator,
+                'Web USB': !!navigator.usb,
+                'Web Bluetooth': !!navigator.bluetooth,
+                'Permissions API': !!navigator.permissions
+            };
+
+            Object.entries(features).forEach(([feature, supported]) => {
+                addResult(securityContext, `${feature}: ${supported}`, supported ? 'success' : 'warning');
+            });
+
+            // Live Tests
+            document.getElementById('testWebSerial').addEventListener('click', function() {
+                liveTestResults.innerHTML = '';
+                addResult(liveTestResults, 'Testing Web Serial API...', 'info');
+                
+                if (navigator.serial) {
+                    addResult(liveTestResults, '✅ navigator.serial is available', 'success');
+                    
+                    // Test if we can call methods
+                    try {
+                        const portsPromise = navigator.serial.getPorts();
+                        addResult(liveTestResults, '✅ navigator.serial.getPorts() can be called', 'success');
+                        
+                        portsPromise.then(ports => {
+                            addResult(liveTestResults, `Found ${ports.length} existing ports`, 'info');
+                        }).catch(err => {
+                            addResult(liveTestResults, `getPorts() error: ${err.message}`, 'warning');
+                        });
+                        
+                    } catch (err) {
+                        addResult(liveTestResults, `Error calling getPorts(): ${err.message}`, 'error');
+                    }
+                } else {
+                    addResult(liveTestResults, '❌ navigator.serial is not available', 'error');
+                }
+            });
+
+            document.getElementById('testPortRequest').addEventListener('click', async function() {
+                if (!navigator.serial) {
+                    addResult(liveTestResults, '❌ Cannot test port request - Web Serial API not available', 'error');
+                    return;
+                }
+
+                try {
+                    addResult(liveTestResults, 'Requesting port selection...', 'info');
+                    const port = await navigator.serial.requestPort();
+                    const portInfo = port.getInfo();
+                    addResult(liveTestResults, `✅ Port selected: VID=${portInfo.usbVendorId}, PID=${portInfo.usbProductId}`, 'success');
+                } catch (err) {
+                    if (err.name === 'NotFoundError') {
+                        addResult(liveTestResults, '⚠️ Port selection cancelled by user', 'warning');
+                    } else {
+                        addResult(liveTestResults, `❌ Port selection error: ${err.message}`, 'error');
+                    }
+                }
+            });
+
+            document.getElementById('runFullDiagnostic').addEventListener('click', function() {
+                liveTestResults.innerHTML = '';
+                addResult(liveTestResults, 'Running full diagnostic...', 'info');
+                
+                const diagnostic = debugWebSerial();
+                
+                Object.entries(diagnostic).forEach(([key, value]) => {
+                    addResult(liveTestResults, `${key}: ${value}`, 'info');
+                });
+
+                // Save diagnostic to console
+                console.log("Full diagnostic completed:", diagnostic);
+                addResult(liveTestResults, 'Diagnostic complete - check browser console for full details', 'success');
+            });
+
+            // Run initial diagnostic
+            debugWebSerial();
+        });
+    </script>
+
+    <div style="margin-top: 30px; text-align: center; border-top: 1px solid #004400; padding-top: 20px;">
+        <p><a href="index.html" style="color: #00aaff;">← Back to Main Interface</a> | 
+        <a href="browser_test.html" style="color: #00aaff;">Browser Test</a></p>
+        <p><small>Web Serial API Debug Tool for TripleT Flight Firmware</small></p>
+    </div>
+</body>
+</html> 

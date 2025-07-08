@@ -101,11 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Button Event Listeners ---
-    if (connectButton) {
-        connectButton.addEventListener('click', () => {
-            connectSerial(handleSerialConnect, handleReceivedData, handleSerialDisconnect);
-        });
-    }
+    // Note: Connect button listener is now handled after browser compatibility check
 
     if (disconnectButton) {
         disconnectButton.disabled = true;
@@ -152,12 +148,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         else if (isFirefox) browserName = 'Firefox';
         else if (isSafari) browserName = 'Safari';
         
+        // More detailed debug information
+        console.log("Browser compatibility check:", {
+            userAgent: navigator.userAgent,
+            browserName: browserName,
+            hasNavigatorSerial: !!navigator.serial,
+            navigatorSerial: navigator.serial,
+            isSecureContext: window.isSecureContext,
+            protocol: window.location.protocol,
+            location: window.location.href
+        });
+        
         if (!navigator.serial) {
             const msg = `Web Serial API not supported in ${browserName}. Use Chrome or Edge.`;
             updateConnectionStatus(msg, "error");
             logToTerminal(`Browser: ${browserName}`, 'error');
             logToTerminal("SOLUTION: Use Chrome (recommended) or Microsoft Edge", 'info');
             logToTerminal("NOT SUPPORTED: Firefox, Safari, Internet Explorer", 'error');
+            logToTerminal("DEBUG: navigator.serial = " + navigator.serial, 'error');
             
             if (connectButton) {
                 connectButton.disabled = true;
@@ -168,8 +176,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             logToTerminal(`Browser: ${browserName} ✅ (Web Serial API supported)`, 'info');
             logToTerminal("Protocol: " + window.location.protocol, 'info');
             logToTerminal("Secure context: " + window.isSecureContext, 'info');
+            logToTerminal("DEBUG: navigator.serial = " + typeof navigator.serial, 'info');
         }
+        
+        return !!navigator.serial; // Return the result for use by other functions
     }
     
-    checkBrowserCompatibility();
+    const hasWebSerial = checkBrowserCompatibility();
+    
+    // Override the connect button to add extra checking
+    if (connectButton && hasWebSerial) {
+        connectButton.addEventListener('click', () => {
+            // Double-check serial API availability right before connecting
+            if (!navigator.serial) {
+                logToTerminal("ERROR: Web Serial API disappeared between page load and button click!", 'error');
+                updateConnectionStatus("Web Serial API not available", "error");
+                return;
+            }
+            
+            logToTerminal("Initiating serial connection...", 'info');
+            connectSerial(handleSerialConnect, handleReceivedData, handleSerialDisconnect);
+        });
+    }
 });

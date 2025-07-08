@@ -98,15 +98,39 @@ This document provides an updated analysis of the TripleT Flight Firmware projec
     - [ ] Document the setup and operation of the new telemetry system.
 
 #### 3.1.2. Advanced Guidance Algorithms
-**Status:** Basic attitude hold only - On hold. Meets current requirements
-**Impact:** High - Limits vehicle performance and mission capability
+**Status:** Initial work on Failsafes and Trajectory Following started. Other items on hold or not currently planned.
+**Impact:** High - Limits vehicle performance and mission capability. Failsafes improve safety.
 **Tasks Required:**
-- [ ] Implement gravity turn maneuver logic
-- [ ] Develop trajectory following algorithms
-- [ ] Create pre-programmed flight path capability
-- [ ] Add wind compensation algorithms
-- [ ] Implement dynamic target adjustment based on mission objectives
-- [ ] Add guidance system failsafe mechanisms (maximum deflection limits, stability monitoring)
+
+**Guidance System Failsafe Mechanisms:**
+    - [x] Design failsafe mechanisms (max deflection, stability monitoring: rates, attitude error, saturation). *(Implemented in `guidance_control.cpp`, config in `config.h`)*
+    - [x] Implement core stability checking logic in `guidance_control.cpp`.
+    - [x] Integrate stability checks into `flight_logic.cpp` for `BOOST` and `COAST` states.
+    - [x] System transitions to `ERROR` state with `GUIDANCE_STABILITY_FAIL` upon violation.
+    - [x] Add new log fields for stability metrics to `LogData` and `log_format_definition.cpp`.
+    - [ ] Finalize population of stability metric log fields (e.g., `stability_flags`, `max_..._so_far`) in `TripleT_Flight_Firmware.cpp` main loop before `WriteLogData`.
+    - [ ] Write unit tests for failsafe mechanisms.
+
+**Trajectory Following Algorithms (Go-to-Waypoint Approach):**
+    - [x] Design trajectory representation (Waypoints: Lat, Lon, Alt) and data structures (`Trajectory_t`, `TrajectoryWaypoint_t`). *(In `data_structures.h`)*
+    - [x] Implement core "go-to-waypoint" logic using PIDs for heading and altitude control in `guidance_control.cpp`. *(Initial version targeting waypoint bearing and altitude)*
+    - [x] Add configuration parameters for trajectory PIDs and general settings (e.g., `MAX_TRAJECTORY_WAYPOINTS`, acceptance radius) to `config.h`.
+    - [x] Implement basic GPS math helper functions (distance, bearing) in `guidance_control.cpp`.
+    - [x] Implement basic waypoint switching logic based on acceptance radius in `guidance_update()`.
+    - [x] Add new log fields for trajectory performance to `LogData` and `log_format_definition.cpp`.
+    - [ ] Robustly implement and test GPS math functions (distance, bearing, potentially XTE).
+    - [ ] Finalize population of trajectory performance log fields in `TripleT_Flight_Firmware.cpp` main loop.
+    - [ ] Develop serial commands for trajectory management (e.g., `traj_loadsd <file>`, `traj_activate`, `traj_deactivate`, `traj_list`).
+    - [ ] Implement SD card loading for trajectory files (e.g., from CSV format).
+    - [ ] Integrate trajectory guidance activation/deactivation into the main flight state machine (e.g., new `GUIDED` state or during `COAST`).
+    - [ ] Write unit tests for trajectory following components.
+
+**Other Advanced Guidance Tasks (Currently Lower Priority / On Hold):**
+- [ ] Implement gravity turn maneuver logic. *(Status: On Hold - Not currently planned per user feedback)*
+- [ ] Create pre-programmed flight path capability (beyond simple waypoints, e.g., timed maneuvers - partially covered by trajectory).
+- [ ] Add wind compensation algorithms.
+- [ ] Implement dynamic target adjustment based on mission objectives (beyond current trajectory following).
+
 
 #### 3.1.3. Sensor Fusion & Orientation Filtering
 **Status:** Paused development, basic implementation exists

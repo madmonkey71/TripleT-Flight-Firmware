@@ -137,12 +137,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Initial Check for Web Serial API Support ---
-    if (!navigator.serial) {
-        const msg = "Web Serial API not supported by this browser.";
-        updateConnectionStatus(msg, "error");
-        if (connectButton) {
-            connectButton.disabled = true;
-            connectButton.title = msg;
+    function checkBrowserCompatibility() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+        const isEdge = userAgent.includes('edge');
+        const isOpera = userAgent.includes('opera') || userAgent.includes('opr');
+        const isFirefox = userAgent.includes('firefox');
+        const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+        
+        let browserName = 'Unknown';
+        if (isChrome) browserName = 'Chrome';
+        else if (isEdge) browserName = 'Edge';
+        else if (isOpera) browserName = 'Opera';
+        else if (isFirefox) browserName = 'Firefox';
+        else if (isSafari) browserName = 'Safari';
+        
+        if (!navigator.serial) {
+            const msg = `Web Serial API not supported in ${browserName}. Use Chrome or Edge.`;
+            updateConnectionStatus(msg, "error");
+            logToTerminal(`Browser: ${browserName}`, 'error');
+            logToTerminal("SOLUTION: Use Chrome (recommended) or Microsoft Edge", 'info');
+            logToTerminal("NOT SUPPORTED: Firefox, Safari, Internet Explorer", 'error');
+            
+            if (connectButton) {
+                connectButton.disabled = true;
+                connectButton.title = `Web Serial API not supported in ${browserName}`;
+                connectButton.innerHTML = `❌ Not Supported in ${browserName}`;
+            }
+        } else {
+            logToTerminal(`Browser: ${browserName} ✅ (Web Serial API supported)`, 'info');
+            logToTerminal("Protocol: " + window.location.protocol, 'info');
+            logToTerminal("Secure context: " + window.isSecureContext, 'info');
         }
     }
+    
+    checkBrowserCompatibility();
 });

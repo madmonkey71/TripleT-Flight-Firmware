@@ -23,8 +23,30 @@ async function connectSerial(doOnConnect, doOnData, doOnDisconnect) {
 
     if (!navigator.serial) {
         const errorMsg = "Web Serial API not supported by this browser.";
-        alert(errorMsg + " Please use a compatible browser like Chrome or Edge.");
+        const helpMsg = `
+${errorMsg}
+
+SOLUTION:
+• Use Google Chrome (version 89+) - RECOMMENDED
+• Use Microsoft Edge (version 89+)  
+• Use Opera (version 75+)
+
+NOT SUPPORTED:
+• Firefox, Safari, Internet Explorer
+
+Current browser: ${navigator.userAgent.split(' ')[0] || 'Unknown'}
+
+Please switch to Chrome or Edge to use the serial interface.`;
+        
+        alert(helpMsg);
         console.warn(errorMsg);
+        console.info("Browser compatibility info:", {
+            userAgent: navigator.userAgent,
+            hasSerial: !!navigator.serial,
+            isSecureContext: window.isSecureContext,
+            protocol: window.location.protocol
+        });
+        
         if (onDisconnectCallback) onDisconnectCallback(errorMsg, false); // false indicates not an active disconnect
         return;
     }

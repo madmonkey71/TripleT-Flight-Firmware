@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TripleT Web Interface - Browser Compatibility Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .supported {
+            background-color: #27ae60;
+            color: white;
+        }
+        .not-supported {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .warning {
+            background-color: #f39c12;
+            color: white;
+        }
+        .info {
+            background-color: #3498db;
+            color: white;
+        }
+        .browser-list {
+            margin: 20px 0;
+        }
+        .browser-list ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        .browser-list li {
+            padding: 5px 0;
+        }
+        .supported-browser {
+            color: #27ae60;
+        }
+        .unsupported-browser {
+            color: #e74c3c;
+        }
+        .download-links {
+            margin-top: 30px;
+            text-align: center;
+        }
+        .download-links a {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .download-links a:hover {
+            background-color: #2980b9;
+        }
+        .test-button {
+            display: inline-block;
+            margin: 20px 10px;
+            padding: 10px 20px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .test-button:disabled {
+            background-color: #7f8c8d;
+            cursor: not-allowed;
+        }
+        .technical-info {
+            background-color: #2c3e50;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 TripleT Web Interface</h1>
+        <h2>Browser Compatibility Test</h2>
+        <p>This page checks if your browser supports the Web Serial API required for the flight data interface.</p>
+    </div>
+
+    <div id="compatibility-results">
+        <!-- Results will be inserted here by JavaScript -->
+    </div>
+
+    <div class="browser-list">
+        <h3>Browser Support Status:</h3>
+        <ul>
+            <li class="supported-browser">✅ Google Chrome (version 89+) - RECOMMENDED</li>
+            <li class="supported-browser">✅ Microsoft Edge (version 89+)</li>
+            <li class="supported-browser">✅ Opera (version 75+)</li>
+            <li class="unsupported-browser">❌ Mozilla Firefox - Not supported</li>
+            <li class="unsupported-browser">❌ Safari - Not supported</li>
+            <li class="unsupported-browser">❌ Internet Explorer - Not supported</li>
+        </ul>
+    </div>
+
+    <div class="download-links">
+        <h3>Download Compatible Browsers:</h3>
+        <a href="https://www.google.com/chrome/" target="_blank">Download Chrome</a>
+        <a href="https://www.microsoft.com/edge" target="_blank">Download Edge</a>
+    </div>
+
+    <div style="text-align: center;">
+        <button id="testSerialButton" class="test-button">Test Serial Port Access</button>
+        <p><small>Click to test if you can access serial ports (requires compatible browser)</small></p>
+    </div>
+
+    <div id="technical-info" class="technical-info">
+        <!-- Technical details will be inserted here -->
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const resultsDiv = document.getElementById('compatibility-results');
+            const technicalDiv = document.getElementById('technical-info');
+            const testButton = document.getElementById('testSerialButton');
+            
+            // Detect browser
+            const userAgent = navigator.userAgent.toLowerCase();
+            const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+            const isEdge = userAgent.includes('edge');
+            const isOpera = userAgent.includes('opera') || userAgent.includes('opr');
+            const isFirefox = userAgent.includes('firefox');
+            const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+            
+            let browserName = 'Unknown';
+            let isSupported = false;
+            
+            if (isChrome) {
+                browserName = 'Google Chrome';
+                isSupported = true;
+            } else if (isEdge) {
+                browserName = 'Microsoft Edge';
+                isSupported = true;
+            } else if (isOpera) {
+                browserName = 'Opera';
+                isSupported = true;
+            } else if (isFirefox) {
+                browserName = 'Mozilla Firefox';
+                isSupported = false;
+            } else if (isSafari) {
+                browserName = 'Safari';
+                isSupported = false;
+            }
+            
+            // Check Web Serial API support
+            const hasWebSerial = !!navigator.serial;
+            const isSecureContext = window.isSecureContext;
+            const protocol = window.location.protocol;
+            
+            // Display results
+            let resultHTML = '';
+            
+            if (hasWebSerial && isSupported) {
+                resultHTML += '<div class="test-result supported">✅ SUCCESS: Your browser supports the Web Serial API!</div>';
+                resultHTML += `<div class="test-result info">Browser: ${browserName}</div>`;
+                resultHTML += '<div class="test-result info">You can use the TripleT web interface.</div>';
+            } else if (isSupported && !hasWebSerial) {
+                resultHTML += '<div class="test-result warning">⚠️ WARNING: Browser should support Web Serial API but it\'s not detected.</div>';
+                resultHTML += `<div class="test-result info">Browser: ${browserName}</div>`;
+                resultHTML += '<div class="test-result warning">Try updating your browser or checking security settings.</div>';
+            } else {
+                resultHTML += '<div class="test-result not-supported">❌ NOT SUPPORTED: Your browser does not support the Web Serial API.</div>';
+                resultHTML += `<div class="test-result info">Current browser: ${browserName}</div>`;
+                resultHTML += '<div class="test-result not-supported">Please use Chrome or Edge to access the flight interface.</div>';
+            }
+            
+            if (!isSecureContext) {
+                resultHTML += '<div class="test-result warning">⚠️ WARNING: Not running in secure context (HTTPS/localhost).</div>';
+            }
+            
+            resultsDiv.innerHTML = resultHTML;
+            
+            // Technical information
+            technicalDiv.innerHTML = `
+                <h4>Technical Information:</h4>
+                <strong>User Agent:</strong> ${navigator.userAgent}<br>
+                <strong>Web Serial API:</strong> ${hasWebSerial ? 'Available' : 'Not Available'}<br>
+                <strong>Secure Context:</strong> ${isSecureContext ? 'Yes' : 'No'}<br>
+                <strong>Protocol:</strong> ${protocol}<br>
+                <strong>Location:</strong> ${window.location.href}<br>
+                <strong>Detected Browser:</strong> ${browserName}
+            `;
+            
+            // Test button functionality
+            if (hasWebSerial) {
+                testButton.addEventListener('click', async function() {
+                    try {
+                        testButton.disabled = true;
+                        testButton.textContent = 'Requesting port access...';
+                        
+                        const port = await navigator.serial.requestPort();
+                        const portInfo = port.getInfo();
+                        
+                        alert(`Success! Selected port:\nVendor ID: ${portInfo.usbVendorId || 'N/A'}\nProduct ID: ${portInfo.usbProductId || 'N/A'}`);
+                        
+                        testButton.textContent = 'Test Passed ✅';
+                        testButton.style.backgroundColor = '#27ae60';
+                        
+                    } catch (error) {
+                        if (error.name === 'NotFoundError') {
+                            alert('No port selected. Test cancelled by user.');
+                        } else {
+                            alert(`Error: ${error.message}`);
+                        }
+                        testButton.textContent = 'Test Serial Port Access';
+                        testButton.disabled = false;
+                    }
+                });
+            } else {
+                testButton.disabled = true;
+                testButton.textContent = 'Serial API Not Available';
+                testButton.style.backgroundColor = '#e74c3c';
+            }
+        });
+    </script>
+
+    <div style="text-align: center; margin-top: 40px; border-top: 1px solid #444; padding-top: 20px;">
+        <p><a href="index.html" style="color: #3498db;">← Back to TripleT Flight Interface</a></p>
+        <p><small>TripleT Flight Firmware Web Interface | Browser Compatibility Test</small></p>
+    </div>
+</body>
+</html> 

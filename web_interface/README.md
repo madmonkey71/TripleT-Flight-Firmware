@@ -4,6 +4,63 @@
 
 This web interface provides a real-time visualization of flight data received from a flight controller or similar device via the Web Serial API. It parses incoming CSV data, displays key metrics numerically, and plots altitude and acceleration data on interactive charts.
 
+## Browser Compatibility & Requirements
+
+### ⚠️ **Web Serial API Requirements**
+
+The Web Serial API is required for direct serial communication with the flight controller. This API has specific requirements:
+
+#### **Supported Browsers:**
+- ✅ **Chrome/Chromium** (version 89+) - **RECOMMENDED**
+- ✅ **Microsoft Edge** (version 89+)
+- ✅ **Opera** (version 75+)
+- ❌ **Firefox** - Not supported (as of 2024)
+- ❌ **Safari** - Not supported
+- ❌ **Internet Explorer** - Not supported
+
+#### **Security Requirements:**
+- **HTTPS or localhost**: Web Serial API requires a secure context
+- **User gesture**: Connection must be initiated by user interaction (button click)
+- **Same-origin policy**: Scripts must be served from the same origin
+
+### **Quick Fix - Use Chrome or Edge**
+
+If you're getting "Web Serial API not supported", switch to:
+1. **Google Chrome** (recommended)
+2. **Microsoft Edge** 
+3. Make sure you're using a recent version (2021 or newer)
+
+### **Running the Web Interface**
+
+#### **Option 1: Local File (Recommended)**
+```bash
+# Navigate to the web interface directory
+cd web_interface
+
+# Open with Chrome/Edge directly
+chrome index.html
+# or
+msedge index.html
+```
+
+#### **Option 2: Local HTTP Server**
+```bash
+# Using Python (if installed)
+cd web_interface
+python3 -m http.server 8000
+# Then open: http://localhost:8000
+
+# Using Node.js (if installed)
+npx http-server
+# Then open: http://localhost:8080
+```
+
+#### **Option 3: Live Server (VS Code)**
+If using VS Code:
+1. Install "Live Server" extension
+2. Right-click on `index.html`
+3. Select "Open with Live Server"
+
 ## Features
 
 *   **Web Serial Connection**: Connects directly to USB serial devices using the Web Serial API.
@@ -140,6 +197,7 @@ Open `test_message_filtering.html` in your browser to see a demonstration of how
 *   **UI Looks Incorrect / Styles Not Applied**:
     *   Clear your browser cache.
     *   Ensure all files (`index.html`, `css/style.css`, `js/*`) are present and in the correct locations.
+
 ---
 This README should provide a good starting point for users and developers.The `web_interface/README.md` file has been created successfully.
 

@@ -18,7 +18,8 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 - **Dual Accelerometer Strategy**: Intelligently uses KX134 for high-G events and ICM-20948 for general flight
 - **Redundant Apogee Detection**: Four distinct methods: barometric, accelerometer, GPS, and backup timer
 - **Comprehensive Recovery System**: SOS audio beacon, LED strobe patterns, and GPS coordinate transmission
-- **Real-time Data Logging**: 50+ data points logged to SD card in CSV format
+- **Real-time Data Logging**: 63 data points logged to SD card in CSV format
+- **Web Interface**: Real-time data visualization with 3D orientation display and live charts
 - **Interactive Command Interface**: Rich serial command system for diagnostics and control
 - **Robust Error Recovery**: Automatic sensor health monitoring with recovery mechanisms
 - **Battery Voltage Monitoring**: Real-time battery status monitoring and logging
@@ -28,9 +29,11 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 1. **Hardware Setup**: Connect sensors via I2C, GPS via serial, insert SD card
 2. **Upload Firmware**: Use PlatformIO with `teensy41` environment
 3. **Initialize**: System performs startup checks and enters `PAD_IDLE` state
-4. **Arm**: Use `arm` command when ready for flight
-5. **Flight**: System automatically manages all flight phases
-6. **Recovery**: Follow SOS beacon and LED strobe to locate rocket
+4. **Web Interface**: Launch `web_interface/run_local_server.sh` for real-time monitoring
+5. **Enable CSV Output**: Send `debug_serial_csv on` command to enable data streaming
+6. **Arm**: Use `arm` command when ready for flight
+7. **Flight**: System automatically manages all flight phases
+8. **Recovery**: Follow SOS beacon and LED strobe to locate rocket
 
 ## Documentation
 
@@ -41,6 +44,7 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 - 🛠️ **[Installation & Setup](docs/INSTALLATION.md)** - Detailed installation and setup instructions
 - 💻 **[Serial Commands](docs/COMMANDS.md)** - Complete command reference
 - 📊 **[Data Logging](docs/DATA_LOGGING.md)** - Logging format and analysis
+- 🌐 **[Web Interface](web_interface/README.md)** - Real-time data visualization and monitoring
 - 🔍 **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and debugging
 - 🏗️ **[Development Guide](docs/DEVELOPMENT.md)** - Architecture and contribution guidelines
 - ⚠️ **[Error Codes](docs/ERROR_CODES.md)** - Complete error code reference
@@ -55,6 +59,12 @@ See [Flight Operations](docs/FLIGHT_OPERATIONS.md) for detailed state descriptio
 
 ## Recent Updates (v0.52)
 
+- ✅ **Web Interface Enhancement**: Complete web-based data visualization system
+  - Real-time data monitoring with 3D orientation display
+  - Live charts for altitude, acceleration, gyroscope, and magnetometer data
+  - Serial command interface for remote control
+  - Resolved HTTPS redirection issues with multiple server options
+  - Updated CSV field mapping to match firmware's 63-field output
 - ✅ **Configurable Guidance System**: Added ability to completely disable guidance for passive rockets
   - Set `ENABLE_GUIDANCE 0` for passive rockets without actuators
   - Set `ENABLE_GUIDANCE 1` for guided rockets with servo-controlled fins

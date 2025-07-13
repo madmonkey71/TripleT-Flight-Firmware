@@ -1,6 +1,24 @@
 // Main JavaScript file for the Flight Data Visualizer
 
+console.log("🚀 MAIN.JS: Script loaded and executing");
+
+// Global error handler to catch any uncaught errors
+window.addEventListener('error', (event) => {
+    console.error("🚨 GLOBAL ERROR:", event.error);
+    console.error("🚨 ERROR MESSAGE:", event.message);
+    console.error("🚨 ERROR FILENAME:", event.filename);
+    console.error("🚨 ERROR LINE:", event.lineno);
+    console.error("🚨 ERROR STACK:", event.error?.stack);
+});
+
+// Handle unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error("🚨 UNHANDLED PROMISE REJECTION:", event.reason);
+    console.error("🚨 PROMISE:", event.promise);
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 MAIN.JS: DOM Content Loaded event fired");
     console.log("Flight Data Visualizer initialized.");
 
     const connectButton = document.getElementById('connectButton');
@@ -10,6 +28,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serialCommandInput = document.getElementById('serialCommandInput');
     const serialSendCommandButton = document.getElementById('serialSendCommandButton');
     
+    console.log("🚀 MAIN.JS: DOM elements found:", {
+        connectButton: !!connectButton,
+        disconnectButton: !!disconnectButton,
+        connectionStatusDiv: !!connectionStatusDiv,
+        serialTerminalOutput: !!serialTerminalOutput
+    });
+
     // --- Serial Terminal Logging Function ---
     function logToTerminal(message, type = 'info') {
         if (serialTerminalOutput) {
@@ -40,20 +65,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // --- Initialize Data Parser and UI ---
     try {
+        console.log("🚀 MAIN.JS: Starting initialization process");
+        
         if (connectButton) connectButton.disabled = true;
         updateConnectionStatus("Initializing...", "disconnected");
 
+        console.log("🚀 MAIN.JS: Calling initDataParser()");
         await initDataParser();
+        console.log("🚀 MAIN.JS: initDataParser() completed successfully");
         
+        console.log("🚀 MAIN.JS: Checking for initUI function:", typeof initUI);
         if (typeof initUI === 'function') {
+            console.log("🚀 MAIN.JS: Calling initUI()");
             initUI();
+            console.log("🚀 MAIN.JS: initUI() completed successfully");
+        } else {
+            console.error("🚀 MAIN.JS: initUI function not found!");
         }
 
         updateConnectionStatus("Ready to connect", "disconnected");
         if (connectButton) connectButton.disabled = false;
+        
+        console.log("🚀 MAIN.JS: Initialization completed successfully");
 
     } catch (error) {
-        console.error("Initialization failed:", error);
+        console.error("🚀 MAIN.JS: Initialization failed:", error);
+        console.error("🚀 MAIN.JS: Error stack:", error.stack);
         updateConnectionStatus("Initialization Error. Check console.", "error");
         if (connectButton) {
             connectButton.disabled = true;

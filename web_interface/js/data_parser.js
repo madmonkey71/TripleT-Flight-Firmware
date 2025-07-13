@@ -1,5 +1,7 @@
 // JavaScript file for parsing incoming data from the serial port
 
+console.log("🚀 DATA_PARSER.JS: Script loaded and executing");
+
 // This module will hold the configuration once loaded.
 let config = {
     csvHeaders: [],
@@ -225,11 +227,17 @@ function categorizeMessage(message) {
  * @returns {Promise<void>} A promise that resolves when the config is loaded.
  */
 async function initDataParser() {
+    console.log("🚀 DATA_PARSER.JS: initDataParser() called");
+    
     try {
+        console.log("🚀 DATA_PARSER.JS: Attempting to fetch mapping file");
         const response = await fetch('js/flight_console_data_mapping.json');
+        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
+        console.log("🚀 DATA_PARSER.JS: Mapping file fetched successfully, parsing JSON");
         const mapping = await response.json();
         
         // Validate the structure of the loaded JSON
@@ -240,17 +248,21 @@ async function initDataParser() {
         config.csvHeaders = mapping.csv_headers;
         config.flightStateMap = mapping.flight_states;
         
-        console.log("Data parser initialized successfully from JSON file.");
+        console.log("🚀 DATA_PARSER.JS: Data parser initialized successfully from JSON file.");
+        console.log("🚀 DATA_PARSER.JS: CSV headers count:", config.csvHeaders.length);
+        console.log("🚀 DATA_PARSER.JS: Flight states count:", Object.keys(config.flightStateMap).length);
 
     } catch (error) {
-        console.warn("Failed to load configuration from JSON file:", error);
-        console.log("Using fallback configuration (file:// protocol compatibility)");
+        console.warn("🚀 DATA_PARSER.JS: Failed to load configuration from JSON file:", error);
+        console.log("🚀 DATA_PARSER.JS: Using fallback configuration (file:// protocol compatibility)");
         
         // Use fallback configuration for file:// protocol
         config.csvHeaders = FALLBACK_CONFIG.csvHeaders;
         config.flightStateMap = FALLBACK_CONFIG.flightStateMap;
         
-        console.log("Data parser initialized successfully with fallback configuration.");
+        console.log("🚀 DATA_PARSER.JS: Data parser initialized successfully with fallback configuration.");
+        console.log("🚀 DATA_PARSER.JS: Fallback CSV headers count:", config.csvHeaders.length);
+        console.log("🚀 DATA_PARSER.JS: Fallback flight states count:", Object.keys(config.flightStateMap).length);
     }
 }
 

@@ -6,6 +6,34 @@ let config = {
     flightStateMap: {}
 };
 
+// Fallback configuration for when JSON file cannot be fetched (file:// protocol)
+const FALLBACK_CONFIG = {
+    csvHeaders: [
+        "SeqNum", "Timestamp", "FlightState", "Sats", "Lat", "Long", "Speed", "Alt", 
+        "CalibratedAltitude", "VerticalVelocity", "EulerRoll_rad", "EulerPitch_rad", 
+        "EulerYaw_rad", "GPSFixType", "Pressure", "Temperature", "KX134_AccelX", 
+        "KX134_AccelY", "KX134_AccelZ", "ICM_AccelX", "ICM_AccelY", "ICM_AccelZ", 
+        "ICM_GyroX", "ICM_GyroY", "ICM_GyroZ", "ICM_MagX", "ICM_MagY", "ICM_MagZ", 
+        "ICM_Temp", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", 
+        "ControlErrorRoll", "ControlErrorPitch", "ControlErrorYaw", "TargetRoll", 
+        "TargetPitch", "TargetYaw", "UKF_VelX", "UKF_VelY", "UKF_VelZ", 
+        "UKF_AccelX", "UKF_AccelY", "UKF_AccelZ", "UKF_AngVelX", "UKF_AngVelY", 
+        "UKF_AngVelZ", "UKF_QuatW", "UKF_QuatX", "UKF_QuatY", "UKF_QuatZ"
+    ],
+    flightStateMap: {
+        "0": "UNKNOWN",
+        "1": "PAD_IDLE",
+        "2": "ARMED",
+        "3": "BOOST",
+        "4": "COAST",
+        "5": "APOGEE",
+        "6": "DROGUE",
+        "7": "MAIN",
+        "8": "LANDED",
+        "9": "ABORT"
+    }
+};
+
 /**
  * Determines if a message should be ignored for data parsing/plotting.
  * @param {string} message - The incoming message to evaluate
@@ -209,12 +237,17 @@ async function initDataParser() {
         config.csvHeaders = mapping.csv_headers;
         config.flightStateMap = mapping.flight_states;
         
-        console.log("Data parser initialized successfully.");
+        console.log("Data parser initialized successfully from JSON file.");
 
     } catch (error) {
-        console.error("Failed to initialize data parser:", error);
-        // Re-throw the error so the main application knows initialization failed.
-        throw error; 
+        console.warn("Failed to load configuration from JSON file:", error);
+        console.log("Using fallback configuration (file:// protocol compatibility)");
+        
+        // Use fallback configuration for file:// protocol
+        config.csvHeaders = FALLBACK_CONFIG.csvHeaders;
+        config.flightStateMap = FALLBACK_CONFIG.flightStateMap;
+        
+        console.log("Data parser initialized successfully with fallback configuration.");
     }
 }
 

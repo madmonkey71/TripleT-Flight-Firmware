@@ -53,10 +53,13 @@ microsoft-edge index.html
 # Navigate to the web interface directory
 cd web_interface
 
-# Run the interactive launcher script
+# Linux/Mac: Run the interactive launcher script
 ./run_local_server.sh
+
+# Windows: Run the batch file
+run_local_server.bat
 ```
-**✅ Advantages:** Multiple server options, automatic browser detection
+**✅ Advantages:** Multiple server options, automatic browser detection, cross-platform
 
 #### **Option 3: Local HTTP Server on localhost**
 ```bash
@@ -80,12 +83,27 @@ If using VS Code:
 
 #### **🔧 Troubleshooting HTTPS Issues**
 
-If you're still getting HTTPS redirection:
-1. **Clear browser cache and cookies**
-2. **Use incognito/private browsing mode**
-3. **Try a different port:** `python3 -m http.server 3000`
-4. **Use IP address:** `http://127.0.0.1:8000` instead of `localhost`
-5. **Disable HTTPS-only mode** in browser settings (Chrome: Settings → Privacy → Security → Advanced → Use secure connections)
+If you're still getting HTTPS redirection or SSL handshake errors:
+
+**🚨 Common Issue: Browser Auto-Redirects HTTP to HTTPS**
+- **Symptoms:** Server logs show SSL handshake attempts (`\x16\x03\x01` messages)
+- **Solutions:**
+  1. **Clear browser cache and cookies** (especially for localhost)
+  2. **Use incognito/private browsing mode**
+  3. **Try different ports:** `python3 -m http.server 3000` or `python3 -m http.server 9000`
+  4. **Use IP address:** `http://127.0.0.1:8000` instead of `localhost`
+  5. **Bind to specific IP:** `python3 -m http.server 8000 --bind 127.0.0.1`
+
+**🚨 Common Issue: "Initialization Error" with file:// protocol**
+- **Symptoms:** "Status: Initialization Error. Check console." when opening index.html directly
+- **Cause:** Browser blocks JSON file loading due to CORS policy
+- **Solution:** The interface now has fallback configuration - this should work automatically
+
+**🔧 Additional Troubleshooting Steps:**
+1. **Kill existing servers:** `pkill -f "python3 -m http.server"`
+2. **Check browser settings:** Disable HTTPS-only mode (Chrome: Settings → Privacy → Security → Advanced)
+3. **Try different browsers:** Edge, Opera, or different Chrome profile
+4. **Check firewall:** Ensure local ports aren't blocked
 
 ## Features
 

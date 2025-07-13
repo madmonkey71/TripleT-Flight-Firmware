@@ -71,14 +71,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleReceivedData(data) {
+        console.log("🔍 DEBUG: Raw data received:", data);
+        
         const parsedData = parseData(data);
+        console.log("🔍 DEBUG: Parsed data result:", parsedData);
 
         if (!parsedData) {
+            console.log("🔍 DEBUG: Data not parsed, logging to terminal");
             logToTerminal(data.trim(), 'received');
             return;
         }
         
         if (parsedData.isStateUpdate) {
+            console.log("🔍 DEBUG: State update detected:", parsedData);
             if (typeof updateUI === 'function') {
                 updateUI(parsedData);
             }
@@ -89,8 +94,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const condensed = parts.slice(0, 3).join(',') + `... (${parts.length} fields)`;
         logToTerminal(`CSV: ${condensed}`, 'received');
         
+        console.log("🔍 DEBUG: Calling updateUI with:", parsedData);
         if (typeof updateUI === 'function') {
             updateUI(parsedData);
+        } else {
+            console.error("🔍 DEBUG: updateUI function not available!");
         }
     }
 

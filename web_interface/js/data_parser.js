@@ -9,28 +9,31 @@ let config = {
 // Fallback configuration for when JSON file cannot be fetched (file:// protocol)
 const FALLBACK_CONFIG = {
     csvHeaders: [
-        "SeqNum", "Timestamp", "FlightState", "Sats", "Lat", "Long", "Speed", "Alt", 
-        "CalibratedAltitude", "VerticalVelocity", "EulerRoll_rad", "EulerPitch_rad", 
-        "EulerYaw_rad", "GPSFixType", "Pressure", "Temperature", "KX134_AccelX", 
-        "KX134_AccelY", "KX134_AccelZ", "ICM_AccelX", "ICM_AccelY", "ICM_AccelZ", 
-        "ICM_GyroX", "ICM_GyroY", "ICM_GyroZ", "ICM_MagX", "ICM_MagY", "ICM_MagZ", 
-        "ICM_Temp", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", 
-        "ControlErrorRoll", "ControlErrorPitch", "ControlErrorYaw", "TargetRoll", 
-        "TargetPitch", "TargetYaw", "UKF_VelX", "UKF_VelY", "UKF_VelZ", 
-        "UKF_AccelX", "UKF_AccelY", "UKF_AccelZ", "UKF_AngVelX", "UKF_AngVelY", 
-        "UKF_AngVelZ", "UKF_QuatW", "UKF_QuatX", "UKF_QuatY", "UKF_QuatZ"
+        "SeqNum", "Timestamp", "FlightState", "FixType", "Sats", "Lat", "Long", "Alt", 
+        "AltMSL", "RawAltitude", "CalibratedAltitude", "Speed", "Heading", "pDOP", "RTK", 
+        "Pressure", "Temperature", "KX134_AccelX", "KX134_AccelY", "KX134_AccelZ", 
+        "ICM_AccelX", "ICM_AccelY", "ICM_AccelZ", "ICM_GyroX", "ICM_GyroY", "ICM_GyroZ", 
+        "ICM_MagX", "ICM_MagY", "ICM_MagZ", "ICM_Temp", "Q0", "Q1", "Q2", "Q3", 
+        "EulerRoll_rad", "EulerPitch_rad", "EulerYaw_rad", "GyroBiasX_rps", "GyroBiasY_rps", 
+        "GyroBiasZ_rps", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", 
+        "TgtRoll", "TgtPitch", "TgtYaw", "PIDIntRoll", "PIDIntPitch", "PIDIntYaw"
     ],
     flightStateMap: {
-        "0": "UNKNOWN",
-        "1": "PAD_IDLE",
-        "2": "ARMED",
-        "3": "BOOST",
-        "4": "COAST",
-        "5": "APOGEE",
-        "6": "DROGUE",
-        "7": "MAIN",
-        "8": "LANDED",
-        "9": "ABORT"
+        "0": "STARTUP",
+        "1": "CALIBRATION",
+        "2": "PAD_IDLE",
+        "3": "ARMED",
+        "4": "BOOST",
+        "5": "COAST",
+        "6": "APOGEE",
+        "7": "DROGUE_DEPLOY",
+        "8": "DROGUE_DESCENT",
+        "9": "MAIN_DEPLOY",
+        "10": "MAIN_DESCENT",
+        "11": "LANDED",
+        "12": "RECOVERY",
+        "13": "ERROR",
+        "UNKNOWN": "UNKNOWN"
     }
 };
 
@@ -259,18 +262,21 @@ async function initDataParser() {
  */
 function parseData(line) {
     const trimmedLine = line.trim();
+    console.log("🔍 PARSE DEBUG: Processing line:", trimmedLine);
 
     // 1. Handle JSON state messages: {"state_id":3,"state_name":"ARMED"}
     if (trimmedLine.startsWith('{') && trimmedLine.endsWith('}')) {
         try {
             const stateData = JSON.parse(trimmedLine);
             if (stateData && typeof stateData.state_name !== 'undefined') {
+                console.log("🔍 PARSE DEBUG: JSON state message found:", stateData);
                 return { 
                     isStateUpdate: true,
                     FlightState: stateData.state_name 
                 };
             }
         } catch (e) {
+            console.log("🔍 PARSE DEBUG: JSON parsing failed:", e);
             return null;
         }
     }
@@ -278,10 +284,21 @@ function parseData(line) {
     // 2. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
     // We identify them by checking if the first part is a number (sequence number).
     const parts = trimmedLine.split(',');
+    console.log("🔍 PARSE DEBUG: CSV parts:", parts.length, "Expected headers:", config.csvHeaders.length);
+    
     if (parts.length > 1 && !isNaN(parts[0])) {
+        console.log("🔍 PARSE DEBUG: Line starts with number, checking CSV format");
+        
         // Ensure headers are loaded and the data has the correct number of fields
-        if (config.csvHeaders.length === 0 || parts.length !== config.csvHeaders.length) {
-            console.warn(`CSV mismatch: Expected ${config.csvHeaders.length}, got ${parts.length}.`);
+        if (config.csvHeaders.length === 0) {
+            console.warn("🔍 PARSE DEBUG: No CSV headers loaded!");
+            return null;
+        }
+        
+        if (parts.length !== config.csvHeaders.length) {
+            console.warn(`🔍 PARSE DEBUG: CSV mismatch: Expected ${config.csvHeaders.length}, got ${parts.length}.`);
+            console.log("🔍 PARSE DEBUG: Headers:", config.csvHeaders);
+            console.log("🔍 PARSE DEBUG: First few parts:", parts.slice(0, 10));
             return null;
         }
 
@@ -294,9 +311,11 @@ function parseData(line) {
             dataObject.FlightState = config.flightStateMap[dataObject.FlightState] || 'UNKNOWN';
         }
         
+        console.log("🔍 PARSE DEBUG: Successfully parsed CSV data:", dataObject);
         return dataObject;
     }
 
+    console.log("🔍 PARSE DEBUG: Line doesn't match any known format");
     return null;
 }
 

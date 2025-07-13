@@ -18,7 +18,7 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 - **Dual Accelerometer Strategy**: Intelligently uses KX134 for high-G events and ICM-20948 for general flight
 - **Redundant Apogee Detection**: Four distinct methods: barometric, accelerometer, GPS, and backup timer
 - **Comprehensive Recovery System**: SOS audio beacon, LED strobe patterns, and GPS coordinate transmission
-- **Real-time Data Logging**: 63 data points logged to SD card in CSV format
+- **Real-time Data Logging**: 62 data points logged to SD card in CSV format
 - **Web Interface**: Real-time data visualization with 3D orientation display and live charts
 - **Interactive Command Interface**: Rich serial command system for diagnostics and control
 - **Robust Error Recovery**: Automatic sensor health monitoring with recovery mechanisms
@@ -64,7 +64,7 @@ See [Flight Operations](docs/FLIGHT_OPERATIONS.md) for detailed state descriptio
   - Live charts for altitude, acceleration, gyroscope, and magnetometer data
   - Serial command interface for remote control
   - Resolved HTTPS redirection issues with multiple server options
-  - Updated CSV field mapping to match firmware's 63-field output
+  - Updated CSV field mapping to match firmware's 62-field output
 - ✅ **Configurable Guidance System**: Added ability to completely disable guidance for passive rockets
   - Set `ENABLE_GUIDANCE 0` for passive rockets without actuators
   - Set `ENABLE_GUIDANCE 1` for guided rockets with servo-controlled fins

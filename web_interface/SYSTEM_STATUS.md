@@ -14,9 +14,9 @@ The web interface has been successfully updated to handle the firmware's 63-fiel
 - **Status**: Working with Node.js server (option 4)
 
 ### ✅ 2. CSV Field Count Mismatch - RESOLVED
-- **Problem**: Web interface expected 49 fields, firmware outputs 63 fields
-- **Solution**: Updated `flight_console_data_mapping.json` to match firmware output
-- **Status**: Field mapping now matches firmware's 63-field CSV format
+- **Problem**: Web interface expected 63 fields, firmware outputs 62 fields (XTE field commented out)
+- **Solution**: Removed XTE field from `flight_console_data_mapping.json` and fallback config
+- **Status**: Field mapping now matches firmware's 62-field CSV format
 
 ### ✅ 3. Data Parsing Logic - WORKING
 - **Status**: Enhanced debugging shows successful CSV parsing
@@ -67,7 +67,7 @@ Once CSV output is re-enabled, you should see:
 
 ### ✅ Working Components
 - **Serial Connection**: Web Serial API functional
-- **Data Parser**: 63-field CSV format supported
+- **Data Parser**: 62-field CSV format supported (XTE field removed)
 - **Command Interface**: Send/receive working
 - **Error Handling**: Comprehensive debugging enabled
 - **UI Components**: All panels ready for data
@@ -98,8 +98,8 @@ Once CSV output is re-enabled, you should see:
 
 ## Files Updated in This Session
 
-1. `web_interface/js/flight_console_data_mapping.json` - Updated to 63 fields
-2. `web_interface/js/data_parser.js` - Enhanced debugging and fallback config
+1. `web_interface/js/flight_console_data_mapping.json` - Updated to 62 fields (removed XTE)
+2. `web_interface/js/data_parser.js` - Enhanced debugging and fallback config (removed XTE)
 3. `web_interface/js/main.js` - Added comprehensive error handling
 4. `web_interface/run_local_server.sh` - Multiple server options for HTTPS issues
 5. `web_interface/run_local_server.bat` - Windows compatibility

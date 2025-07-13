@@ -32,18 +32,33 @@ If you're getting "Web Serial API not supported", switch to:
 
 ### **Running the Web Interface**
 
-#### **Option 1: Local File (Recommended)**
+#### **🚨 IMPORTANT: Avoiding HTTPS Redirection**
+
+Some browsers automatically redirect HTTP to HTTPS, which breaks the Web Serial API. Here are the best methods to avoid this:
+
+#### **Option 1: Local File Protocol (Recommended)**
 ```bash
 # Navigate to the web interface directory
 cd web_interface
 
-# Open with Chrome/Edge directly
-chrome index.html
+# Open with Chrome/Edge directly (uses file:// protocol)
+google-chrome index.html
 # or
-msedge index.html
+microsoft-edge index.html
 ```
+**✅ Advantages:** No server needed, no HTTPS redirection, works immediately
 
-#### **Option 2: Local HTTP Server**
+#### **Option 2: Use the Launch Script**
+```bash
+# Navigate to the web interface directory
+cd web_interface
+
+# Run the interactive launcher script
+./run_local_server.sh
+```
+**✅ Advantages:** Multiple server options, automatic browser detection
+
+#### **Option 3: Local HTTP Server on localhost**
 ```bash
 # Using Python (if installed)
 cd web_interface
@@ -51,15 +66,26 @@ python3 -m http.server 8000
 # Then open: http://localhost:8000
 
 # Using Node.js (if installed)
-npx http-server
+npx http-server -p 8080
 # Then open: http://localhost:8080
 ```
+**✅ Advantages:** localhost is treated as secure context, no HTTPS redirection
 
-#### **Option 3: Live Server (VS Code)**
+#### **Option 4: Live Server (VS Code)**
 If using VS Code:
 1. Install "Live Server" extension
 2. Right-click on `index.html`
 3. Select "Open with Live Server"
+**⚠️ Note:** May use 127.0.0.1 which some browsers redirect to HTTPS
+
+#### **🔧 Troubleshooting HTTPS Issues**
+
+If you're still getting HTTPS redirection:
+1. **Clear browser cache and cookies**
+2. **Use incognito/private browsing mode**
+3. **Try a different port:** `python3 -m http.server 3000`
+4. **Use IP address:** `http://127.0.0.1:8000` instead of `localhost`
+5. **Disable HTTPS-only mode** in browser settings (Chrome: Settings → Privacy → Security → Advanced → Use secure connections)
 
 ## Features
 

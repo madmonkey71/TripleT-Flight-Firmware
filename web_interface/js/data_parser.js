@@ -21,7 +21,7 @@ const FALLBACK_CONFIG = {
         "PIDIntYaw", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", "BattVoltage", 
         "LastErrorCode", "StabFlags", "MaxPitchRate", "MaxRollRate", "MaxYawRate", 
         "MaxPitchErr", "MaxRollErr", "MaxYawErr", "TgtWPIdx", "DistToWP", "BearToWP", 
-        "AltErrWP", "XTE"
+        "AltErrWP"
     ],
     flightStateMap: {
         "0": "STARTUP",

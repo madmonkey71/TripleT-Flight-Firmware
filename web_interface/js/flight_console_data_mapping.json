@@ -62,8 +62,7 @@
     { "internal_name": "TgtWPIdx", "csv_header": "TgtWPIdx", "csv_index": null, "default_value": 0, "type": "int" },
     { "internal_name": "DistToWP", "csv_header": "DistToWP", "csv_index": null, "default_value": 0.0, "type": "float" },
     { "internal_name": "BearToWP", "csv_header": "BearToWP", "csv_index": null, "default_value": 0.0, "type": "float" },
-    { "internal_name": "AltErrWP", "csv_header": "AltErrWP", "csv_index": null, "default_value": 0.0, "type": "float" },
-    { "internal_name": "XTE", "csv_header": "XTE", "csv_index": null, "default_value": 0.0, "type": "float" }
+    { "internal_name": "AltErrWP", "csv_header": "AltErrWP", "csv_index": null, "default_value": 0.0, "type": "float" }
   ],
   "csv_headers": [
     "SeqNum", "Timestamp", "FlightState", "FixType", "Sats", "Lat", "Long", "Alt", "AltMSL", "RawAltitude", 
@@ -74,7 +73,7 @@
     "TgtPitch", "TgtYaw", "PIDIntRoll", "PIDIntPitch", "PIDIntYaw", "ActuatorOutRoll", "ActuatorOutPitch", 
     "ActuatorOutYaw", "BattVoltage", "LastErrorCode", "StabFlags", "MaxPitchRate", "MaxRollRate", 
     "MaxYawRate", "MaxPitchErr", "MaxRollErr", "MaxYawErr", "TgtWPIdx", "DistToWP", "BearToWP", 
-    "AltErrWP", "XTE"
+    "AltErrWP"
   ],
   "csv_settings": {
     "delimiter": ",",

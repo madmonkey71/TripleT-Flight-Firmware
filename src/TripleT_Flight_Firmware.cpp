@@ -930,56 +930,50 @@ void loop() {
 
   // --- Guidance Control Update ---
   #if ENABLE_GUIDANCE == 1
-  static unsigned long g_lastGuidanceUpdateTime = 0;
-  if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-      float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
-      if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
-          dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
-      }
-      g_lastGuidanceUpdateTime = millis();
+  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT)
+  if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
+      static unsigned long g_lastGuidanceUpdateTime = 0;
+      if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
+          float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
+          if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
+              dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
+          }
+          g_lastGuidanceUpdateTime = millis();
 
-      // Assuming g_kalmanRoll, g_kalmanPitch, g_kalmanYaw are updated radians from Kalman filter
+          // Use Kalman filter rates instead of raw gyro to avoid timing mismatches
+          // g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate are already calculated and filtered
+          guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
+                          g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate,
+                          GPS_latitude, GPS_longitude, GPS_altitudeMSL / 1000.0f,
+                          dt_guidance);
 
-      float gu_calibrated_gyro[3];
-      ICM_20948_get_calibrated_gyro(gu_calibrated_gyro); // Get calibrated gyro data
+          float pitch_command_norm, roll_command_norm, yaw_command_norm; // Normalized (-1 to 1)
+          guidance_get_actuator_outputs(pitch_command_norm, roll_command_norm, yaw_command_norm);
 
-      guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
-                      gu_calibrated_gyro[0], gu_calibrated_gyro[1], gu_calibrated_gyro[2],
-                      GPS_latitude, GPS_longitude, GPS_altitudeMSL / 1000.0f,
-                      dt_guidance);
+          // Map normalized commands to servo angles (degrees)
+          // Example: maps -1.0 -> 0 deg, 0.0 -> 90 deg (SERVO_DEFAULT_ANGLE), 1.0 -> 180 deg
+          // This assumes a servo travel of 90 degrees in each direction from center.
+          // Adjust the multiplier (90.0f) if servo travel is different (e.g., 45.0f for +/- 45 deg travel).
+          int pitch_servo_angle = static_cast<int>(pitch_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          int roll_servo_angle  = static_cast<int>(roll_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          int yaw_servo_angle   = static_cast<int>(yaw_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
 
-      float pitch_command_norm, roll_command_norm, yaw_command_norm; // Normalized (-1 to 1)
-      guidance_get_actuator_outputs(pitch_command_norm, roll_command_norm, yaw_command_norm);
+          // Constrain servo angles to typical 0-180 range
+          pitch_servo_angle = constrain(pitch_servo_angle, 0, 180);
+          roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
+          yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
 
-      // Map normalized commands to servo angles (degrees)
-      // Example: maps -1.0 -> 0 deg, 0.0 -> 90 deg (SERVO_DEFAULT_ANGLE), 1.0 -> 180 deg
-      // This assumes a servo travel of 90 degrees in each direction from center.
-      // Adjust the multiplier (90.0f) if servo travel is different (e.g., 45.0f for +/- 45 deg travel).
-      int pitch_servo_angle = static_cast<int>(pitch_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
-      int roll_servo_angle  = static_cast<int>(roll_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
-      int yaw_servo_angle   = static_cast<int>(yaw_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          // Command servos (we're already in the correct state check above)
+          g_servo_pitch.write(pitch_servo_angle);
+          g_servo_roll.write(roll_servo_angle);
+          g_servo_yaw.write(yaw_servo_angle);
 
-      // Constrain servo angles to typical 0-180 range
-      pitch_servo_angle = constrain(pitch_servo_angle, 0, 180);
-      roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
-      yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
-
-      // Only command servos if in an appropriate flight state
-      // Example: Active during COAST, DROGUE_DESCENT, MAIN_DESCENT. (Adjust as per actual flight plan)
-      // Or, if attitude hold is desired on pad before launch (e.g. ARMED state).
-      if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
-           // Adding !isStationary to prevent fighting on the ground if state is descent but already landed.
-           // isStationary is an extern bool from icm_20948_functions.h
-           g_servo_pitch.write(pitch_servo_angle);
-           g_servo_roll.write(roll_servo_angle);
-           g_servo_yaw.write(yaw_servo_angle);
-
-           if (g_debugFlags.enableSystemDebug) { // Optional: print servo commands
-              Serial.print(F("Servo CMDs (P,R,Y): "));
-              Serial.print(pitch_servo_angle); Serial.print(F(", "));
-              Serial.print(roll_servo_angle); Serial.print(F(", "));
-              Serial.println(yaw_servo_angle);
-           }
+          if (g_debugFlags.enableSystemDebug) { // Optional: print servo commands
+             Serial.print(F("Servo CMDs (P,R,Y): "));
+             Serial.print(pitch_servo_angle); Serial.print(F(", "));
+             Serial.print(roll_servo_angle); Serial.print(F(", "));
+             Serial.println(yaw_servo_angle);
+          }
       }
   }
   #else

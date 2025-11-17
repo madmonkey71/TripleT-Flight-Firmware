@@ -48,6 +48,66 @@ static inline float rad_to_deg(float rad) {
 
 // --- Function Implementations ---
 
+// Helper function to normalize angle to -PI to PI range
+static inline float normalize_angle(float angle) {
+    while (angle > M_PI) angle -= 2.0f * M_PI;
+    while (angle < -M_PI) angle += 2.0f * M_PI;
+    return angle;
+}
+
+// Helper function for single-axis PID calculation with angle wraparound handling
+static float calculate_pid_output_angular(float current_value, float target_value,
+                                          float current_rate,
+                                          PIDControllerState* pid_state,
+                                          float Kp, float Ki, float Kd,
+                                          float integral_limit, float output_min, float output_max,
+                                          float deltat) {
+
+    // Normalize both current and target to -PI to PI
+    float current_normalized = normalize_angle(current_value);
+    float target_normalized = normalize_angle(target_value);
+
+    // Calculate error with wraparound handling
+    float error = target_normalized - current_normalized;
+    error = normalize_angle(error);  // Ensure error is in -PI to PI range
+
+    // Proportional term
+    float P_term = Kp * error;
+
+    // Integral term with anti-windup
+    pid_state->integral += error * deltat;
+    // Clamp integral
+    if (pid_state->integral > integral_limit) {
+        pid_state->integral = integral_limit;
+    } else if (pid_state->integral < -integral_limit) {
+        pid_state->integral = -integral_limit;
+    }
+    float I_term = Ki * pid_state->integral;
+
+    // Derivative term - USING DERIVATIVE-ON-MEASUREMENT to avoid derivative kick
+    // Calculate change in current value with wraparound handling
+    float value_change = current_normalized - pid_state->previous_value;
+    value_change = normalize_angle(value_change);  // Handle wraparound
+    float derivative = (deltat > 0.0f) ? -(value_change / deltat) : 0.0f;
+    float D_term = Kd * derivative;
+
+    // Update previous values for next iteration
+    pid_state->previous_error = error;
+    pid_state->previous_value = current_normalized;
+
+    // Total PID output
+    float output = P_term + I_term + D_term;
+
+    // Clamp output
+    if (output > output_max) {
+        output = output_max;
+    } else if (output < output_min) {
+        output = output_min;
+    }
+
+    return output;
+}
+
 // Helper function for single-axis PID calculation
 static float calculate_pid_output(float current_value, float target_value,
                                   float current_rate, // For D-term on rate, or for feedforward (not used in basic P,I,D_on_error)
@@ -55,7 +115,7 @@ static float calculate_pid_output(float current_value, float target_value,
                                   float Kp, float Ki, float Kd,
                                   float integral_limit, float output_min, float output_max,
                                   float deltat) {
-    
+
     float error = target_value - current_value;
 
     // Proportional term
@@ -71,13 +131,15 @@ static float calculate_pid_output(float current_value, float target_value,
     }
     float I_term = Ki * pid_state->integral;
 
-    // Derivative term
-    // Using derivative of error.
-    float derivative = (deltat > 0.0f) ? ((error - pid_state->previous_error) / deltat) : 0.0f;
+    // Derivative term - USING DERIVATIVE-ON-MEASUREMENT to avoid derivative kick
+    // This calculates the rate of change of the process variable, not the error
+    // Negative sign because we want to oppose changes in the process variable
+    float derivative = (deltat > 0.0f) ? -((current_value - pid_state->previous_value) / deltat) : 0.0f;
     float D_term = Kd * derivative;
-    
-    // Update previous error for next iteration
+
+    // Update previous values for next iteration
     pid_state->previous_error = error;
+    pid_state->previous_value = current_value;
 
     // Total PID output
     float output = P_term + I_term + D_term;
@@ -102,12 +164,15 @@ void guidance_init() {
     // Reset PID states
     pid_roll_state_g.integral = 0.0f;
     pid_roll_state_g.previous_error = 0.0f;
+    pid_roll_state_g.previous_value = 0.0f;
 
     pid_pitch_state_g.integral = 0.0f;
     pid_pitch_state_g.previous_error = 0.0f;
+    pid_pitch_state_g.previous_value = 0.0f;
 
     pid_yaw_state_g.integral = 0.0f;
     pid_yaw_state_g.previous_error = 0.0f;
+    pid_yaw_state_g.previous_value = 0.0f;
 
     // Reset target orientation to zero (e.g., level flight, current heading)
     target_roll_rad_g = 0.0f;
@@ -129,8 +194,10 @@ void guidance_init() {
     guidance_reset_trajectory_state();
     pid_xte_state_g.integral = 0.0f;
     pid_xte_state_g.previous_error = 0.0f;
+    pid_xte_state_g.previous_value = 0.0f;
     pid_alt_traj_state_g.integral = 0.0f;
     pid_alt_traj_state_g.previous_error = 0.0f;
+    pid_alt_traj_state_g.previous_value = 0.0f;
 }
 
 /**
@@ -204,8 +271,10 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
                 // Reset PIDs for the new segment/target
                 pid_xte_state_g.integral = 0.0f;
                 pid_xte_state_g.previous_error = 0.0f;
+                pid_xte_state_g.previous_value = 0.0f;
                 pid_alt_traj_state_g.integral = 0.0f;
                 pid_alt_traj_state_g.previous_error = 0.0f;
+                pid_alt_traj_state_g.previous_value = 0.0f;
             }
             // Recalculate for the new waypoint if switched, or exit if trajectory ended
             if (!guidance_is_trajectory_active()) {
@@ -284,13 +353,13 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
             // This makes TRAJ_XTE_PID_OUTPUT_LIMIT a rate limit (rad/s).
             // For now, stick to simpler direct bearing.
 
-            // 4. Calculate Altitude Error for Pitch Control
-            float altitude_error_m = target_wp.altitude_msl - current_alt_msl;
+            // 4. Altitude Control for Pitch
             // Use Altitude PID to get a desired pitch adjustment
+            // Pass current altitude and target altitude (not the error)
             float desired_pitch_adjustment_rad = calculate_pid_output(
-                altitude_error_m,  // Current error in meters
-                0.0f,              // Target error (setpoint is zero altitude error)
-                0.0f, // current_pitch_rate_radps, // Rate of change of altitude error could be used for D term if available
+                current_alt_msl,       // Current altitude in meters
+                target_wp.altitude_msl, // Target altitude in meters
+                0.0f, // Vertical rate could be used here if available
                 &pid_alt_traj_state_g,
                 TRAJ_ALT_PID_KP, TRAJ_ALT_PID_KI, TRAJ_ALT_PID_KD,
                 TRAJ_ALT_PID_INTEGRAL_LIMIT,
@@ -333,25 +402,13 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
                                                PID_INTEGRAL_LIMIT_PITCH, PID_OUTPUT_MIN, PID_OUTPUT_MAX,
                                                deltat);
 
-    // Yaw PID Controller
-    // Normalize yaw error for PID: target_yaw_rad_g can be any angle, current_yaw_rad is -PI to PI.
-    float yaw_error_for_pid = target_yaw_rad_g - current_yaw_rad;
-    while (yaw_error_for_pid > M_PI) yaw_error_for_pid -= 2.0f * M_PI;
-    while (yaw_error_for_pid < -M_PI) yaw_error_for_pid += 2.0f * M_PI;
-    // The calculate_pid_output function expects (current, target, ...), so error is target - current.
-    // We pass current_yaw_rad and target_yaw_rad_g. The helper function calculates error.
-    // However, the helper's simple `error = target - current` might not handle wrap-around for yaw correctly if target is far from current.
-    // Better to calculate normalized error here and pass it to a modified PID function or adjust.
-    // For now, relying on the existing calculate_pid_output which takes current and target.
-    // The `target_yaw_rad_g` (bearing) and `current_yaw_rad` are both normalized angles (-PI to PI or 0 to 2PI),
-    // so simple subtraction should be okay if their ranges are consistent. Let's assume `gps_bearing_rad`
-    // and `current_yaw_rad` are both consistently within -PI to PI.
-    actuator_output_z_g = calculate_pid_output(current_yaw_rad, target_yaw_rad_g, // Error = target_yaw_rad_g - current_yaw_rad
-                                               current_yaw_rate_radps,
-                                               &pid_yaw_state_g,
-                                               PID_YAW_KP, PID_YAW_KI, PID_YAW_KD,
-                                               PID_INTEGRAL_LIMIT_YAW, PID_OUTPUT_MIN, PID_OUTPUT_MAX,
-                                               deltat);
+    // Yaw PID Controller - Use angular-aware PID to handle angle wraparound properly
+    actuator_output_z_g = calculate_pid_output_angular(current_yaw_rad, target_yaw_rad_g,
+                                                        current_yaw_rate_radps,
+                                                        &pid_yaw_state_g,
+                                                        PID_YAW_KP, PID_YAW_KI, PID_YAW_KD,
+                                                        PID_INTEGRAL_LIMIT_YAW, PID_OUTPUT_MIN, PID_OUTPUT_MAX,
+                                                        deltat);
 }
 
 void guidance_get_target_euler_angles(float& out_target_roll_rad, float& out_target_pitch_rad, float& out_target_yaw_rad) {
@@ -486,8 +543,10 @@ void guidance_reset_trajectory_state() {
     // }
     pid_xte_state_g.integral = 0.0f;
     pid_xte_state_g.previous_error = 0.0f;
+    pid_xte_state_g.previous_value = 0.0f;
     pid_alt_traj_state_g.integral = 0.0f;
     pid_alt_traj_state_g.previous_error = 0.0f;
+    pid_alt_traj_state_g.previous_value = 0.0f;
 }
 
 // Basic test trajectory for development
@@ -533,8 +592,10 @@ void guidance_activate_trajectory(bool activate) {
         g_current_trajectory.current_target_wp_index = 0; // Start from the beginning when activated
         pid_xte_state_g.integral = 0.0f; // Reset PIDs for trajectory control
         pid_xte_state_g.previous_error = 0.0f;
+        pid_xte_state_g.previous_value = 0.0f;
         pid_alt_traj_state_g.integral = 0.0f;
         pid_alt_traj_state_g.previous_error = 0.0f;
+        pid_alt_traj_state_g.previous_value = 0.0f;
         // Serial.print(F("Trajectory guidance activated. Target WP index: "));
         // Serial.println(g_current_trajectory.current_target_wp_index);
     } else {

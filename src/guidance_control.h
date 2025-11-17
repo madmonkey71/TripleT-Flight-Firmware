@@ -4,7 +4,8 @@
 // Structure to hold the state of a single PID controller
 typedef struct {
     float integral;         // Sum of errors for the I-term
-    float previous_error;   // Last error for the D-term
+    float previous_error;   // Last error for the D-term (derivative-on-error)
+    float previous_value;   // Last process variable for derivative-on-measurement
 } PIDControllerState;
 
 // Structure to hold stability monitoring status and timers

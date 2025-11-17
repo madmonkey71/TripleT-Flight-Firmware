@@ -139,19 +139,22 @@
 // --- PID Controller Gains ---
 
 // Roll Axis PID
-#define PID_ROLL_KP 1.0f
+// Reduced from 1.0/0.1/0.05 to reduce oscillations and improve stability
+#define PID_ROLL_KP 0.3f
 #define PID_ROLL_KI 0.1f
-#define PID_ROLL_KD 0.05f
+#define PID_ROLL_KD 0.01f
 
 // Pitch Axis PID
-#define PID_PITCH_KP 1.0f
+// Reduced from 1.0/0.1/0.05 to reduce oscillations and improve stability
+#define PID_PITCH_KP 0.3f
 #define PID_PITCH_KI 0.1f
-#define PID_PITCH_KD 0.05f
+#define PID_PITCH_KD 0.01f
 
 // Yaw Axis PID (e.g., for reaction wheel or differential thrust)
-#define PID_YAW_KP 0.8f
+// Reduced from 0.8/0.08/0.03 to reduce oscillations and improve stability
+#define PID_YAW_KP 0.2f
 #define PID_YAW_KI 0.08f
-#define PID_YAW_KD 0.03f
+#define PID_YAW_KD 0.005f
 
 // PID Output Limits (example)
 #define PID_OUTPUT_MIN -1.0f // Min actuator command

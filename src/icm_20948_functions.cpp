@@ -375,11 +375,17 @@ void ICM_20948_calibrate() {
     if (enableSensorDebug) {
         Serial.println(F("Starting ICM-20948 Full Calibration Sequence..."));
     }
-    // For now, it only calls the gyro bias calibration.
-    // Magnetometer calibration is separate and interactive (ICM_20948_calibrate_mag_interactive)
-    ICM_20948_calibrate_gyro_bias(); 
+    // Load best available magnetometer calibration (non-interactive)
+    // Since non-interactive magnetometer calibration is not supported, we reload stored values
+    // to ensure a known good state. Note: This overwrites any temporary in-memory manual calibration.
+    if (enableSensorDebug) {
+        Serial.println(F("Reloading stored magnetometer calibration..."));
+    }
+    icm_20948_load_calibration();
 
-    // TODO: Add magnetometer calibration call here if a non-interactive one is developed.
+    // Magnetometer calibration is separate and interactive (ICM_20948_calibrate_mag_interactive)
+    // Proceed with Gyro Bias Calibration
+    ICM_20948_calibrate_gyro_bias(); 
 
     if (enableSensorDebug) {
         Serial.println(F("ICM-20948 Full Calibration Sequence Finished."));
@@ -470,7 +476,11 @@ bool icm_20948_get_mag(float* mag) {
 // }
 
 void ICM_20948_calibrate_mag_interactive() {
-    // Implementation of ICM_20948_calibrate_mag_interactive function
+    if (enableSensorDebug) {
+        Serial.println(F("Interactive magnetometer calibration not yet implemented."));
+        Serial.println(F("Please use external tools or 'calibrate_mag' (future) to calibrate."));
+    }
+    // TODO: Implement interactive calibration logic here (requires user to rotate device)
 }
 
 bool icm_20948_save_calibration() {

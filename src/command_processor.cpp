@@ -282,17 +282,15 @@ void prepareForShutdown(Adafruit_NeoPixel& pixels_ref, FsFile& logFile_to_close_
   }
 }
 
-void setOrientationFilter(String filterType, SystemStatusContext& statusCtx) {
-    filterType.trim(); // Ensure no leading/trailing whitespace
-
-    if (filterType.equalsIgnoreCase("madgwick")) {
+void setOrientationFilter(const char* filterType, SystemStatusContext& statusCtx) {
+    if (strcasecmp(filterType, "madgwick") == 0) {
         Serial.println(F("WARNING: Madgwick filter no longer available. Kalman filter is the only option."));
         *statusCtx.useKalmanFilter_ptr = true;
-    } else if (filterType.equalsIgnoreCase("kalman")) {
+    } else if (strcasecmp(filterType, "kalman") == 0) {
         *statusCtx.useKalmanFilter_ptr = true;
         kalman_init(0.0f, 0.0f, 0.0f); // Re-initialize Kalman filter with zero initial angles
         Serial.println(F("Kalman filter enabled (default and only option)."));
-    } else if (filterType.length() > 0){ // Only print if a filter type was actually given
+    } else if (strlen(filterType) > 0){ // Only print if a filter type was actually given
         Serial.print(F("Unknown filter type: "));
         Serial.println(filterType);
         Serial.println(F("Only 'kalman' is supported."));
@@ -310,7 +308,7 @@ void getOrientationFilterStatus(const SystemStatusContext& statusCtx) {
     Serial.println((statusCtx.useKalmanFilter_ptr && *statusCtx.useKalmanFilter_ptr) ? "true" : "false");
 }
 
-void processCommand(String command,
+void processCommand(const char* command,
                     FlightState& currentFlightState_ref,
                     FlightState& previousFlightState_ref,
                     unsigned long& stateEntryTime_ref,
@@ -331,17 +329,19 @@ void processCommand(String command,
                     bool& baroCalibrated_ref,
                     MS5611& baro_ref
                     ) {
-    command.trim();
-    if (command.length() == 0) return;
+    // Skip empty commands
+    if (command == NULL || strlen(command) == 0) return;
 
-    // extern Adafruit_NeoPixel pixels; // No longer needed, passed as pixels_ref_param
-    // extern MS5611 ms5611Sensor;  // No longer needed, passed as baro_ref parameter
+    // Skip leading whitespace manually if needed, though usually handled by caller or basic trimming
+    while(*command == ' ') command++;
+    if (strlen(command) == 0) return;
 
-    // Make command case-insensitive for main processing
-    command.toLowerCase();
+    // Note: 'strcasecmp' is case-insensitive comparison available in standard C library for GCC/Arduino
 
-    if (command.length() == 1) {
-        char cmd = command.charAt(0);
+    if (strlen(command) == 1) {
+        char cmd = command[0]; // Already lowercased? No, caller might send raw.
+        // Actually, let's just inspect the char.
+        if (cmd >= 'A' && cmd <= 'Z') cmd += 32; // manual toLowerCase
 
         if (cmd >= '0' && cmd <= '9') {
             switch (cmd) {
@@ -385,14 +385,18 @@ void processCommand(String command,
         }
     }
 
-    if (command.equalsIgnoreCase("help")) printHelpMessage(debugFlags);
-    else if (command.equalsIgnoreCase("calibrate")) {
-        performCalibration(baroCalibrated_ref, pixels_ref_param, baro_ref, gnss_obj_ref_param);
+    if (strcasecmp(command, "help") == 0) printHelpMessage(debugFlags);
+    else if (strcasecmp(command, "calibrate") == 0) {
+        if (currentFlightState_ref == PAD_IDLE || currentFlightState_ref == CALIBRATION || currentFlightState_ref == ERROR) {
+             performCalibration(baroCalibrated_ref, pixels_ref_param, baro_ref, gnss_obj_ref_param);
+        } else {
+             Serial.println(F("ERROR: Calibration only allowed in PAD_IDLE, CALIBRATION or ERROR state."));
+        }
     }
-    else if (command.equalsIgnoreCase("calibrate_mag")) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_mag_interactive(); else Serial.println(F("ICM20948 not ready for mag cal.")); }
-    else if (command.equalsIgnoreCase("calibrate_gyro")) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_gyro_bias(2000, 1); else Serial.println(F("ICM20948 not ready for gyro cal."));}
-    else if (command.equalsIgnoreCase("save_mag_cal")) { if(statusCtx.icm20948_ready) icm_20948_save_calibration(); else Serial.println(F("ICM20948 not ready to save mag cal."));}
-    else if (command.equalsIgnoreCase("arm")) {
+    else if (strcasecmp(command, "calibrate_mag") == 0) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_mag_interactive(); else Serial.println(F("ICM20948 not ready for mag cal.")); }
+    else if (strcasecmp(command, "calibrate_gyro") == 0) { if(statusCtx.icm20948_ready) ICM_20948_calibrate_gyro_bias(2000, 1); else Serial.println(F("ICM20948 not ready for gyro cal."));}
+    else if (strcasecmp(command, "save_mag_cal") == 0) { if(statusCtx.icm20948_ready) icm_20948_save_calibration(); else Serial.println(F("ICM20948 not ready to save mag cal."));}
+    else if (strcasecmp(command, "arm") == 0) {
         if (currentFlightState_ref == PAD_IDLE) {
             Serial.println(F("Attempting to arm system. Checking health for ARMED state..."));
             // Pass currentFlightState_ref (which is PAD_IDLE) to isSensorSuiteHealthy, but check for ARMED requirements.
@@ -417,7 +421,7 @@ void processCommand(String command,
             Serial.println(getStateName(currentFlightState_ref));
         }
     }
-    else if (command.equalsIgnoreCase("clear_errors")) {
+    else if (strcasecmp(command, "clear_errors") == 0) {
         if (currentFlightState_ref == ERROR) {
             Serial.println(F("Attempting to clear error state..."));
             
@@ -452,7 +456,7 @@ void processCommand(String command,
             Serial.println(getStateName(currentFlightState_ref));
         }
     }
-    else if (command.equalsIgnoreCase("clear_to_calibration")) {
+    else if (strcasecmp(command, "clear_to_calibration") == 0) {
         if (currentFlightState_ref == ERROR) {
             Serial.println(F("Attempting to clear error state to CALIBRATION..."));
             
@@ -473,71 +477,87 @@ void processCommand(String command,
             Serial.println(getStateName(currentFlightState_ref));
         }
     }
-    else if (command.equalsIgnoreCase("summary")) toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial);
-    else if (command.equalsIgnoreCase("status")) printSystemStatus(statusCtx);
-    else if (command.equalsIgnoreCase("sd_status")) printSDCardStatus(statusCtx, sd_obj_ref_param, available_space_global_ref_param);
-    else if (command.equalsIgnoreCase("start_log")) {
+    else if (strcasecmp(command, "summary") == 0) toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial);
+    else if (strcasecmp(command, "status") == 0) printSystemStatus(statusCtx);
+    else if (strcasecmp(command, "sd_status") == 0) printSDCardStatus(statusCtx, sd_obj_ref_param, available_space_global_ref_param);
+    else if (strcasecmp(command, "start_log") == 0) {
         attemptToStartLogging(sd_obj_ref_param, gnss_obj_ref_param, logfile_obj_ref_param,
                               logfilename_buf_global_param, logfilename_buf_size_param,
                               sd_avail_global_ref_param, logging_en_global_ref_param,
                               sd_mounted_global_ref_param, sd_present_global_ref_param);
     }
-    else if (command.equalsIgnoreCase("sd")) toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial);
-    else if (command.equalsIgnoreCase("rd")) toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial);
-    else if (command.startsWith("debug_")) {
-        String flagNamePart = command.substring(6);
+    else if (strcasecmp(command, "sd") == 0) toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial);
+    else if (strcasecmp(command, "rd") == 0) toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial);
+    else if (strncasecmp(command, "debug_", 6) == 0) {
+        // Handle debug_ flags manually
+        const char* flagPart = command + 6; // Skip "debug_"
         int specificState = -1;
-        String flagIdentifier = flagNamePart;
-
-        if (flagNamePart.endsWith(" on")) { specificState = 1; flagIdentifier = flagNamePart.substring(0, flagNamePart.length() - 3); }
-        else if (flagNamePart.endsWith(" off")) { specificState = 0; flagIdentifier = flagNamePart.substring(0, flagNamePart.length() - 4); }
-        flagIdentifier.trim();
-        flagIdentifier.toLowerCase();
-
-        if (flagIdentifier == "system") toggleDebugFlag(debugFlags.enableSystemDebug, F("System debug"), Serial, specificState);
-        else if (flagIdentifier == "imu") toggleDebugFlag(debugFlags.enableIMUDebug, F("IMU debug"), Serial, specificState);
-        else if (flagIdentifier == "gps") toggleDebugFlag(debugFlags.enableGPSDebug, F("GPS debug"), Serial, specificState);
-        else if (flagIdentifier == "baro") toggleDebugFlag(debugFlags.enableBaroDebug, F("Barometer debug"), Serial, specificState);
-        else if (flagIdentifier == "storage") toggleDebugFlag(debugFlags.enableStorageDebug, F("Storage debug"), Serial, specificState);
-        else if (flagIdentifier == "icm_raw") toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial, specificState);
-        else if (flagIdentifier == "serial_csv") toggleDebugFlag(debugFlags.enableSerialCSV, F("Serial CSV output"), Serial, specificState);
-        else if (flagIdentifier == "sensor_detail") toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, specificState);
-        else if (flagIdentifier == "status_summary") toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, specificState);
-        else if (flagIdentifier == "detailed_display") toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, specificState);
-        else if (flagIdentifier == "battery") toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, specificState);
-        else if (flagIdentifier == "all_off") {
-            if (specificState == 0 || specificState == -1) { // i.e. "debug_all_off" or "debug_all_off off"
-                Serial.println(F("Disabling all common debug flags:"));
-                toggleDebugFlag(debugFlags.enableSerialCSV, F("Serial CSV output"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableSystemDebug, F("System debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableIMUDebug, F("IMU debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableGPSDebug, F("GPS debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableBaroDebug, F("Barometer debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableStorageDebug, F("Storage debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, 0);
-                toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, 0);
-                toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, 0);
-                debugFlags.enableDetailedOutput = false;
-                Serial.println(F("Legacy Detailed output (global): OFF"));
-            } else { // "debug_all_off on" is not logical for this command name
-                Serial.println(F("debug_all_off only supports 'off' or toggle to off."));
+        
+        // Check for suffix " on" or " off"
+        size_t len = strlen(flagPart);
+        char flagIdentifier[32]; 
+        
+        if (len < sizeof(flagIdentifier)) {
+            strcpy(flagIdentifier, flagPart);
+            
+            // Check for " on"
+            if (len > 3 && strcasecmp(flagIdentifier + len - 3, " on") == 0) {
+                specificState = 1;
+                flagIdentifier[len-3] = '\0';
             }
-        } else { Serial.print(F("Unknown debug flag: ")); Serial.println(flagIdentifier); }
+            // Check for " off"
+            else if (len > 4 && strcasecmp(flagIdentifier + len - 4, " off") == 0) {
+                specificState = 0;
+                flagIdentifier[len-4] = '\0';
+            }
+            
+            // Now match flagIdentifier
+            if (strcasecmp(flagIdentifier, "system") == 0) toggleDebugFlag(debugFlags.enableSystemDebug, F("System debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "imu") == 0) toggleDebugFlag(debugFlags.enableIMUDebug, F("IMU debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "gps") == 0) toggleDebugFlag(debugFlags.enableGPSDebug, F("GPS debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "baro") == 0) toggleDebugFlag(debugFlags.enableBaroDebug, F("Barometer debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "storage") == 0) toggleDebugFlag(debugFlags.enableStorageDebug, F("Storage debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "icm_raw") == 0) toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "serial_csv") == 0) toggleDebugFlag(debugFlags.enableSerialCSV, F("Serial CSV output"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "sensor_detail") == 0) toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "status_summary") == 0) toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "detailed_display") == 0) toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "battery") == 0) toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, specificState);
+            else if (strcasecmp(flagIdentifier, "all_off") == 0) {
+                if (specificState == 0 || specificState == -1) {
+                    Serial.println(F("Disabling all common debug flags:"));
+                    toggleDebugFlag(debugFlags.enableSerialCSV, F("Serial CSV output"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableSystemDebug, F("System debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableIMUDebug, F("IMU debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableGPSDebug, F("GPS debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableBaroDebug, F("Barometer debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableStorageDebug, F("Storage debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableICMRawDebug, F("ICM raw debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableStatusSummary, F("Status summary"), Serial, 0);
+                    toggleDebugFlag(debugFlags.displayMode, F("Detailed display mode"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableSensorDebug, F("Sensor detail debug"), Serial, 0);
+                    toggleDebugFlag(debugFlags.enableBatteryDebug, F("Battery debug"), Serial, 0);
+                    debugFlags.enableDetailedOutput = false;
+                    Serial.println(F("Legacy Detailed output (global): OFF"));
+                } else {
+                    Serial.println(F("debug_all_off only supports 'off' or toggle to off."));
+                }
+            } else { Serial.print(F("Unknown debug flag: ")); Serial.println(flagIdentifier); }
+        }
     }
-    else if (command.startsWith("set_orientation_filter ")) {
-        String filterType = command.substring(23);
-        filterType.trim();
+    else if (strncasecmp(command, "set_orientation_filter ", 23) == 0) {
+        const char* filterType = command + 23; // pointer arithmetic
+        // Trimming is harder with raw pointers, but let's assume valid spacing
+        while(*filterType == ' ') filterType++;
         setOrientationFilter(filterType, statusCtx);
     }
-    else if (command.equalsIgnoreCase("get_orientation_filter")) {
+    else if (strcasecmp(command, "get_orientation_filter") == 0) {
         getOrientationFilterStatus(statusCtx);
     }
-    else if (command.equalsIgnoreCase("scan_i2c")) {
+    else if (strcasecmp(command, "scan_i2c") == 0) {
         scan_i2c();
     }
-    else if (command.equalsIgnoreCase("sensor_requirements")) {
+    else if (strcasecmp(command, "sensor_requirements") == 0) {
         Serial.println(F("=== Sensor Requirements by Flight State ==="));
         Serial.println(F(""));
         Serial.println(F("STARTUP:"));

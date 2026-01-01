@@ -34,6 +34,10 @@ float baro_altitude_offset = 0.0f;
 bool baro_calibration_done = false;
 bool ms5611_initialized_ok = false;
 
+// Declare external WDT to feed waiting loops
+#include <Watchdog_t4.h>
+extern WDT_T4<WDT1> wdt;
+
 // Declare the global variable from main
 extern bool baroCalibrated;
 #include "error_codes.h" // For ErrorCode_t
@@ -96,14 +100,27 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
     uint32_t start_time = millis();
     unsigned int attempts = 0;
     
+// ... existing code ...
+
     while (millis() - start_time < timeout_ms) {
+        wdt.feed(); // Prevent watchdog reset during long calibration waits
         attempts++;
         gps_read();  // Update GPS data
         
+        // Check for user abort
+        if (Serial.available()) {
+            char c = Serial.peek();
+            if (c == 'x' || c == 'X' || c == 'q' || c == 'Q') {
+                Serial.read(); // Consume it
+                Serial.println(F("Calibration aborted by user."));
+                return false;
+            }
+        }
+
         // Check for good GPS fix and accuracy
         if (GPS_fixType >= MIN_GPS_FIX_TYPE_FOR_CALIBRATION && pDOP < MAX_PDOP_FOR_CALIBRATION) {
-            // Get fresh pressure reading for calibration
-            int result = ms5611_read();
+             // ... (rest of success logic)
+             int result = ms5611_read();
             if (result != MS5611_READ_OK) {
                 Serial.print(F("Failed to read pressure: "));
                 Serial.println(result);
@@ -162,7 +179,7 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
                 Serial.print(pDOP / 100.0, 2); // pDOP is scaled by 100
                 Serial.print(F(", Time elapsed: "));
                 Serial.print((millis() - start_time) / 1000);
-                Serial.println(F("s"));
+                Serial.println(F("s (Press 'x' to abort)"));
             }
         }    
         delay(CALIBRATION_LOOP_DELAY_MS);  // Wait before next GPS read

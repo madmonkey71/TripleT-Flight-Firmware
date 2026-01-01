@@ -1,0 +1,5 @@
+# Project Rules
+
+1. **Directory Confinement**: ALL work (creating files, editing code, running commands) MUST be performed ONLY within the project directory: `/mnt/GAMES_SSD/matt/Code/TripleT-Flight-Firmware`.
+2. **Access Restriction**: Do NOT access or modify files outside of this root directory.
+3. **Artifact Location**: All documentation, reports, and plans should be saved within this project directory.

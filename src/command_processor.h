@@ -37,7 +37,7 @@ extern unsigned long stateEntryTime;    // Passed directly to processCommand
 
 
 // Function prototypes
-void processCommand(String command,
+void processCommand(const char* command,
                     FlightState& currentFlightState_ref,
                     FlightState& previousFlightState_ref,
                     unsigned long& stateEntryTime_ref,
@@ -85,7 +85,7 @@ void printSystemStatus(const SystemStatusContext& statusCtx);
 
 void prepareForShutdown(Adafruit_NeoPixel& pixels_ref, FsFile& logFile_to_close_ref);
 
-void setOrientationFilter(String filterType, SystemStatusContext& statusCtx);
+void setOrientationFilter(const char* filterType, SystemStatusContext& statusCtx);
 void getOrientationFilterStatus(const SystemStatusContext& statusCtx);
 
 // Functions that are called by command_processor.cpp but defined in TripleT_Flight_Firmware.cpp (or elsewhere)

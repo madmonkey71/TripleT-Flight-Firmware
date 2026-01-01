@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Work Environment Rules
+1. **Directory Confinement**: ALL work (creating files, editing code, running commands) MUST be performed ONLY within the project directory: `/mnt/GAMES_SSD/matt/Code/TripleT-Flight-Firmware`.
+2. Do not modify files outside this directory unless explicitly instructed for system-level configuration relevant to the project.
+
 ## Build and Development Commands
 
 ### PlatformIO Commands

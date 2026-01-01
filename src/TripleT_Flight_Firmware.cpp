@@ -30,6 +30,10 @@
 #include <SerialFlash.h>
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
+// Use the official Watchdog_t4 library
+#include <Watchdog_t4.h>
+WDT_T4<WDT1> wdt;
+
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.51
 
@@ -594,6 +598,13 @@ void setup() {
   Serial.println(F("TripleT Flight Firmware Starting..."));
   Serial.print(F("Version: "));
   Serial.println(TRIPLET_FLIGHT_VERSION);
+
+  // Initialize Hardware Watchdog (2.0s timeout)
+  WDT_timings_t config;
+  config.trigger = 2; // 2 seconds
+  config.timeout = 5; // 5 seconds (reset if not fed)
+  wdt.begin(config);
+
   Serial.print(F("Board: "));
   Serial.println(BOARD_NAME);
 
@@ -763,6 +774,8 @@ void handleInitialStateManagement() {
 }
 
 void loop() {
+  wdt.feed(); // Feed the watchdog every loop iteration
+
   // Handle initial state management (runs once after setup)
   handleInitialStateManagement();
 
@@ -776,49 +789,67 @@ void loop() {
   bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
 
   // --- Serial Command Processing ---
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+  static char inputBuffer[64];
+  static size_t bufferIndex = 0;
 
-    // Populate SystemStatusContext
-    SystemStatusContext statusCtx = {
-        g_sdCardAvailable,
-        g_sdCardMounted,
-        g_sdCardPresent,
-        g_loggingEnabled,
-        g_logFileName,
-        g_availableSpace,
-        g_flashAvailable,
-        g_baroCalibrated,
-        g_icm20948_ready,
-        ms5611_initialized_ok, // extern, not prefixed with g_ unless defined here
-        g_kx134_initialized_ok,
-        &g_useKalmanFilter,
-        myGNSS,
-        g_ms5611Sensor       // Assuming g_ms5611Sensor is the global instance
-    };
+  while (Serial.available()) {
+    char c = Serial.read();
 
-    processCommand(command,
-                   g_currentFlightState,
-                   g_previousFlightState,
-                   g_stateEntryTime,
-                   statusCtx,
-                   g_debugFlags,
-                   g_SD,
-                   myGNSS,
-                   g_LogDataFile,
-                   g_logFileName,
-                   sizeof(g_logFileName),
-                   g_sdCardAvailable,
-                   g_loggingEnabled,
-                   g_sdCardMounted,
-                   g_sdCardPresent,
-                   g_availableSpace,
-                   g_pixels,
-                   g_baroCalibrated,
-                   g_ms5611Sensor
-                   );
-    command = ""; // Clear the command string after processing
+    if (c == '\n' || c == '\r') {
+      if (bufferIndex > 0) {
+        inputBuffer[bufferIndex] = '\0'; // Null-terminate
+        // String command(inputBuffer);     // REMOVED - passing char buffer keys directly
+        
+        // Populate SystemStatusContext
+        SystemStatusContext statusCtx = {
+            g_sdCardAvailable,
+            g_sdCardMounted,
+            g_sdCardPresent,
+            g_loggingEnabled,
+            g_logFileName,
+            g_availableSpace,
+            g_flashAvailable,
+            g_baroCalibrated,
+            g_icm20948_ready,
+            ms5611_initialized_ok, 
+            g_kx134_initialized_ok,
+            &g_useKalmanFilter,
+            myGNSS,
+            g_ms5611Sensor
+        };
+
+        processCommand(inputBuffer,
+                       g_currentFlightState,
+                       g_previousFlightState,
+                       g_stateEntryTime,
+                       statusCtx,
+                       g_debugFlags,
+                       g_SD,
+                       myGNSS,
+                       g_LogDataFile,
+                       g_logFileName,
+                       sizeof(g_logFileName),
+                       g_sdCardAvailable,
+                       g_loggingEnabled,
+                       g_sdCardMounted,
+                       g_sdCardPresent,
+                       g_availableSpace,
+                       g_pixels,
+                       g_baroCalibrated,
+                       g_ms5611Sensor
+                       );
+        
+        bufferIndex = 0; // Reset buffer
+      }
+    } else {
+      if (bufferIndex < sizeof(inputBuffer) - 1) {
+        inputBuffer[bufferIndex++] = c;
+      } else {
+        // Buffer overflow: discard characters or reset
+        // For safety, let's keep the buffer full but don't overflow
+        // Alternatively, we could reset here: bufferIndex = 0;
+      }
+    }
   }
 
   // --- Sensor Data Reads ---

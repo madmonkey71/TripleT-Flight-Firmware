@@ -575,27 +575,43 @@ void ProcessFlightState() {
         case APOGEE:
             if (DROGUE_PRESENT) {
                 g_currentFlightState = DROGUE_DEPLOY;
+                // Initialize entry time for pyro logic
+                g_stateEntryTime = millis(); 
             } else if (MAIN_PRESENT) {
                 g_currentFlightState = MAIN_DEPLOY;
+                g_stateEntryTime = millis();
             } else {
                 g_currentFlightState = DROGUE_DESCENT;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("Warning: Apogee reached but no parachutes configured!"));
             }
             break;
         case DROGUE_DEPLOY:
+            // Non-blocking Pyro Logic
             if (DROGUE_PRESENT) {
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
+                unsigned long timeInState = millis() - g_stateEntryTime;
+                
+                if (timeInState == 0) { // First loop iteration (or close enough)
+                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
+                    digitalWrite(PYRO_CHANNEL_1, HIGH);
+                }
+                
+                // Ensure pin is HIGH
                 digitalWrite(PYRO_CHANNEL_1, HIGH);
-                delay(PYRO_FIRE_DURATION);
-                digitalWrite(PYRO_CHANNEL_1, LOW);
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
+
+                if (timeInState >= PYRO_FIRE_DURATION) {
+                    digitalWrite(PYRO_CHANNEL_1, LOW);
+                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
+                    g_currentFlightState = DROGUE_DESCENT;
+                }
+            } else {
+                 g_currentFlightState = DROGUE_DESCENT; // Should have been handled in APOGEE, but safe fallback
             }
-            g_currentFlightState = DROGUE_DESCENT;
             break;
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
                 if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt < g_main_deploy_altitude_m_agl) {
                     g_currentFlightState = MAIN_DEPLOY;
+                    g_stateEntryTime = millis(); // Initialize timer for MAIN_DEPLOY
                 }
             } else {
                 if (detectLanding()) {
@@ -604,14 +620,26 @@ void ProcessFlightState() {
             }
             break;
         case MAIN_DEPLOY:
+            // Non-blocking Pyro Logic
             if (MAIN_PRESENT) {
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
-                digitalWrite(PYRO_CHANNEL_2, HIGH);
-                delay(PYRO_FIRE_DURATION);
-                digitalWrite(PYRO_CHANNEL_2, LOW);
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
+                 unsigned long timeInState = millis() - g_stateEntryTime;
+
+                 if (timeInState == 0) {
+                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
+                     digitalWrite(PYRO_CHANNEL_2, HIGH);
+                 }
+                 
+                 // Ensure pin is HIGH
+                 digitalWrite(PYRO_CHANNEL_2, HIGH);
+
+                 if (timeInState >= PYRO_FIRE_DURATION) {
+                     digitalWrite(PYRO_CHANNEL_2, LOW);
+                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
+                     g_currentFlightState = MAIN_DESCENT;
+                 }
+            } else {
+                g_currentFlightState = MAIN_DESCENT;
             }
-            g_currentFlightState = MAIN_DESCENT;
             break;
         case MAIN_DESCENT:
             if (detectLanding()) {
@@ -957,11 +985,12 @@ bool detectLanding() {
     readIndex = (readIndex + 1) % numReadings;
     float avgAlt = total / numReadings;
 
+    static unsigned long firstLandedTime = 0; // Moved to function scope
+    
     // Check for landing conditions
     if (fabs(avgAlt - g_launchAltitude) < LANDING_ALTITUDE_STABLE_THRESHOLD) {
         float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
         if (accelMag >= LANDING_ACCEL_MIN_G && accelMag <= LANDING_ACCEL_MAX_G) {
-            static unsigned long firstLandedTime = 0;
             if (firstLandedTime == 0) firstLandedTime = millis();
             if (millis() - firstLandedTime >= LANDING_CONFIRMATION_TIME_MS) {
                 return true;
@@ -969,7 +998,7 @@ bool detectLanding() {
         }
     } else {
         // Reset landing timer if altitude condition is not met
-        // firstLandedTime = 0;
+        firstLandedTime = 0;
     }
 
     return false;

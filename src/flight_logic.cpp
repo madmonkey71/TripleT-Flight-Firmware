@@ -545,6 +545,26 @@ void ProcessFlightState() {
             break;
 
         case COAST:
+            // Reset apogee detection counters on first entry to COAST state
+            // This prevents false apogee detection from stale counter values on flight reuse
+            {
+                static FlightState lastCoastState = STARTUP;
+                static bool coastCountersReset = false;
+
+                if (lastCoastState != COAST && !coastCountersReset) {
+                    // First entry into COAST - reset all apogee detection static counters
+                    resetApogeeDetectionCounters();
+                    coastCountersReset = true;
+                }
+
+                lastCoastState = g_currentFlightState;
+
+                // Reset flag when leaving COAST so it triggers again on next COAST entry
+                if (g_currentFlightState != COAST) {
+                    coastCountersReset = false;
+                }
+            }
+
             #if ENABLE_GUIDANCE == 1
             { // Scope for act_x_c, act_y_c, act_z_c
                 float act_x_c, act_y_c, act_z_c; // x=pitch, y=roll, z=yaw
@@ -901,20 +921,35 @@ void detectBoostEnd() {
     }
 }
 
+// File-scope static variables for apogee detection
+// Moved from function scope to allow proper reset between flights
+static int s_baro_descending_count = 0;
+static int s_accel_negative_count = 0;
+static int s_gps_descending_count = 0;
+static float s_maxGpsAltitude = 0.0f;
+
+// Helper function to reset apogee detection counters
+// Called when entering COAST state to prevent false apogee from stale values
+void resetApogeeDetectionCounters() {
+    s_baro_descending_count = 0;
+    s_accel_negative_count = 0;
+    s_gps_descending_count = 0;
+    s_maxGpsAltitude = 0.0f;
+}
+
 bool detectApogee() {
     bool apogeeDetected = false;
 
     // Method 1: Barometric Detection (Primary)
-    static int baro_descending_count = 0;
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         float currentBaroAlt = ms5611_get_altitude();
         if (currentBaroAlt < g_maxAltitudeReached) {
-            baro_descending_count++;
+            s_baro_descending_count++;
         } else {
-            baro_descending_count = 0;
+            s_baro_descending_count = 0;
         }
 
-        if (baro_descending_count >= APOGEE_CONFIRMATION_COUNT) {
+        if (s_baro_descending_count >= APOGEE_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Barometer)"));
             apogeeDetected = true;
         }
@@ -922,14 +957,13 @@ bool detectApogee() {
 
     // Method 2: Accelerometer Detection (Secondary)
     if (!apogeeDetected && g_icm20948_ready) {
-        static int accel_negative_count = 0;
         if (icm_accel[2] < 0.0f) {
-            accel_negative_count++;
+            s_accel_negative_count++;
         } else {
-            accel_negative_count = 0;
+            s_accel_negative_count = 0;
         }
 
-        if (accel_negative_count >= APOGEE_ACCEL_CONFIRMATION_COUNT) {
+        if (s_accel_negative_count >= APOGEE_ACCEL_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Accelerometer)"));
             apogeeDetected = true;
         }
@@ -937,18 +971,16 @@ bool detectApogee() {
 
     // Method 3: GPS Altitude Detection (Tertiary)
     if (!apogeeDetected && getFixType() > 0) {
-        static int gps_descending_count = 0;
-        static float maxGpsAltitude = 0.0f;
         float currentGpsAlt = getGPSAltitude();
 
-        if (currentGpsAlt > maxGpsAltitude) {
-            maxGpsAltitude = currentGpsAlt;
-            gps_descending_count = 0;
-        } else if (currentGpsAlt < maxGpsAltitude - 5.0) {
-            gps_descending_count++;
+        if (currentGpsAlt > s_maxGpsAltitude) {
+            s_maxGpsAltitude = currentGpsAlt;
+            s_gps_descending_count = 0;
+        } else if (currentGpsAlt < s_maxGpsAltitude - 5.0) {
+            s_gps_descending_count++;
         }
 
-        if (gps_descending_count >= APOGEE_GPS_CONFIRMATION_COUNT) {
+        if (s_gps_descending_count >= APOGEE_GPS_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (GPS)"));
             apogeeDetected = true;
         }

@@ -12,6 +12,7 @@ enum FlightState : uint8_t;
 
 // Function declarations
 bool detectApogee();
+void resetApogeeDetectionCounters(); // Reset apogee detection counters when entering COAST state
 bool detectLanding();
 void detectBoostEnd();
 bool IsStable(); // Check if rocket is stable (related to landing) - Kept as it was existing

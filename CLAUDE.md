@@ -225,3 +225,328 @@ Many systems activate only in specific states:
 - **Apogee detection**: Active only in COAST state
 - **Sensor switching**: Different thresholds per flight phase
 - Check `flight_logic.cpp` for state-specific behaviors
+
+## Running Tests
+
+### Desktop Unit Tests (No Hardware)
+
+```bash
+# Run all tests locally
+pio test -e native_test
+
+# Run specific test file
+pio test -e native_test -f test_apogee_detection
+
+# Run with verbose output
+pio test -e native_test -v
+
+# Expected output:
+# test/unit/test_state_machine.cpp::<test_name> [PASSED]
+# test/unit/test_apogee_detection.cpp::<test_name> [PASSED]
+# ===== X passed in Y.YYs ======
+```
+
+### Understanding Test Results
+
+- **[PASSED]**: Test completed successfully
+- **[FAILED]**: Test assertion failed (fix code, re-run)
+- **[SKIPPED]**: Test disabled with #if 0 (enable as needed)
+
+### Adding New Tests
+
+1. Create file: `test/unit/test_[feature].cpp`
+2. Include Unity framework: `#include <unity.h>`
+3. Write test cases with `TEST_ASSERT_*` macros
+4. Add to CI/CD: Tests auto-run on every git push
+
+See `DEVELOPER_GUIDE.md` Testing Strategy for examples.
+
+### CI/CD (GitHub Actions)
+
+Tests automatically run on every push:
+- Repository: `.github/workflows/test.yml`
+- Triggers: Every push, pull request
+- Result: Green checkmark if all tests pass
+
+## Architecture Decision Records (ADRs)
+
+This section documents major architectural decisions and their rationale.
+
+### ADR-001: Hardware Abstraction Layer (HAL)
+
+**Date:** 2026-02-15
+**Status:** ACCEPTED (implemented in v0.9.0)
+
+**Decision:** Introduce HAL abstraction layer (ITimer, ISerial, IGPIO, etc.)
+
+**Rationale:**
+- Enable desktop testing without hardware
+- Support platform migration (Teensy → STM32)
+- Easy hardware swapping
+- Clear separation of concerns
+
+**Implementation:** `src/hal/hal_interfaces.h`
+
+**Alternatives Considered:**
+- Direct Arduino API calls (rejected: not testable)
+- HAL generator tool (rejected: over-engineering)
+
+**Consequences:**
+- Extra abstraction layer (minor performance cost: negligible)
+- All hardware interactions through HAL (required discipline)
+- Easier to add mock implementations for testing
+
+### ADR-002: Sensor Interface Pattern (IMUInterface)
+
+**Date:** 2026-02-15
+**Status:** ACCEPTED (implemented in v0.9.0)
+
+**Decision:** All motion sensors implement common IMUInterface
+
+**Rationale:**
+- Enable sensor swaps (ICM-20948 ↔ BNO085) at compile-time
+- Automatic failover with IMUManager
+- Redundancy without code changes
+
+**Implementation:** `src/sensors/imu_interface.h`
+
+**Alternatives Considered:**
+- Compile-time template specialization (rejected: too complex)
+- Runtime polymorphism only (accepted: current approach)
+
+**Consequences:**
+- Virtual function overhead (minimal, ~2-3%)
+- Easy to add new sensor types
+- Clear interface contract
+
+### ADR-003: Multi-Method Apogee Detection
+
+**Date:** 2026-02-15
+**Status:** ACCEPTED (implemented in v0.9.0)
+
+**Decision:** Use 2-of-3 voting for apogee detection (barometer + accel + GPS + timer)
+
+**Rationale:**
+- Single sensor fails: system still works
+- Noisy data filtered by majority vote
+- Backup timer ensures deployment even if all fail
+- Industry standard for safety-critical systems
+
+**Implementation:** `src/flight_logic.cpp` (detectApogee function)
+
+**Alternatives Considered:**
+- Single-sensor detection (rejected: insufficient redundancy)
+- All-or-nothing voting (rejected: too strict)
+- 3-of-3 voting (rejected: too lenient if one fails)
+
+**Consequences:**
+- Slightly delayed apogee detection (wait for consensus)
+- Very robust to sensor noise/failure
+- Rare false positives or false negatives
+
+### ADR-004: State Persistence in EEPROM
+
+**Date:** 2026-02-15
+**Status:** ACCEPTED (implemented in v0.9.0)
+
+**Decision:** Save flight state to EEPROM after each state change
+
+**Rationale:**
+- Power-loss recovery: resume flight from saved state
+- Watchdog reset recovery: don't lose flight phase
+- Critical for long-duration flights
+
+**Implementation:** `src/state_management.cpp`
+
+**Alternatives Considered:**
+- No persistence (rejected: lose data on power loss)
+- Periodically save (rejected: might miss state change)
+- Save after each sensor read (rejected: EEPROM wear)
+
+**Consequences:**
+- EEPROM wear (acceptable: ~1000 cycles per flight state)
+- Small overhead per state change
+- Very robust to power interruptions
+
+### ADR-005: Kalman Filter for Orientation
+
+**Date:** 2026-02-15
+**Status:** ACCEPTED (replaces deprecated Madgwick)
+
+**Decision:** Use Kalman filter instead of Madgwick complementary filter
+
+**Rationale:**
+- Better sensor fusion of gyro + accel
+- Handles GPS altitude data
+- More tunable (process/measurement noise)
+- Better documentation for safety-critical systems
+
+**Implementation:** `src/kalman_filter.cpp`
+
+**Alternatives Considered:**
+- Madgwick filter (rejected: less accurate)
+- EKF (rejected: too complex)
+- No fusion (rejected: noisy gyro)
+
+**Consequences:**
+- More accurate orientation estimates
+- Additional computational cost (acceptable)
+- Requires tuning process/measurement covariance
+
+## Common Development Tasks
+
+### Task: Adding a New Configuration Parameter
+
+**Steps:**
+
+1. Define in `src/config.h`:
+   ```cpp
+   #define NEW_PARAMETER 42
+   ```
+
+2. Use in code:
+   ```cpp
+   if (sensor_reading > NEW_PARAMETER) {
+     // Take action
+   }
+   ```
+
+3. Add to `status_sensors` command:
+   ```cpp
+   hal->serial()->println("NEW_PARAMETER: ");
+   hal->serial()->println(NEW_PARAMETER);
+   ```
+
+4. Document in `docs/CONFIGURATION.md`
+
+5. Test: Upload and verify behavior
+
+### Task: Adding a New Data Field to Logging
+
+**Steps:**
+
+1. Extend `LogData` in `src/data_structures.h`:
+   ```cpp
+   struct LogData {
+     // ... existing fields ...
+     float new_field;
+   };
+   ```
+
+2. Update CSV headers in `log_format_definition.cpp`:
+   ```cpp
+   const char* csv_headers[] = {
+     // ... existing headers ...
+     "new_field",
+   };
+   ```
+
+3. Populate in main loop in `src/TripleT_Flight_Firmware.cpp`:
+   ```cpp
+   log_data.new_field = getNewValue();
+   ```
+
+4. Test: Run `log_test` command, verify CSV contains field
+
+5. Update web interface parser if needed
+
+### Task: Adding a Serial Command
+
+**Steps:**
+
+1. Add handler in `src/command_processor.cpp`:
+   ```cpp
+   void handleMyCommand(const SystemStatusContext& context) {
+     context.serial->println("My command output");
+   }
+   ```
+
+2. Register in command dispatcher:
+   ```cpp
+   if (strcmp(cmd, "mycommand") == 0) {
+     handleMyCommand(context);
+   }
+   ```
+
+3. Add help text:
+   ```cpp
+   void printHelpText() {
+     // ... existing help ...
+     context.serial->println("mycommand - Description");
+   }
+   ```
+
+4. Test: Upload, type `mycommand` in serial monitor
+
+### Task: Modifying Flight Logic State Transition
+
+**Steps:**
+
+1. Edit `src/flight_logic.cpp`
+
+2. Find state transition:
+   ```cpp
+   case CURRENT_STATE:
+     if (condition) {
+       setFlightState(NEW_STATE);
+     }
+     break;
+   ```
+
+3. Modify condition or add preconditions
+
+4. Write test in `test/unit/test_state_machine.cpp`:
+   ```cpp
+   void test_new_transition() {
+     // Setup
+     current_state = CURRENT_STATE;
+     // Trigger
+     // Assert: NEW_STATE
+   }
+   ```
+
+5. Run tests: `pio test -e native_test`
+
+6. Upload and verify flight behavior
+
+### Task: Comparing to Baseline After Code Change
+
+**Steps:**
+
+```bash
+# 1. Build current version
+pio run -e teensy41
+git add -A && git commit -m "test: my change"
+
+# 2. Save build size/performance
+pio run -e teensy41 -v | grep "RAM\|Flash" > current.txt
+
+# 3. Revert to baseline
+git checkout HEAD~1
+
+# 4. Build baseline
+pio run -e teensy41
+pio run -e teensy41 -v | grep "RAM\|Flash" > baseline.txt
+
+# 5. Compare
+diff baseline.txt current.txt
+
+# 6. Return to current work
+git checkout -
+```
+
+## Quick Decision Matrix
+
+**Use when deciding "What goes where?"**
+
+| What | Where | Why |
+|------|-------|-----|
+| Configuration parameter | `src/config.h` | Compile-time selection |
+| Flight logic | `src/flight_logic.cpp` | Core state machine |
+| Sensor driver | `src/sensors/[name]_sensor.h` | Modular sensor code |
+| HAL interface | `src/hal/hal_interfaces.h` | Hardware abstraction |
+| Serial command | `src/command_processor.cpp` | Command handling |
+| Data field | `src/data_structures.h` | Shared types |
+| Unit test | `test/unit/test_[feature].cpp` | Test code |
+| Mock object | `test/mocks/mock_[system].h` | Testing harness |
+| Documentation | `docs/[TOPIC].md` | Developer reference |

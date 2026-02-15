@@ -197,7 +197,14 @@ void printSystemStatus(const SystemStatusContext& statusCtx) {
     Serial.println("System Status:");
     Serial.print("SD Card: "); Serial.println(statusCtx.sdCardAvailable ? "Available" : "Not Available");
     Serial.print("External Flash: "); Serial.println(statusCtx.flashAvailable ? "Available" : "Not Available");
-    Serial.print("GPS: "); Serial.println(statusCtx.myGNSS_ref.getPVT() ? "Available" : "Not Available");
+    Serial.print("GPS: ");
+    if (!g_gps_initialized_ok) {
+        Serial.println("Not Initialized");
+    } else if (GPS_fixType > 0) {
+        Serial.println("Fix Type " + String(GPS_fixType) + " (" + String(SIV) + " sats)");
+    } else {
+        Serial.println("Initialized, No Fix");
+    }
     Serial.print("Barometer (MS5611): "); Serial.println(statusCtx.ms5611_initialized_ok ? (statusCtx.ms5611Sensor_ref.isConnected() ? "Connected" : "Init OK, Not Connected") : "Not Initialized");
     Serial.print("Accelerometer (KX134): "); Serial.println(statusCtx.kx134_initialized_ok ? "Initialized" : "Not Initialized");
     Serial.print("IMU (ICM20948): "); Serial.println(statusCtx.icm20948_ready ? "Ready" : "Not Ready");
@@ -584,6 +591,10 @@ void processCommand(const char* command,
         Serial.println(F("  • Use 'clear_errors' to attempt recovery to PAD_IDLE"));
         Serial.println(F("  • Use 'clear_to_calibration' if barometer needs calibration"));
         Serial.println(F("==========================================="));
+    }
+    else if (strcasecmp(command, "TEST_FREEZE") == 0) {
+        Serial.println(F("Freezing system for 6 seconds (Watchdog should trigger)..."));
+        delay(6000); // Exceeds 5s watchdog timeout
     }
     else {
         Serial.print(F("Unknown command: "));

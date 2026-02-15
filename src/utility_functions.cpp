@@ -476,14 +476,22 @@ bool isSensorSuiteHealthy(FlightState currentState, bool verbose) {
     // GPS Health Check (Less critical for flight, more for recovery)
     // We can be more lenient here, but log if it's not available.
     if (verbose) {
-        int fixType = myGNSS.getFixType();
-        if (fixType == 0) {
+        // Use validated global variables instead of reading directly from the
+        // GPS module, which returns garbage if the module failed to initialize
+        int fixType = GPS_fixType;
+        int sats = SIV;
+        if (fixType > 5 || sats > 100) {
+            Serial.println(F("❌ HEALTH_FAIL: GPS returning invalid data (fixType=") +
+                          String(fixType) + F(", sats=") + String(sats) + F(")"));
+            Serial.println(F("   → Check GPS module connection and wiring"));
+            healthy = false;
+        } else if (fixType == 0) {
             Serial.println(F("⚠ HEALTH_WARN: No GPS fix."));
             Serial.println(F("   → GPS is not critical for basic flight operations"));
             Serial.println(F("   → Required for barometer calibration and recovery operations"));
         } else {
-            Serial.println(F("✓ GPS: Fix Type ") + String(fixType) + F(" (") + 
-                          String(myGNSS.getSIV()) + F(" satellites)"));
+            Serial.println(F("✓ GPS: Fix Type ") + String(fixType) + F(" (") +
+                          String(sats) + F(" satellites)"));
         }
     }
     

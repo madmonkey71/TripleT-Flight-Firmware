@@ -30,6 +30,9 @@ extern byte GPS_minute;
 extern byte GPS_second;
 extern bool GPS_time_valid;
 
+// GPS initialization status
+extern bool g_gps_initialized_ok;
+
 // Function declarations
 extern void gps_init();
 extern bool gps_read();

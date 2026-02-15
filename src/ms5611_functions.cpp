@@ -286,6 +286,7 @@ void ms5611_init() {
             Serial.println(result);
         }
         delay(INIT_STABILIZATION_DELAY_MS);
+        wdt.feed(); // Prevent watchdog reset during stabilization
     }
     
     // Check if a valid reading was obtained and pressure is within a reasonable range

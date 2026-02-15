@@ -7,22 +7,13 @@ This document outlines the steps to verify the recent safety and stability impro
 **Objective:** Verify that the system resets automatically if the main loop stops responding.
 
 **Procedure:**
-1.  **Modify Code Temporarily:**
-    In `src/command_processor.cpp`, inside `processCommand`, add a test case:
-    ```cpp
-    else if (strcasecmp(command, "TEST_FREEZE") == 0) {
-        Serial.println("Freezing system for 6 seconds (Watchdog should trigger)...");
-        delay(6000); // Exceeds 5s watchdog timeout
-    }
-    ```
-2.  **Upload Firmware:** Compile and upload the modified firmware.
-3.  **Monitor Serial:** Open the Serial Monitor.
-4.  **Trigger Freeze:** Send the command `TEST_FREEZE`.
-5.  **Observe:**
+1.  **Upload Firmware:** The `TEST_FREEZE` command is built into the firmware. Compile and upload.
+2.  **Monitor Serial:** Open the Serial Monitor.
+3.  **Trigger Freeze:** Send the command `TEST_FREEZE`.
+4.  **Observe:**
     - You should see the "Freezing..." message.
     - Approximately 5 seconds later, the Teensy should reboot.
     - You will see the startup banner again.
-6.  **Cleanup:** Remove the test code before flying.
 
 ## 2. Non-Blocking Serial Command Test
 

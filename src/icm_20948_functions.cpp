@@ -14,6 +14,10 @@ extern bool enableSensorDebug;
 extern bool enableICMRawDebug; // New flag to control ICM raw data output
 extern bool g_icm20948_ready; // To set the global ready flag
 
+// Watchdog reference - must feed during long init/calibration sequences
+#include <Watchdog_t4.h>
+extern WDT_T4<WDT1> wdt;
+
 // Initialize ICM_20948 variables
 float icm_accel[3] = {0.0f, 0.0f, 0.0f};  // Accelerometer data (g)
 float icm_gyro[3] = {0.0f, 0.0f, 0.0f};   // Gyroscope data (deg/s)
@@ -87,8 +91,10 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
             myICM.getAGMT(); // Read and discard
         }
         delay(delay_ms);
+        if (i % 50 == 0) wdt.feed(); // Feed watchdog during long loop
     }
 
+    wdt.feed();
     int samples_collected = 0;
     for (int i = 0; i < num_samples; ++i) {
         if (myICM.dataReady()) {
@@ -100,6 +106,7 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
             samples_collected++;
         }
         delay(delay_ms); // Small delay between samples
+        if (i % 500 == 0) wdt.feed(); // Feed watchdog during long calibration
     }
 
     if (samples_collected > 0) {
@@ -126,9 +133,10 @@ void ICM_20948_init() {
   #include "error_codes.h" // For ErrorCode_t
 
   // Initialize ICM-20948 with I2C interface
+  wdt.feed();
   Wire.begin(); // Ensure Wire is initialized, though it's likely done in main setup
   myICM.begin(Wire, 1); // 1 = ADO high
-  
+
   if (myICM.status != ICM_20948_Stat_Ok) {
     Serial.println("ICM-20948 initialization failed");
     g_last_error_code = SENSOR_INIT_FAIL_ICM20948;
@@ -211,6 +219,8 @@ void ICM_20948_init() {
     Serial.println("Failed to set accel full scale range");
   }
   
+  wdt.feed();
+
   // Configure magnetometer
   result = myICM.startupMagnetometer();
   if (result != ICM_20948_Stat_Ok) {

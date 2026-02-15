@@ -42,6 +42,13 @@
 #define BUZZER_OUTPUT 1                   // Enable buzzer output (1=Enabled, 0=Disabled)
 #define USE_KX134 1                       // Use KX134 high-g sensor alongside ICM20948 (1=Use, 0=Don't Use)
 
+// --- GPS Interface Configuration ---
+// Set GPS_USE_SPI to 1 for SPI connection, 0 for I2C connection
+// Some board revisions use I2C, others use SPI
+#define GPS_USE_SPI 1                            // 0=I2C (default), 1=SPI
+#define GPS_SPI_CS_PIN 10                        // CS pin for GPS module (only used when GPS_USE_SPI=1)
+#define GPS_SPI_SPEED 4000000                    // SPI clock speed in Hz (default 4MHz)
+
 // --- Pin Definitions ---
 #define FLASH_CS_PIN 6                           // CS pin for Serial Flash (if used)
 #define NEOPIXEL_PIN 2                           // Pin for NeoPixel

@@ -2,6 +2,11 @@
 
 // This file contains central configuration parameters for the TripleT Flight Firmware
 
+// ============================================================================
+// FIRMWARE VERSION - Update on each release
+// ============================================================================
+#define FIRMWARE_VERSION "v0.8.0"  // HAL Foundation + Sensor Modularity complete
+
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
 #if defined(__IMXRT1062__) && defined(ARDUINO_TEENSY41)

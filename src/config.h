@@ -5,7 +5,7 @@
 // ============================================================================
 // FIRMWARE VERSION - Update on each release
 // ============================================================================
-#define FIRMWARE_VERSION "v0.9.0"  // Testing Infrastructure complete
+#define FIRMWARE_VERSION "v0.10.0"  // Safety Features complete
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41

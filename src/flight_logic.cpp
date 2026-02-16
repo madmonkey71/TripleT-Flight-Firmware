@@ -8,6 +8,7 @@
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
 #if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance_set_target_orientation_euler()
+extern bool g_guidance_active;  // Global flag: guidance system enabled/disabled at runtime
 #endif
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
 #include "gps_functions.h" // For getGPSAltitude() and getFixType()
@@ -529,11 +530,21 @@ void ProcessFlightState() {
                                          millis());
 
                 if (guidance_is_stability_compromised()) {
-                    Serial.println(F("CRITICAL: Guidance stability compromised during BOOST!"));
-                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
-                    current_stability_flags |= 0b001; // Mark general stability failure
-                    g_currentFlightState = ERROR;
-                    break; // Exit switch case, newStateSignal block will handle logging/saving
+                    Serial.println(F("WARNING: Guidance stability compromised during BOOST - disabling guidance"));
+                    guidance_log_stability_diagnostics(); // Log which check failed
+                    g_guidance_active = false; // Disable guidance mid-flight
+                    guidance_center_servos(); // Set all fins to neutral position
+                    guidance_reset_stability_status(); // Clear flags for potential re-enable later
+                    // Change LED to orange (degraded mode) if NeoPixel is available
+                    extern Adafruit_NeoPixel g_pixels;
+                    g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); // Orange = degraded mode
+                    g_pixels.show();
+                    Serial.println(F("=== GUIDANCE SYSTEM DISABLED ==="));
+                    Serial.println(F("Reason: Stability compromised"));
+                    Serial.println(F("Action: Fins centered, passive flight mode"));
+                    Serial.println(F("Impact: Apogee detection and parachute deployment unaffected"));
+                    Serial.println(F("================================"));
+                    // Continue flight - do NOT transition to ERROR
                 }
             }
             #endif
@@ -576,11 +587,21 @@ void ProcessFlightState() {
                                          millis());
 
                 if (guidance_is_stability_compromised()) {
-                    Serial.println(F("CRITICAL: Guidance stability compromised during COAST!"));
-                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
-                    current_stability_flags |= 0b001; // Mark general stability failure
-                    g_currentFlightState = ERROR;
-                    break; // Exit switch case
+                    Serial.println(F("WARNING: Guidance stability compromised during COAST - disabling guidance"));
+                    guidance_log_stability_diagnostics(); // Log which check failed
+                    g_guidance_active = false; // Disable guidance mid-flight
+                    guidance_center_servos(); // Set all fins to neutral position
+                    guidance_reset_stability_status(); // Clear flags for potential re-enable later
+                    // Change LED to orange (degraded mode) if NeoPixel is available
+                    extern Adafruit_NeoPixel g_pixels;
+                    g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); // Orange = degraded mode
+                    g_pixels.show();
+                    Serial.println(F("=== GUIDANCE SYSTEM DISABLED ==="));
+                    Serial.println(F("Reason: Stability compromised"));
+                    Serial.println(F("Action: Fins centered, passive flight mode"));
+                    Serial.println(F("Impact: Apogee detection and parachute deployment unaffected"));
+                    Serial.println(F("================================"));
+                    // Continue flight - do NOT transition to ERROR
                 }
             }
             #endif

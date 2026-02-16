@@ -11,11 +11,12 @@
 2. [Data Flow Pipeline](#data-flow-pipeline)
 3. [Hardware Abstraction Layer](#hardware-abstraction-layer)
 4. [Sensor Subsystem](#sensor-subsystem)
-5. [Flight State Machine](#flight-state-machine)
-6. [Class Hierarchy](#class-hierarchy)
-7. [Design Patterns](#design-patterns)
-8. [Module Dependencies](#module-dependencies)
-9. [Critical Paths](#critical-paths)
+5. [Guidance Control System](#guidance-control-system)
+6. [Flight State Machine](#flight-state-machine)
+7. [Class Hierarchy](#class-hierarchy)
+8. [Design Patterns](#design-patterns)
+9. [Module Dependencies](#module-dependencies)
+10. [Critical Paths](#critical-paths)
 
 ---
 
@@ -210,14 +211,21 @@ Current State + Orientation + Sensor Data
     ↓
 guidance_controller.update()
     ├─ Check if COAST state (guidance active)
+    ├─ Check runtime flag: g_guidance_active?
+    │   ├─ TRUE: Execute control loop
+    │   └─ FALSE: Center servos, log degraded mode
     ├─ Calculate desired vs. actual attitude
     ├─ PID control loop:
     │   ├─ error = desired_pitch - actual_pitch
     │   ├─ output = Kp·error + Ki·integral + Kd·derivative
     │   └─ Clamp to ±20° servo deflection
+    ├─ Validate stability:
+    │   ├─ Angular rate limits (180 DPS pitch/yaw, 360 DPS roll)
+    │   ├─ Attitude error limits (20° pitch/yaw, 30° roll)
+    │   └─ If violated: Set g_guidance_active = false (graceful degrade)
     └─ Send servo command (0-180°)
     ↓
-Servo Actuator Position
+Servo Actuator Position (or neutral 90° if guidance disabled)
 ```
 
 #### Phase 5: Data Logging
@@ -388,6 +396,274 @@ Every Main Loop:
       └─ If counter > 3:
           └─ Enter ERROR state
 ```
+
+---
+
+## Guidance Control System
+
+### Overview
+
+The Guidance Control System is responsible for active flight stabilization during the COAST phase. It maintains desired rocket orientation (typically 0° pitch/yaw) through fin-based control surfaces and monitors control stability to detect failures.
+
+**Key Principle:** Separate **control robustness** (guidance loop stability) from **hardware robustness** (sensor failures), enabling graceful degradation of guidance without triggering ERROR state.
+
+### Components
+
+```
+Input Sensors (Kalman-fused orientation + rates)
+    ↓
+g_guidance_active Flag (Boolean Runtime State)
+    ├─ Default: true (guidance enabled at COAST)
+    ├─ Set to false on stability violation
+    ├─ Checked every control loop
+    └─ Enables graceful disable without state transition
+    ↓
+PID Control Loops (Pitch, Yaw, Roll)
+    ├─ Read current attitude (Euler angles from quaternion)
+    ├─ Read current rates (Angular velocity from gyro)
+    ├─ Calculate error: desired - actual
+    ├─ Apply PID terms: P + I + D
+    ├─ Clamp output to ±20° servo deflection
+    └─ Output servo commands (0-180°)
+    ↓
+Stability Monitor (Real-time validation)
+    ├─ Angular Rate Check:
+    │   ├─ Pitch: ±180 DPS
+    │   ├─ Yaw: ±180 DPS
+    │   └─ Roll: ±360 DPS
+    ├─ Attitude Error Check:
+    │   ├─ Pitch error: ±20°
+    │   ├─ Yaw error: ±20°
+    │   └─ Roll error: ±30°
+    ├─ Time window: 500ms violation grace period
+    └─ On violation: Set g_guidance_active = false
+    ↓
+Servo Output Manager
+    ├─ If g_guidance_active == true:
+    │   └─ Send calculated servo angles (fin deflection)
+    └─ If g_guidance_active == false:
+        ├─ Center servos to 90° (neutral position)
+        ├─ Light orange LED indicator
+        ├─ Log "GUIDANCE_DEGRADED" event
+        └─ Continue flight progression (drogue deploy, main deploy)
+    ↓
+Actuator Command (PWM to servo)
+```
+
+### Runtime Flag: g_guidance_active
+
+**Declaration:**
+```cpp
+// Global runtime state - controls whether guidance loop executes
+bool g_guidance_active = true;  // Default: guidance enabled
+
+// Updated in guidance_control.cpp
+void guidance_controller_update() {
+  if (!g_guidance_active) {
+    // Graceful degrade: center servos, continue flight
+    guidance_center_servos();
+    return;
+  }
+
+  // Normal guidance execution
+  // ...PID control loops...
+
+  // Validate stability
+  if (isStabilityCompromised()) {
+    g_guidance_active = false;  // Disable guidance
+    guidance_log_stability_diagnostics();
+    return;
+  }
+}
+```
+
+**Characteristics:**
+- **Scope:** Global variable (persists across function calls)
+- **Lifetime:** Set at COAST entry, reset to true at state transition to DROGUE_DESCENT
+- **Thread-safe:** No multi-threading in firmware (single-core Teensy 4.1)
+- **Persistence:** Does NOT save to EEPROM (not a flight state, only guidance control state)
+- **Observability:** Logged in CSV as `guidance_active` field
+
+### Graceful Disable Mechanism
+
+When stability limits are exceeded, guidance control disables gracefully rather than triggering ERROR state:
+
+```cpp
+void guidance_center_servos() {
+  // Return all fin servos to neutral 90° position
+  servo_left->write(90);
+  servo_right->write(90);
+  servo_back->write(90);
+
+  // Optional: apply continuous centering force
+  // to ensure fins stay neutral during descent
+}
+
+void guidance_controller_update() {
+  // Check runtime flag first
+  if (!g_guidance_active) {
+    // Already disabled - maintain neutral position
+    guidance_center_servos();
+    return;
+  }
+
+  // ... Execute normal PID control loops ...
+
+  // Monitor stability after control outputs calculated
+  if (isStabilityCompromised()) {
+    log_event("GUIDANCE_STABILITY_COMPROMISE");
+    guidance_log_stability_diagnostics();
+    hal->gpio()->digitalWrite(LED_ORANGE, HIGH);  // Indicate degraded mode
+    g_guidance_active = false;  // Disable guidance
+    guidance_center_servos();
+    return;
+  }
+}
+```
+
+### Architectural Principle: Separate Concerns
+
+**Design Decision:** Hardware robustness ≠ Control robustness
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Flight System                             │
+└─────────────────────────────────────────────────────────────┘
+         │                                    │
+         ▼                                    ▼
+┌──────────────────────────┐    ┌──────────────────────────────┐
+│   Hardware Robustness    │    │   Control Robustness         │
+│   (Sensor Failures)      │    │   (Guidance Loop Stability)  │
+├──────────────────────────┤    ├──────────────────────────────┤
+│ - I2C sensor dead        │    │ - Angular rates exceed limit │
+│ - Accel read fails       │    │ - Attitude error too large   │
+│ - Gyro data stale        │    │ - PID output saturated       │
+│ - Barometer unresponsive │    │ - Servo response lag        │
+│                          │    │ - Feedback loop unstable    │
+│ → Triggers: ERROR state  │    │ → Triggers: GRACEFUL DEGRADE│
+│ → Action: Abort flight   │    │ → Action: Center servos     │
+│ → Result: Emergency      │    │ → Result: Passive descent   │
+│   procedures             │    │ → Flight continues safely   │
+└──────────────────────────┘    └──────────────────────────────┘
+```
+
+**Rationale:**
+- **Sensor failure** (hardware) = Critical safety hazard → Trigger ERROR state
+- **Guidance instability** (control loop) = Performance degradation → Graceful degrade to passive mode
+- **Benefit:** Rocket can still complete flight and land safely without active guidance
+- **Recovery:** Servo centering + passive descent maintains ballistic stability
+
+### Stability Monitoring
+
+Real-time validation during control loop execution:
+
+```cpp
+bool GuidanceControl::isStabilityCompromised() {
+  // Check rate limits (DPS = degrees per second)
+  if (fabs(gyro_pitch_rate) > RATE_LIMIT_PITCH)    return true;  // 180 DPS
+  if (fabs(gyro_yaw_rate) > RATE_LIMIT_YAW)        return true;  // 180 DPS
+  if (fabs(gyro_roll_rate) > RATE_LIMIT_ROLL)      return true;  // 360 DPS
+
+  // Check attitude error limits (degrees)
+  if (fabs(pitch_error) > ERROR_LIMIT_PITCH)       return true;  // 20°
+  if (fabs(yaw_error) > ERROR_LIMIT_YAW)           return true;  // 20°
+  if (fabs(roll_error) > ERROR_LIMIT_ROLL)         return true;  // 30°
+
+  return false;  // All checks pass - guidance stable
+}
+```
+
+**Grace Period:** 500ms window before disabling (prevents false triggers from brief spikes)
+
+```cpp
+static uint32_t stability_violation_time = 0;
+static const uint32_t STABILITY_GRACE_PERIOD = 500;  // ms
+
+if (isStabilityCompromised()) {
+  if (stability_violation_time == 0) {
+    stability_violation_time = hal->timer()->millis();
+  }
+  if (hal->timer()->millis() - stability_violation_time > STABILITY_GRACE_PERIOD) {
+    // Violation sustained for > 500ms - disable guidance
+    g_guidance_active = false;
+  }
+} else {
+  stability_violation_time = 0;  // Reset on recovery
+}
+```
+
+### Data Logging
+
+New field added to `LogData` struct for post-flight analysis:
+
+```cpp
+struct LogData {
+  // ... existing fields ...
+
+  // Guidance system state (added)
+  bool guidance_active;           // Whether guidance control is enabled
+  float pitch_error;              // Desired - actual pitch (degrees)
+  float yaw_error;                // Desired - actual yaw (degrees)
+  float roll_error;               // Desired - actual roll (degrees)
+  float gyro_pitch_rate;          // Angular velocity pitch (DPS)
+  float gyro_yaw_rate;            // Angular velocity yaw (DPS)
+  float gyro_roll_rate;           // Angular velocity roll (DPS)
+  float servo_left_angle;         // Left fin servo position (0-180°)
+  float servo_right_angle;        // Right fin servo position (0-180°)
+  float servo_back_angle;         // Back fin servo position (0-180°)
+};
+```
+
+**CSV Headers** (update in `log_format_definition.cpp`):
+```
+guidance_active,pitch_error_deg,yaw_error_deg,roll_error_deg,gyro_pitch_dps,gyro_yaw_dps,gyro_roll_dps,servo_left_deg,servo_right_deg,servo_back_deg
+```
+
+### State Transitions and Guidance Control
+
+**Entry to COAST:**
+```cpp
+case PAD_IDLE:
+  if (isMotorBurnout()) {
+    g_guidance_active = true;  // Re-enable guidance at COAST entry
+    setState(COAST);
+  }
+  break;
+```
+
+**Exit from COAST:**
+```cpp
+case COAST:
+  if (detectApogee()) {
+    g_guidance_active = false;  // Disable guidance, fins will be centered
+    setState(APOGEE);
+  }
+  break;
+```
+
+### Testing and Validation
+
+**Unit Tests** (to add in Phase 3):
+```cpp
+void test_guidance_graceful_degrade_on_rate_exceed() {
+  // Setup: Create mock IMU with excessive angular rates
+  // Trigger: Call guidance_controller_update()
+  // Assert: g_guidance_active == false, servos == 90°
+}
+
+void test_guidance_continues_with_small_oscillations() {
+  // Setup: Noisy gyro data within limits
+  // Trigger: 10 guidance updates
+  // Assert: g_guidance_active == true (still enabled)
+}
+```
+
+**Flight Testing Procedure:**
+1. Record baseline flight with `g_guidance_active = true` throughout COAST
+2. Add intentional instability (e.g., unbalanced load, incorrect servo gains)
+3. Verify graceful degrade triggers and fins center
+4. Confirm rocket lands safely in passive descent mode
+5. Compare CSV logs: guidance_active field shows exactly when degrade occurred
 
 ---
 

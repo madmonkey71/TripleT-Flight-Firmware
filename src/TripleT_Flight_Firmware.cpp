@@ -101,6 +101,7 @@ float g_kalmanYaw = 0.0f;
 float g_kalmanRollRate = 0.0f;  // Angular rate from gyro (rad/s)
 float g_kalmanPitchRate = 0.0f; // Angular rate from gyro (rad/s)
 float g_kalmanYawRate = 0.0f;   // Angular rate from gyro (rad/s)
+bool g_guidance_active = true;  // Global flag: guidance system enabled/disabled at runtime
 #endif
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
@@ -402,6 +403,7 @@ void WriteLogData(bool forceLog) {
                              logEntry.pid_yaw_integral);
 
   guidance_get_actuator_outputs(logEntry.actuator_output_roll, logEntry.actuator_output_pitch, logEntry.actuator_output_yaw);
+  logEntry.guidance_active = g_guidance_active; // Log whether guidance system is actively controlling
 #else
   // Guidance disabled - zero out guidance-related log fields
   logEntry.target_roll = 0.0f;
@@ -413,6 +415,7 @@ void WriteLogData(bool forceLog) {
   logEntry.actuator_output_roll = 0.0f;
   logEntry.actuator_output_pitch = 0.0f;
   logEntry.actuator_output_yaw = 0.0f;
+  logEntry.guidance_active = false;
 #endif
 
   // Output to serial if enabled
@@ -961,8 +964,8 @@ void loop() {
 
   // --- Guidance Control Update ---
   #if ENABLE_GUIDANCE == 1
-  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT)
-  if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
+  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT) and guidance is active
+  if (g_guidance_active && (g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
       static unsigned long g_lastGuidanceUpdateTime = 0;
       if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
           float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;

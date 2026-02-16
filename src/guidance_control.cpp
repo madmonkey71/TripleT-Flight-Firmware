@@ -1,6 +1,9 @@
 #include "guidance_control.h"
 #include "config.h" // For PID gains and limits
+#include "stability_monitor.h" // For StabilityMonitor class (Phase 6.2)
+#include "servo_smoother.h" // For ServoSmoother class (Phase 6.2)
 #include <math.h>   // For fabs, if needed for integral windup or other math functions
+#include <PWMServo.h> // For servo control when disabling guidance
 
 // Forward declarations for GPS utility functions
 static float gps_distance_m(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_e7, int32_t lon2_e7);
@@ -11,7 +14,7 @@ static float gps_bearing_rad(int32_t lat1_e7, int32_t lon1_e7, int32_t lat2_e7, 
 // Target orientation (desired state)
 static float target_roll_rad_g = 0.0f;
 static float target_pitch_rad_g = 0.0f;
-static float target_yaw_rad_g = 0.0f; 
+static float target_yaw_rad_g = 0.0f;
 // Note: For yaw, this might be a target relative change or an absolute heading.
 // For now, assume it's a target angle like roll and pitch.
 
@@ -27,6 +30,11 @@ static float actuator_output_z_g = 0.0f; // E.g., controls yaw
 
 // Guidance stability status
 static GuidanceStabilityStatus stability_status_g;
+
+// Phase 6.2: Stability Monitoring and Failsafe
+// These are non-static so they can be accessed by guidance_failsafe.cpp and other modules
+StabilityMonitor g_stability_monitor;
+ServoSmoother g_servo_smoother;
 
 // Trajectory data
 static Trajectory_t g_current_trajectory;
@@ -190,6 +198,13 @@ void guidance_init() {
     // Initialize stability status
     guidance_reset_stability_status();
 
+    // Phase 6.2: Initialize Stability Monitor and Servo Smoother
+    #if ENABLE_GUIDANCE == 1
+    g_stability_monitor.init();
+    g_servo_smoother.init(ServoSmoother::FULL_FILTERING); // Enable all three filtering stages
+    Serial.println(F("[Guidance] Stability Monitor and Servo Smoother initialized"));
+    #endif
+
     // Initialize trajectory state
     guidance_reset_trajectory_state();
     pid_xte_state_g.integral = 0.0f;
@@ -224,6 +239,24 @@ void guidance_get_actuator_outputs(float& out_x, float& out_y, float& out_z) {
     out_x = actuator_output_x_g;
     out_y = actuator_output_y_g;
     out_z = actuator_output_z_g;
+}
+
+/**
+ * @brief Centers all servos to their neutral/middle positions.
+ * Called when guidance system is disabled to ensure fins don't remain deflected.
+ */
+void guidance_center_servos() {
+    #if ENABLE_GUIDANCE == 1
+    // External declarations for servo objects (defined in TripleT_Flight_Firmware.cpp)
+    extern PWMServo g_servo_pitch;
+    extern PWMServo g_servo_roll;
+    extern PWMServo g_servo_yaw;
+
+    // Set all servos to their neutral/center positions (90 degrees = 1500 microseconds for standard servo)
+    g_servo_pitch.write(90); // Center position
+    g_servo_roll.write(90);  // Center position
+    g_servo_yaw.write(90);   // Center position
+    #endif
 }
 
 // Note: The core guidance_update() function, which will contain the PID calculations,
@@ -409,6 +442,68 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
                                                         PID_YAW_KP, PID_YAW_KI, PID_YAW_KD,
                                                         PID_INTEGRAL_LIMIT_YAW, PID_OUTPUT_MIN, PID_OUTPUT_MAX,
                                                         deltat);
+
+    // --- Phase 6.2: Stability Monitoring and Failsafe System ---
+    #if ENABLE_GUIDANCE == 1
+
+    // Convert current Euler angles to quaternion (simple conversion for monitoring)
+    // Using ZYX (yaw-pitch-roll) Euler convention
+    float cy = cosf(current_yaw_rad * 0.5f);
+    float sy = sinf(current_yaw_rad * 0.5f);
+    float cp = cosf(current_pitch_rad * 0.5f);
+    float sp = sinf(current_pitch_rad * 0.5f);
+    float cr = cosf(current_roll_rad * 0.5f);
+    float sr = sinf(current_roll_rad * 0.5f);
+
+    float current_quat[4] = {
+        cr * cp * cy + sr * sp * sy,  // w
+        sr * cp * cy - cr * sp * sy,  // x
+        cr * sp * cy + sr * cp * sy,  // y
+        cr * cp * sy - sr * sp * cy   // z
+    };
+
+    // Convert target Euler angles to quaternion
+    cy = cosf(target_yaw_rad_g * 0.5f);
+    sy = sinf(target_yaw_rad_g * 0.5f);
+    cp = cosf(target_pitch_rad_g * 0.5f);
+    sp = sinf(target_pitch_rad_g * 0.5f);
+    cr = cosf(target_roll_rad_g * 0.5f);
+    sr = sinf(target_roll_rad_g * 0.5f);
+
+    float desired_quat[4] = {
+        cr * cp * cy + sr * sp * sy,  // w
+        sr * cp * cy - cr * sp * sy,  // x
+        cr * sp * cy + sr * cp * sy,  // y
+        cr * cp * sy - sr * sp * cy   // z
+    };
+
+    // Update stability monitor with current state
+    float gyro_radps[3] = {current_roll_rate_radps, current_pitch_rate_radps, current_yaw_rate_radps};
+    g_stability_monitor.update(current_quat, desired_quat, gyro_radps,
+                               actuator_output_x_g, actuator_output_y_g, actuator_output_z_g,
+                               (uint32_t)millis());
+
+    // Check failsafe and apply escalation if needed
+    if (guidance_failsafe_check((uint32_t)millis())) {
+        // Failsafe is active - modify control outputs based on escalation level
+        float gain_factor = guidance_failsafe_get_gain_factor();
+        actuator_output_x_g *= gain_factor;
+        actuator_output_y_g *= gain_factor;
+        actuator_output_z_g *= gain_factor;
+    }
+
+    // Apply servo smoothing to final outputs
+    float raw_outputs[3] = {actuator_output_x_g, actuator_output_y_g, actuator_output_z_g};
+    float smoothed_outputs[3];
+    uint32_t dt_ms = (deltat > 0.0f) ? (uint32_t)(deltat * 1000.0f) : 10; // Convert to ms
+    g_servo_smoother.smoothBatch(raw_outputs, raw_outputs, dt_ms, smoothed_outputs);
+
+    // Update outputs with smoothed values
+    actuator_output_x_g = smoothed_outputs[0];
+    actuator_output_y_g = smoothed_outputs[1];
+    actuator_output_z_g = smoothed_outputs[2];
+
+    #endif
 }
 
 void guidance_get_target_euler_angles(float& out_target_roll_rad, float& out_target_pitch_rad, float& out_target_yaw_rad) {
@@ -444,6 +539,102 @@ void guidance_reset_stability_status() {
 
 bool guidance_is_stability_compromised() {
     return stability_status_g.stability_compromised;
+}
+
+void guidance_log_stability_diagnostics() {
+    unsigned long now_ms = millis();
+
+    Serial.println(F("\n=== GUIDANCE STABILITY DIAGNOSTICS ==="));
+    Serial.print(F("Overall Status: "));
+    Serial.println(stability_status_g.stability_compromised ? F("COMPROMISED") : F("OK"));
+
+    // Angular Rate Violations
+    Serial.println(F("\n--- Angular Rates ---"));
+    if (stability_status_g.pitch_rate_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.pitch_rate_violation_start_ms;
+        Serial.print(F("Pitch Rate: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Pitch Rate: OK"));
+    }
+
+    if (stability_status_g.roll_rate_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.roll_rate_violation_start_ms;
+        Serial.print(F("Roll Rate: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Roll Rate: OK"));
+    }
+
+    if (stability_status_g.yaw_rate_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.yaw_rate_violation_start_ms;
+        Serial.print(F("Yaw Rate: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Yaw Rate: OK"));
+    }
+
+    // Attitude Error Violations
+    Serial.println(F("\n--- Attitude Errors ---"));
+    if (stability_status_g.pitch_attitude_error_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.pitch_attitude_error_violation_start_ms;
+        Serial.print(F("Pitch Error: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Pitch Error: OK"));
+    }
+
+    if (stability_status_g.roll_attitude_error_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.roll_attitude_error_violation_start_ms;
+        Serial.print(F("Roll Error: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Roll Error: OK"));
+    }
+
+    if (stability_status_g.yaw_attitude_error_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.yaw_attitude_error_violation_start_ms;
+        Serial.print(F("Yaw Error: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Yaw Error: OK"));
+    }
+
+    // Actuator Saturation Violations
+    Serial.println(F("\n--- Actuator Saturation ---"));
+    if (stability_status_g.pitch_saturation_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.pitch_saturation_violation_start_ms;
+        Serial.print(F("Pitch Sat: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Pitch Sat: OK"));
+    }
+
+    if (stability_status_g.yaw_saturation_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.yaw_saturation_violation_start_ms;
+        Serial.print(F("Yaw Sat: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Yaw Sat: OK"));
+    }
+
+    if (stability_status_g.roll_saturation_violation_start_ms > 0) {
+        unsigned long duration = now_ms - stability_status_g.roll_saturation_violation_start_ms;
+        Serial.print(F("Roll Sat: VIOLATING for "));
+        Serial.print(duration);
+        Serial.println(F(" ms (limit: 500ms)"));
+    } else {
+        Serial.println(F("Roll Sat: OK"));
+    }
+    Serial.println(F("=====================================\n"));
 }
 
 // Helper function for checking individual stability criteria

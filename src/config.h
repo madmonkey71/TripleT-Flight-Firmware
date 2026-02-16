@@ -219,6 +219,29 @@
 // --- Servo Configuration ---
 #define NUM_SERVOS 4          // Total number of servos
 
+// --- Phase 6.2: Stability Monitoring & Servo Smoothing ---
+
+// Stability Monitor Thresholds
+#define GUIDANCE_STABILITY_ROLL_RATE_LIMIT_DPS 180.0f      // Max roll rate (deg/s)
+#define GUIDANCE_STABILITY_PITCH_RATE_LIMIT_DPS 180.0f     // Max pitch rate (deg/s)
+#define GUIDANCE_STABILITY_YAW_RATE_LIMIT_DPS 360.0f       // Max yaw rate (deg/s) - higher for yaw
+#define GUIDANCE_STABILITY_ROLL_ERROR_LIMIT_DEG 30.0f      // Max roll attitude error (deg)
+#define GUIDANCE_STABILITY_PITCH_ERROR_LIMIT_DEG 20.0f     // Max pitch attitude error (deg)
+#define GUIDANCE_STABILITY_YAW_ERROR_LIMIT_DEG 20.0f       // Max yaw attitude error (deg)
+#define GUIDANCE_STABILITY_SATURATION_LIMIT_PERCENT 95.0f  // Max servo command saturation (%)
+#define GUIDANCE_STABILITY_VIOLATION_DURATION_MS 500       // Min duration to trigger failsafe (ms)
+
+// Servo Smoother Parameters
+#define SERVO_RATE_LIMIT_DPS 10.0f                         // Max rate of change (deg/100ms)
+#define SERVO_DEADBAND_DEG 0.5f                            // Deadband threshold (degrees)
+#define SERVO_LOWPASS_CUTOFF_HZ 2.0f                       // Low-pass filter cutoff (Hz)
+
+// Guidance Failsafe Parameters
+#define GUIDANCE_FAILSAFE_LEVEL1_MS 1000                   // Duration before gain reduction (ms)
+#define GUIDANCE_FAILSAFE_LEVEL2_MS 2000                   // Duration before passive mode (ms)
+#define GUIDANCE_FAILSAFE_LEVEL3_MS 5000                   // Duration before ERROR state (ms)
+#define GUIDANCE_FAILSAFE_MIN_GAIN 0.3f                    // Minimum PID gain (30% of nominal)
+
 // --- Recovery Beacon Configuration ---
 #define RECOVERY_BEACON_SOS_DOT_MS 200      // Duration of an SOS dot
 #define RECOVERY_BEACON_SOS_DASH_MS 600     // Duration of an SOS dash

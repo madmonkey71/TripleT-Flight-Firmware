@@ -47,6 +47,11 @@ uint8_t guidance_get_current_trajectory_target_wp_index();
 uint8_t guidance_get_trajectory_num_waypoints();
 
 
+// --- Guidance Runtime State ---
+// Global flag: guidance system enabled/disabled at runtime
+// Defined in TripleT_Flight_Firmware.cpp, used by flight_logic.cpp and guidance_failsafe.cpp
+extern bool g_guidance_active;
+
 // --- General Guidance Function Declarations ---
 
 /**

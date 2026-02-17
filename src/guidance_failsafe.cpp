@@ -5,7 +5,7 @@
 #include "data_structures.h"
 #include <cstring>
 
-// External flight state
+// External flight state (g_guidance_active is declared in guidance_control.h)
 extern FlightState g_currentFlightState;
 
 // Global instances (defined in guidance_control.cpp)
@@ -89,12 +89,14 @@ bool guidance_failsafe_check(uint32_t current_time_ms) {
       Serial.println(F("[Failsafe] LEVEL 2: Entering passive mode (servos centered)"));
     }
 
-    // LEVEL 3: Transition to ERROR state
+    // LEVEL 3: Permanently disable guidance (do NOT transition to ERROR - reserved for hardware failures)
     if (failsafe_duration >= GUIDANCE_FAILSAFE_LEVEL3_MS &&
         failsafe_state.escalation_level < 3) {
       failsafe_state.escalation_level = 3;
-      Serial.println(F("[Failsafe] LEVEL 3: CRITICAL - Transitioning to ERROR state"));
-      g_currentFlightState = ERROR;
+      g_guidance_active = false;
+      guidance_center_servos();
+      Serial.println(F("[Failsafe] LEVEL 3: CRITICAL - Guidance permanently disabled for this flight"));
+      Serial.println(F("[Failsafe] Flight continues without active guidance (apogee/parachute unaffected)"));
       return true;
     }
 

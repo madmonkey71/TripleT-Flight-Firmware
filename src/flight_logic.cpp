@@ -7,8 +7,7 @@
 #include "state_management.h" // For saveStateToEEPROM()
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
 #if ENABLE_GUIDANCE == 1
-#include "guidance_control.h" // For guidance_set_target_orientation_euler()
-extern bool g_guidance_active;  // Global flag: guidance system enabled/disabled at runtime
+#include "guidance_control.h" // For guidance functions and g_guidance_active
 #endif
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
 #include "gps_functions.h" // For getGPSAltitude() and getFixType()

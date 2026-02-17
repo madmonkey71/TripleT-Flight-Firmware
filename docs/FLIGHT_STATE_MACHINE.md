@@ -34,29 +34,47 @@ graph TD
         PI --> ARM[ARMED];
         ARM --> BST[BOOST];
         BST --> CST[COAST];
-        CST --> APG[APOGEE];
+
+        %% Degraded Mode - Guidance Disable (Orange LED)
+        BST -- "Guidance Stability Failed" --> BSTD["BOOST (Degraded)"];
+        BSTD --> CST;
+        CST -- "Guidance Stability Failed" --> CSTD["COAST (Degraded)"];
+        CSTD --> APG;
+
+        %% Normal path continues regardless of guidance status
+        BST --> CST;
+        CST --> APG;
+
         APG --> DD[DROGUE_DEPLOY];
         DD --> DDS[DROGUE_DESCENT];
         DDS --> MD[MAIN_DEPLOY];
         MD --> MDS[MAIN_DESCENT];
         MDS --> LND[LANDED];
         LND --> RCV[RECOVERY];
-        RCV --> PI; // Option to re-arm or stay in RECOVERY for data download
+        RCV --> PI;
 
-        // Generic Error Transitions (can occur from most states)
-        PI --> ERR;
-        ARM --> ERR;
-        BST --> ERR;
-        CST --> ERR;
-        APG --> ERR;
-        DD --> ERR;
-        DDS --> ERR;
-        MD --> ERR;
-        MDS --> ERR;
-        LND --> ERR;
-        RCV --> ERR;
-        ERR -- "Attempt Recovery/Clear" --> PI; // Attempt to return to PAD_IDLE
+        %% Critical Hardware Failures Only (Red LED, fast flash)
+        PI -- "Hardware Failure" --> ERR;
+        ARM -- "Hardware Failure" --> ERR;
+        BST -- "Hardware Failure" --> ERR;
+        BSTD -- "Hardware Failure" --> ERR;
+        CST -- "Hardware Failure" --> ERR;
+        CSTD -- "Hardware Failure" --> ERR;
+        APG -- "Hardware Failure" --> ERR;
+        DD -- "Hardware Failure" --> ERR;
+        DDS -- "Hardware Failure" --> ERR;
+        MD -- "Hardware Failure" --> ERR;
+        MDS -- "Hardware Failure" --> ERR;
+        LND -- "Hardware Failure" --> ERR;
+        RCV -- "Hardware Failure" --> ERR;
+
+        ERR -- "Recovery/Clear" --> PI;
     end
+
+    classDef degraded fill:#FFA500,stroke:#FF8C00,color:#000;
+    classDef error fill:#FF0000,stroke:#CC0000,color:#fff;
+    class BSTD,CSTD degraded;
+    class ERR error;
 ```
 
 **Linear State Flow:**
@@ -64,8 +82,12 @@ graph TD
 STARTUP → CALIBRATION → PAD_IDLE → ARMED → BOOST → COAST → APOGEE →
 DROGUE_DEPLOY → DROGUE_DESCENT → MAIN_DEPLOY → MAIN_DESCENT → LANDED → RECOVERY
 
-                                  ↓ (on critical error)
-                                ERROR
+                                    ↓ (on critical hardware failure only)
+                                  ERROR
+
+BOOST/COAST can enter Degraded Mode (guidance disabled, orange LED)
+                                    ↓ (continues flight normally to APOGEE)
+                                  continues to next state
 ```
 
 ---
@@ -74,10 +96,25 @@ DROGUE_DEPLOY → DROGUE_DESCENT → MAIN_DEPLOY → MAIN_DESCENT → LANDED →
 
 The state machine is implemented within the Arduino framework:
 - **`setup()`**: Handles the `STARTUP` and `CALIBRATION` states.
-- **`loop()`**: Manages all flight states from `PAD_IDLE` through `RECOVERY`, and handles `ERROR` states.
+- **`loop()`**: Manages all flight states from `PAD_IDLE` through `RECOVERY`, and handles `ERROR` states and degraded mode.
 
-**Error State Handling:**
-The `ERROR` state can be entered from most other states if a critical sensor failure, configuration issue, or unexpected event occurs. The system will attempt to enter a safe mode. Depending on the error's nature and system configuration, it might attempt to recover or require manual intervention (e.g., via a serial command to clear errors and return to `PAD_IDLE`).
+**Error State Handling (Critical Hardware Failures Only):**
+The `ERROR` state is entered **ONLY** from critical hardware failures such as:
+- Sensor communication lost (I2C error)
+- Watchdog timer reset triggered
+- Fundamental hardware malfunction
+
+The `ERROR` state is **NOT** entered for guidance system failures. The system will attempt to enter a safe mode and recover. Depending on the error's nature and system configuration, it might attempt automatic recovery or require manual intervention (e.g., via a serial command to clear errors and return to `PAD_IDLE`).
+
+**Degraded Mode Handling (Guidance System Failures):**
+When the guidance system detects a stability failure (angular rate or attitude error exceeding limits), the system enters **Degraded Mode** instead of ERROR:
+- `g_guidance_active` set to false
+- Fin servos centered to neutral position
+- LED changes to orange
+- Flight continues normally to apogee and beyond
+- Apogee detection, parachute deployment, and landing detection unaffected
+
+This separation ensures that guidance failures do not prevent critical safety functions.
 
 ---
 
@@ -226,7 +263,8 @@ if (get_accel_magnitude(...) > BOOST_ACCEL_THRESHOLD) {
 
 **Transitions:**
 - → COAST: When acceleration < `COAST_ACCEL_THRESHOLD` (default: 0.5g)
-- → ERROR: On critical sensor failure or guidance stability compromise
+- → ERROR: On critical sensor failure (hardware offline, watchdog reset, etc.)
+- → Degraded Mode (guidance disabled): On guidance stability failure (continues normally, see Degraded Mode section)
 
 **Burnout Detection:**
 ```cpp
@@ -244,11 +282,11 @@ void detectBoostEnd() {
 **Coasting to apogee, monitoring for peak altitude**
 
 - Primary apogee detection phase
-- Attitude control active (if configured)
+- Attitude control active (if configured and guidance enabled)
 - Maximum altitude tracking
 - Multiple detection methods active (4 independent methods)
 - **CRITICAL**: Apogee detection counters reset on state entry (v0.51+ bug fix)
-- LED: Cyan
+- LED: Cyan (orange if guidance disabled)
 - Duration: Variable (altitude dependent)
 
 **Requirements:**
@@ -256,8 +294,9 @@ void detectBoostEnd() {
 - Backup detection methods available
 
 **Transitions:**
-- → APOGEE: On any apogee detection method trigger
-- → ERROR: On critical sensor failure or guidance stability compromise
+- → APOGEE: On any apogee detection method trigger (regardless of guidance status)
+- → ERROR: On critical sensor failure (hardware offline, watchdog reset, etc.)
+- → Degraded Mode (guidance disabled): On guidance stability failure (continues to APOGEE detection normally, see Degraded Mode section)
 
 **Implementation:**
 ```cpp
@@ -478,8 +517,13 @@ case LANDED:
 ---
 
 ### 14. ERROR
-**Error state with diagnostic information**
+**CRITICAL: Hardware failure state**
 
+- **ONLY** entered for critical hardware failures:
+  - Sensor offline (I2C communication lost)
+  - Watchdog timer reset triggered
+  - Fundamental hardware malfunction
+  - Cannot be caused by guidance system failures
 - Sensor failure indication
 - Diagnostic information output
 - Error code display
@@ -487,8 +531,11 @@ case LANDED:
 - LED: Red (fast flash)
 - Duration: Until recovery or manual intervention
 
+**Important Clarification:**
+The ERROR state is **reserved for critical hardware failures only**. Guidance system instability or fin control failures do **NOT** trigger ERROR state. Instead, the system enters **Degraded Mode** (see section below) where guidance is disabled but core flight functions continue normally. This ensures that guidance failures do not prevent apogee detection, parachute deployment, or other critical functions.
+
 **Recovery Mechanisms:**
-- **Automatic sensor health monitoring**: Periodic health checks
+- **Automatic sensor health monitoring**: Periodic health checks for hardware only
 - **Grace period protection**: 5-second grace period after error clearing prevents oscillation
 - **Manual recovery commands**: `clear_errors`, `clear_to_calibration`
 - **Error code reporting**: `g_last_error_code` printed periodically
@@ -502,12 +549,158 @@ case LANDED:
 ```cpp
 case ERROR:
     // Display error information periodically
-    // Check for automatic recovery conditions
+    // Check for automatic recovery conditions (hardware only)
     if (isSensorSuiteHealthy(...) && errorClearGracePeriod expired) {
         g_currentFlightState = (g_baroCalibrated) ? PAD_IDLE : CALIBRATION;
     }
     break;
 ```
+
+---
+
+## Degraded Mode - Graceful Guidance Disable
+
+### Overview
+
+When the guidance system detects a stability failure (e.g., exceeding angular rate or attitude error limits during BOOST/COAST), the system enters **Degraded Mode** instead of the ERROR state. This allows the rocket to continue normal flight operations while disabling only the problematic subsystem.
+
+**Key Principle:** Hardware failures abort flight (ERROR state). Guidance failures degrade gracefully (continue flight with guidance disabled).
+
+### What Happens in Degraded Mode
+
+**Guidance System State:**
+- `g_guidance_active = false` - Guidance control loop disabled
+- `g_guidance_stability_failed = true` - Flag indicating why guidance was disabled
+- Fin servo motors set to **neutral center position** (0°)
+- Fins remain centered for passive flight
+
+**Flight Operations (UNAFFECTED):**
+- Apogee detection continues normally (barometer, accelerometer, GPS, timer methods)
+- Parachute deployment proceeds on schedule
+- Landing detection active and functional
+- State transitions proceed normally
+- Data logging continues
+- All critical safety systems operational
+
+**LED Status:**
+- Changes to **orange** to indicate degraded mode
+- Visual alert to ground observer that guidance is disabled
+- Distinguishes from ERROR state (red) and normal states
+
+**Flight Continues:**
+- BOOST → COAST → APOGEE proceeds normally
+- Apogee detection triggers deployment as expected
+- Main parachute deploys on schedule
+- Landing detection works normally
+- System does not abort or transition to ERROR
+
+### When Guidance Disable Occurs
+
+**Stability Violations in BOOST/COAST:**
+
+The guidance system monitors:
+1. **Angular rates**: Pitch/yaw ≤ 180 DPS, Roll ≤ 360 DPS
+2. **Attitude errors**: Pitch/yaw ≤ 20°, Roll ≤ 30°
+3. **Control saturation**: PID output exceeding limits
+
+If any limit is exceeded for the violation window (default: 500ms), guidance disables.
+
+**Example Scenario:**
+- System launches and enters BOOST phase
+- Guidance captures attitude reference at burnout
+- During early COAST, high-G vibrations or sensor noise exceeds pitch rate limit
+- Guidance system logs violation
+- Fins center to neutral position
+- System continues to APOGEE detection normally
+- Orange LED indicates degraded mode to operator
+
+### Implementation
+
+**Location:** `src/guidance_control.cpp`
+
+**Key Variables:**
+```cpp
+// Global guidance status
+extern bool g_guidance_active;        // false = disabled
+extern bool g_guidance_stability_failed; // true = failed due to stability
+```
+
+**Stability Check Function:**
+```cpp
+bool guidance_check_stability(const IMUData& imu_data, float dt) {
+    // Check angular rate limits
+    // Check attitude error limits
+    // Check saturation
+
+    if (violation_detected) {
+        g_guidance_stability_failed = true;
+        g_guidance_active = false;
+        guidance_disable_fins();  // Center servos
+        return false;
+    }
+    return true;
+}
+```
+
+**LED Update:**
+```cpp
+void updateLED() {
+    if (g_guidance_stability_failed && !g_guidance_active) {
+        setFlightStateLED(NEOPIXEL_ORANGE);  // Degraded mode indicator
+    } else {
+        setFlightStateLED(g_currentFlightState);  // Normal state LED
+    }
+}
+```
+
+### Recovery from Degraded Mode
+
+**Manual Recovery (Ground Observer):**
+1. Observe orange LED indicating guidance disabled
+2. Flight proceeds normally - this is intentional
+3. No action needed during flight
+4. Post-flight: Review flight log to understand why guidance failed
+5. Use `status_sensors` command to verify sensor health
+
+**Automatic Recovery:**
+- Degraded mode persists until power cycle or manual reset
+- State does not revert during active flight
+- Provides stable, predictable behavior
+
+**Flight Log Data:**
+- `g_guidance_stability_failed` flag recorded in CSV
+- Allows post-flight analysis of stability violation
+- Detailed violation diagnostics available via serial commands
+
+### Distinction from ERROR State
+
+| Aspect | ERROR State | Degraded Mode |
+|--------|-------------|--------------|
+| **Cause** | Critical hardware failure | Guidance stability violation |
+| **Flight Status** | May be compromised | Core functions continue normally |
+| **Apogee Detection** | May fail if sensors affected | Fully operational |
+| **Parachute Deployment** | At risk | Guaranteed |
+| **LED** | Red (fast flash) | Orange (steady) |
+| **Examples** | Sensor offline, watchdog reset | Angular rate exceeded, attitude error high |
+| **Action Needed** | Address hardware issue | None - flight proceeds safely |
+| **System Behavior** | Attempts recovery, may require manual intervention | Continues normally with guidance disabled |
+
+### Testing Degraded Mode
+
+**Unit Tests:**
+- Simulate guidance stability violation
+- Verify `g_guidance_active` becomes false
+- Verify fin servos center
+- Verify flight state machine continues normally
+- Verify LED changes to orange
+
+**Integration Tests:**
+- Run test flight with intentionally strict guidance limits
+- Observe orange LED when limits exceeded
+- Verify apogee detection and deployment still occur
+- Verify flight completes normally
+
+**Location:** `test/unit/test_guidance_stability.cpp`
 
 ---
 
@@ -762,22 +955,25 @@ struct FlightStateData {
 
 ## Safety Features
 
-### Sensor Health Monitoring
+### Sensor Health Monitoring (Hardware Only)
 
 **Function:** `isSensorSuiteHealthy(FlightState currentState, bool verbose)`
 
 - **Continuous Monitoring**: All flight phases except RECOVERY
 - **State-Specific Requirements**: Different sensor requirements per flight state
-- **Automatic Transitions**: To ERROR state on critical failures
+- **Automatic Transitions**: To ERROR state ONLY on critical hardware failures
 - **Graceful Degradation**: Optional sensors don't trigger ERROR state
+- **Guidance Failures**: Not monitored here - handled separately in degraded mode
 
-**Critical Sensors:**
+**Critical Sensors (Hardware Failures Trigger ERROR):**
 - MS5611 Barometer (required for apogee/landing)
 - ICM-20948 IMU (required for orientation)
 - GPS (required for calibration, optional during flight)
 
-**Optional Sensors:**
+**Optional Sensors (Failures Don't Trigger ERROR):**
 - KX134 High-G Accelerometer (enhances but not required)
+
+**Note:** Guidance system stability failures are **not** hardware failures and do **not** trigger ERROR state. They trigger degraded mode instead, disabling guidance while maintaining core flight functions.
 
 **Location:** `src/utility_functions.cpp:406-450`
 
@@ -1058,20 +1254,33 @@ The `ProcessFlightState()` function in `src/flight_logic.cpp` orchestrates the s
 
 ## Additional Enhancements
 
-Status based on v0.51 codebase (February 2026):
+Status based on v0.51+ codebase (February 2026):
 
 1. ✅ **Error detection and recovery**: Implemented (`isSensorSuiteHealthy`, ERROR state, auto/manual recovery)
+   - ERROR state reserved for **critical hardware failures only**
+   - Sensor communication loss, watchdog reset, fundamental malfunction
 2. ✅ **Watchdog timer**: Implemented (WDT_T4 library, 5-second timeout)
 3. ✅ **Non-volatile storage**: Implemented (`FlightStateData` in EEPROM)
 4. ✅ **Redundant sensing**: Implemented (4-method apogee, dual-condition landing)
 5. ✅ **Timeout fallbacks**: Implemented (`BACKUP_APOGEE_TIME_MS` failsafe)
 6. ✅ **Non-blocking pyro firing**: Implemented (time-based state management)
 7. ✅ **Apogee counter reset bug fix**: Implemented (v0.51, February 2026)
+8. ✅ **Degraded Mode - Graceful Guidance Disable**: Implemented (v0.51+, February 2026)
+   - Guidance stability failures do NOT trigger ERROR state
+   - Instead: `g_guidance_active = false`, fins centered, LED orange
+   - Flight continues normally to apogee detection and parachute deployment
+   - Distinguishes hardware failures (abort) from software failures (degrade gracefully)
 
 ---
 
 ## Revision History
 
+- **v0.51+** (February 16, 2026): Clarified degraded mode and ERROR state separation
+  - ERROR state now strictly for critical hardware failures only
+  - Guidance stability failures trigger graceful degraded mode (guidance disabled)
+  - Updated state diagram to show both hardware failure and degraded mode paths
+  - Orange LED indicates degraded mode (guidance disabled but flight continues)
+  - Red LED indicates ERROR state (critical hardware failure)
 - **v0.51** (February 2026): Critical bug fix - apogee detection counter reset
 - **v0.51** (July 2025): Non-blocking pyro firing, watchdog timer
 - **v0.48**: Initial comprehensive state machine implementation

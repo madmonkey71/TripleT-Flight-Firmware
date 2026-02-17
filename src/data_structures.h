@@ -70,6 +70,7 @@ typedef struct {
   float actuator_output_yaw;
   float battery_voltage;    // Battery voltage (V)
   uint8_t last_error_code;  // Last recorded error code (ErrorCode_t)
+  bool guidance_active;     // True if guidance is actively controlling, false if disabled
 
   // Guidance Stability Metrics
   uint8_t stability_flags; // Bitfield for stability violations: e.g., 1=Rate, 2=Attitude, 4=Saturation

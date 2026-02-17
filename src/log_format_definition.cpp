@@ -61,6 +61,7 @@ const LogColumnDescriptor_t LOG_COLUMNS[] = {
     {"ActuatorOutYaw", TYPE_FLOAT_P3, offsetof(LogData, actuator_output_yaw)},
     {"BattVoltage", TYPE_FLOAT_P2, offsetof(LogData, battery_voltage)},
     {"LastErrorCode", TYPE_UINT8, offsetof(LogData, last_error_code)}, // Added Last Error Code
+    {"GuidanceActive", TYPE_UINT8, offsetof(LogData, guidance_active)}, // True (1) if guidance is actively controlling, false (0) if disabled
 
     // Guidance Stability Metrics
     {"StabFlags", TYPE_UINT8, offsetof(LogData, stability_flags)},

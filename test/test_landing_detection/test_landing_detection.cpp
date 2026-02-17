@@ -69,3 +69,19 @@ void test_landing_velocity_near_zero(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_landing_detected_when_altitude_stable);
+    RUN_TEST(test_landing_not_detected_during_descent);
+    RUN_TEST(test_landing_detection_with_noise);
+    RUN_TEST(test_landing_detection_minimum_time);
+    RUN_TEST(test_false_landing_rejection_during_coast);
+    RUN_TEST(test_landing_from_main_descent);
+    RUN_TEST(test_landing_altitude_threshold);
+    RUN_TEST(test_landing_velocity_near_zero);
+    return UNITY_END();
+}

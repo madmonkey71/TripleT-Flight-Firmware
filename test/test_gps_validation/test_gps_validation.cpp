@@ -75,3 +75,17 @@ void test_gps_coordinates_range_validation(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_valid_gps_fix_accepted);
+    RUN_TEST(test_invalid_fix_type_rejected);
+    RUN_TEST(test_excessive_satellites_rejected);
+    RUN_TEST(test_no_fix_returns_invalid);
+    RUN_TEST(test_gps_timeout_handling);
+    RUN_TEST(test_gps_coordinates_range_validation);
+    return UNITY_END();
+}

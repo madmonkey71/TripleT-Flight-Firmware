@@ -74,3 +74,16 @@ void test_sensor_health_grace_period(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_all_sensors_healthy);
+    RUN_TEST(test_single_sensor_failure_detected);
+    RUN_TEST(test_sensor_recovery_after_failure);
+    RUN_TEST(test_multiple_sensor_failures);
+    RUN_TEST(test_sensor_health_grace_period);
+    return UNITY_END();
+}

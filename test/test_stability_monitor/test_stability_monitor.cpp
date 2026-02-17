@@ -227,8 +227,9 @@ void test_quaternion_90deg_roll(void) {
     MockStabilityMonitor monitor;
 
     // Quaternion for 90 degree roll: [cos(45°), sin(45°), 0, 0]
-    float cos45 = cosf(3.14159265359f / 8.0f);
-    float sin45 = sinf(3.14159265359f / 8.0f);
+    // Half-angle: 90°/2 = 45° = π/4
+    float cos45 = cosf(3.14159265359f / 4.0f);
+    float sin45 = sinf(3.14159265359f / 4.0f);
     float q[4] = {cos45, sin45, 0.0f, 0.0f};
     float roll, pitch, yaw;
 
@@ -244,8 +245,9 @@ void test_quaternion_90deg_pitch(void) {
     MockStabilityMonitor monitor;
 
     // Quaternion for 90 degree pitch: [cos(45°), 0, sin(45°), 0]
-    float cos45 = cosf(3.14159265359f / 8.0f);
-    float sin45 = sinf(3.14159265359f / 8.0f);
+    // Half-angle: 90°/2 = 45° = π/4
+    float cos45 = cosf(3.14159265359f / 4.0f);
+    float sin45 = sinf(3.14159265359f / 4.0f);
     float q[4] = {cos45, 0.0f, sin45, 0.0f};
     float roll, pitch, yaw;
 
@@ -302,3 +304,29 @@ void test_no_violations_nominal_flight(void) {
 }
 
 } // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_angular_rate_within_limits);
+    RUN_TEST(test_angular_rate_pitch_exceeds);
+    RUN_TEST(test_angular_rate_roll_exceeds);
+    RUN_TEST(test_angular_rate_yaw_exceeds);
+    RUN_TEST(test_angular_rate_negative_values);
+    RUN_TEST(test_attitude_error_within_limits);
+    RUN_TEST(test_attitude_error_pitch_exceeds);
+    RUN_TEST(test_attitude_error_roll_at_limit);
+    RUN_TEST(test_attitude_error_combined_violation);
+    RUN_TEST(test_saturation_within_limit);
+    RUN_TEST(test_saturation_at_95_percent);
+    RUN_TEST(test_saturation_exceeds_limit);
+    RUN_TEST(test_saturation_single_axis);
+    RUN_TEST(test_quaternion_identity);
+    RUN_TEST(test_quaternion_90deg_roll);
+    RUN_TEST(test_quaternion_90deg_pitch);
+    RUN_TEST(test_all_violations_detected);
+    RUN_TEST(test_no_violations_nominal_flight);
+    return UNITY_END();
+}

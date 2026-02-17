@@ -236,3 +236,31 @@ void test_atan2_quadrants(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_hypsometric_sea_level);
+    RUN_TEST(test_hypsometric_1000_meters);
+    RUN_TEST(test_hypsometric_5000_meters);
+    RUN_TEST(test_hypsometric_10000_meters);
+    RUN_TEST(test_hypsometric_monotonic);
+    RUN_TEST(test_quaternion_identity);
+    RUN_TEST(test_quaternion_normalization);
+    RUN_TEST(test_quaternion_conjugate);
+    RUN_TEST(test_quaternion_magnitude);
+    RUN_TEST(test_gravity_conversion_g_to_mps2);
+    RUN_TEST(test_gravity_conversion_high_g);
+    RUN_TEST(test_pressure_conversion_hpa_to_pa);
+    RUN_TEST(test_altitude_conversion_mm_to_m);
+    RUN_TEST(test_angular_velocity_rad_to_deg);
+    RUN_TEST(test_velocity_integration_constant_accel);
+    RUN_TEST(test_altitude_integration_constant_vel);
+    RUN_TEST(test_altitude_integration_with_drag);
+    RUN_TEST(test_sin_values);
+    RUN_TEST(test_cos_values);
+    RUN_TEST(test_atan2_quadrants);
+    return UNITY_END();
+}

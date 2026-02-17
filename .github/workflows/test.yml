@@ -9,65 +9,39 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - uses: actions/setup-python@v4
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    
+
     - name: Install PlatformIO
       run: pip install platformio
-    
+
     - name: Run Unit Tests (Native Platform)
       run: pio test -e native -vv
-      continue-on-error: true
-    
-    - name: Upload Test Results
-      if: always()
-      uses: actions/upload-artifact@v3
-      with:
-        name: test-results
-        path: .pio/build/native/test_results.xml
 
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - uses: actions/setup-python@v4
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    
+
     - name: Install PlatformIO
       run: pip install platformio
-    
+
     - name: Build for Teensy 4.1
       run: pio run -e teensy41
-    
+
     - name: Upload Firmware
-      if: always()
-      uses: actions/upload-artifact@v3
+      if: success()
+      uses: actions/upload-artifact@v4
       with:
         name: firmware
         path: .pio/build/teensy41/firmware.hex
-
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install PlatformIO
-      run: pip install platformio
-    
-    - name: Check Code Style
-      run: |
-        # Verify compilation with warnings
-        pio run -e teensy41 2>&1 | grep -i "warning\|error" || true

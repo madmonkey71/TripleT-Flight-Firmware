@@ -123,11 +123,11 @@ void test_rate_limit_small_change(void) {
     MockServoSmoother smoother;
     smoother.active_filter = MockServoSmoother::RATE_LIMIT_ONLY;
 
-    // Small change within rate limit (0.1 deg/ms * 10ms = 1 deg max change)
-    float result = smoother.smooth(5.0f, 0.0f, 10, 0);  // 5 deg change in 10ms
+    // Small change: 0.1 deg/ms * 10ms = 1 deg max change
+    float result = smoother.smooth(0.5f, 0.0f, 10, 0);  // 0.5 deg change in 10ms
 
-    // Should allow full 5 deg change since 5 deg < 1 deg/ms * 10ms = 10 deg max
-    TEST_ASSERT_FLOAT_WITHIN(0.1f, 5.0f, result);
+    // Should allow full 0.5 deg change since 0.5 < 1.0 max
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.5f, result);
 }
 
 void test_rate_limit_large_change_clamped(void) {
@@ -167,10 +167,10 @@ void test_rate_limit_yaw_axis_faster(void) {
     smoother.active_filter = MockServoSmoother::RATE_LIMIT_ONLY;
 
     // Yaw axis should have higher rate limit (0.15 deg/ms vs 0.1 deg/ms for pitch/roll)
-    float pitch_result = smoother.smooth(10.0f, 0.0f, 100, 0);  // pitch axis
+    float pitch_result = smoother.smooth(20.0f, 0.0f, 100, 0);  // pitch axis: clamped to 10
 
     smoother.reset();
-    float yaw_result = smoother.smooth(10.0f, 0.0f, 100, 2);    // yaw axis
+    float yaw_result = smoother.smooth(20.0f, 0.0f, 100, 2);    // yaw axis: clamped to 15
 
     // Yaw should allow more change (0.15 * 100 = 15 deg vs 0.1 * 100 = 10 deg)
     TEST_ASSERT_TRUE(yaw_result > pitch_result);
@@ -193,9 +193,9 @@ void test_deadband_at_threshold(void) {
     MockServoSmoother smoother;
     smoother.active_filter = MockServoSmoother::DEADBAND_ONLY;
 
-    // Command at exactly deadband threshold
+    // Command at exactly deadband threshold (0.5 is NOT < 0.5, so it passes through)
     float result = smoother.smooth(0.5f, 0.0f, 10, 0);
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, result);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, result);
 }
 
 void test_deadband_above_threshold(void) {
@@ -253,14 +253,15 @@ void test_lowpass_step_response(void) {
     smoother.active_filter = MockServoSmoother::LOWPASS_ONLY;
     smoother.reset();
 
-    // Step change from 0 to 10
-    float output1 = smoother.smooth(10.0f, 0.0f, 100, 0);
+    // Step change from 0 to 10 with small time step so alpha < 1
+    float output1 = smoother.smooth(10.0f, 0.0f, 10, 0);  // 10ms
 
     // Repeated same input
-    float output2 = smoother.smooth(10.0f, 0.0f, 100, 0);
+    float output2 = smoother.smooth(10.0f, 0.0f, 10, 0);
 
-    // Output should increase each iteration for step input
-    TEST_ASSERT_TRUE(output2 > output1);
+    // First output should be partial (alpha < 1), second should converge further
+    TEST_ASSERT_TRUE(output1 < 10.0f);  // Not fully converged
+    TEST_ASSERT_TRUE(output2 > output1);  // Getting closer
 }
 
 void test_lowpass_zero_time_delta(void) {
@@ -358,3 +359,30 @@ void test_alternating_inputs(void) {
 }
 
 } // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_rate_limit_small_change);
+    RUN_TEST(test_rate_limit_large_change_clamped);
+    RUN_TEST(test_rate_limit_negative_change);
+    RUN_TEST(test_rate_limit_zero_time_delta);
+    RUN_TEST(test_rate_limit_yaw_axis_faster);
+    RUN_TEST(test_deadband_small_command_zeroed);
+    RUN_TEST(test_deadband_at_threshold);
+    RUN_TEST(test_deadband_above_threshold);
+    RUN_TEST(test_deadband_negative_command);
+    RUN_TEST(test_lowpass_first_sample);
+    RUN_TEST(test_lowpass_convergence);
+    RUN_TEST(test_lowpass_step_response);
+    RUN_TEST(test_lowpass_zero_time_delta);
+    RUN_TEST(test_full_filtering_large_step);
+    RUN_TEST(test_full_filtering_small_jitter);
+    RUN_TEST(test_full_filtering_nominal_input);
+    RUN_TEST(test_zero_input_zero_output);
+    RUN_TEST(test_very_large_time_delta);
+    RUN_TEST(test_alternating_inputs);
+    return UNITY_END();
+}

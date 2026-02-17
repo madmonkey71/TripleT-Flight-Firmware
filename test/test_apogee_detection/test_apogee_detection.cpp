@@ -232,3 +232,27 @@ void test_apogee_under_gravity_flight(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_nominal_apogee_detection);
+    RUN_TEST(test_apogee_with_sensor_noise);
+    RUN_TEST(test_apogee_barometric_only);
+    RUN_TEST(test_apogee_acceleration_only);
+    RUN_TEST(test_apogee_multi_method_voting);
+    RUN_TEST(test_apogee_hysteresis);
+    RUN_TEST(test_apogee_high_altitude);
+    RUN_TEST(test_apogee_with_wind);
+    RUN_TEST(test_apogee_timeout_fallback);
+    RUN_TEST(test_apogee_with_accelerometer_saturation);
+    RUN_TEST(test_apogee_repeatability);
+    RUN_TEST(test_apogee_time_accuracy);
+    RUN_TEST(test_apogee_liftoff_noise);
+    RUN_TEST(test_apogee_ballistic_coefficient_change);
+    RUN_TEST(test_apogee_motor_burnout);
+    RUN_TEST(test_apogee_under_gravity_flight);
+    return UNITY_END();
+}

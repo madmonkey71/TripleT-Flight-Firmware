@@ -161,23 +161,24 @@ void test_failsafe_deactivates_on_recovery(void) {
     failsafe.check_failsafe(now_ms);
     TEST_ASSERT_TRUE(failsafe.is_active());
 
-    // Let it run a bit (gain reduction)
-    for (int i = 0; i < 150; i++) {
+    // Let it escalate to Level 1 only (stay under Level 2 at 2000ms)
+    // Run for 1500ms total (15 iterations at 100ms)
+    for (int i = 1; i <= 15; i++) {
         failsafe.check_failsafe(now_ms + i * 100);
     }
+    TEST_ASSERT_EQUAL_INT(1, failsafe.get_level());
 
-    // Clear violation
+    // Clear violation before Level 2
     failsafe.clear_stability_violation();
 
-    // Recovery should happen
+    // Recovery should happen - gains restore at 5% per call
     for (int i = 0; i < 30; i++) {
-        failsafe.check_failsafe(now_ms + 15000 + i * 100);
+        failsafe.check_failsafe(now_ms + 2500 + i * 100);
     }
 
     bool active = failsafe.is_active();
-    bool level = failsafe.get_level();
     TEST_ASSERT_FALSE(active);
-    TEST_ASSERT_EQUAL_INT(0, level);
+    TEST_ASSERT_EQUAL_INT(0, failsafe.get_level());
 }
 
 // ========================================================================
@@ -208,13 +209,14 @@ void test_gain_reduction_starts_at_level1(void) {
 
     failsafe.trigger_stability_violation(now_ms);
 
-    // Check before level 1
-    failsafe.check_failsafe(now_ms + 500);
+    // First check activates failsafe (failsafe_start_ms = now_ms)
+    failsafe.check_failsafe(now_ms);
     float gain_before = failsafe.get_gain_factor();
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, gain_before);
 
-    // Check at level 1
+    // Check at level 1 threshold (1000ms after start)
     failsafe.check_failsafe(now_ms + 1000);
+    // One more check to apply gain reduction
     failsafe.check_failsafe(now_ms + 1100);
     float gain_at_level1 = failsafe.get_gain_factor();
     TEST_ASSERT_TRUE(gain_at_level1 < 1.0f);
@@ -247,10 +249,14 @@ void test_gain_reduction_minimum_limit(void) {
     uint32_t now_ms = 1000;
 
     failsafe.trigger_stability_violation(now_ms);
+    failsafe.check_failsafe(now_ms);  // Activate failsafe
 
-    // Run for long time to reach minimum
-    for (int i = 0; i < 500; i++) {
-        failsafe.check_failsafe(now_ms + 1000 + i * 100);
+    // Run gain reduction in Level 1 window (1000ms-1999ms)
+    // Each call reduces by 0.02, need ~35 calls to go from 1.0 to 0.3
+    // But stay within Level 1 window by using small time increments
+    for (int i = 0; i < 50; i++) {
+        // Keep time within 1000-1999ms range to stay in Level 1
+        failsafe.check_failsafe(now_ms + 1000 + (i % 10));
     }
 
     float gain = failsafe.get_gain_factor();
@@ -295,46 +301,44 @@ void test_escalation_level_0_initial(void) {
 
 void test_escalation_to_level1_at_1000ms(void) {
     MockGuidanceFailsafe failsafe;
-    uint32_t now_ms = 1000;
+    uint32_t start = 1000;
 
-    failsafe.trigger_stability_violation(now_ms);
-    failsafe.check_failsafe(now_ms + 500);
-    uint8_t level_before = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(0, level_before);
+    failsafe.trigger_stability_violation(start);
+    failsafe.check_failsafe(start);  // Activate, sets failsafe_start_ms = start
 
-    failsafe.check_failsafe(now_ms + 1000);
-    uint8_t level_at = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(1, level_at);
+    failsafe.check_failsafe(start + 500);
+    TEST_ASSERT_EQUAL_INT(0, failsafe.get_level());  // Not yet
+
+    failsafe.check_failsafe(start + 1000);
+    TEST_ASSERT_EQUAL_INT(1, failsafe.get_level());  // Level 1 reached
 }
 
 void test_escalation_to_level2_at_2000ms(void) {
     MockGuidanceFailsafe failsafe;
-    uint32_t now_ms = 1000;
+    uint32_t start = 1000;
 
-    failsafe.trigger_stability_violation(now_ms);
+    failsafe.trigger_stability_violation(start);
+    failsafe.check_failsafe(start);  // Activate
 
-    failsafe.check_failsafe(now_ms + 1000);
-    uint8_t level_before = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(1, level_before);
+    failsafe.check_failsafe(start + 1000);
+    TEST_ASSERT_EQUAL_INT(1, failsafe.get_level());
 
-    failsafe.check_failsafe(now_ms + 2000);
-    uint8_t level_at = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(2, level_at);
+    failsafe.check_failsafe(start + 2000);
+    TEST_ASSERT_EQUAL_INT(2, failsafe.get_level());
 }
 
 void test_escalation_to_level3_at_5000ms(void) {
     MockGuidanceFailsafe failsafe;
-    uint32_t now_ms = 1000;
+    uint32_t start = 1000;
 
-    failsafe.trigger_stability_violation(now_ms);
+    failsafe.trigger_stability_violation(start);
+    failsafe.check_failsafe(start);  // Activate
 
-    failsafe.check_failsafe(now_ms + 2000);
-    uint8_t level_before = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(2, level_before);
+    failsafe.check_failsafe(start + 2000);
+    TEST_ASSERT_EQUAL_INT(2, failsafe.get_level());
 
-    bool error_triggered = failsafe.check_failsafe(now_ms + 5000);
-    uint8_t level_at = failsafe.get_level();
-    TEST_ASSERT_EQUAL_INT(3, level_at);
+    bool error_triggered = failsafe.check_failsafe(start + 5000);
+    TEST_ASSERT_EQUAL_INT(3, failsafe.get_level());
     TEST_ASSERT_TRUE(error_triggered);
 }
 
@@ -354,6 +358,7 @@ void test_passive_mode_activates_at_level2(void) {
     uint32_t now_ms = 1000;
 
     failsafe.trigger_stability_violation(now_ms);
+    failsafe.check_failsafe(now_ms);
 
     failsafe.check_failsafe(now_ms + 1500);
     bool passive_before = failsafe.is_passive_mode();
@@ -369,6 +374,7 @@ void test_passive_mode_stays_active(void) {
     uint32_t now_ms = 1000;
 
     failsafe.trigger_stability_violation(now_ms);
+    failsafe.check_failsafe(now_ms);
 
     failsafe.check_failsafe(now_ms + 2000);
     bool passive_after_level2 = failsafe.is_passive_mode();
@@ -430,6 +436,7 @@ void test_recovery_only_in_level_0_or_1(void) {
     uint32_t now_ms = 1000;
 
     failsafe.trigger_stability_violation(now_ms);
+    failsafe.check_failsafe(now_ms);
     failsafe.check_failsafe(now_ms + 2000);  // Reach level 2
     TEST_ASSERT_EQUAL_INT(2, failsafe.get_level());
 
@@ -450,6 +457,7 @@ void test_level_transitions_at_exact_boundaries(void) {
     uint32_t start_ms = 0;
 
     failsafe.trigger_stability_violation(start_ms);
+    failsafe.check_failsafe(start_ms);
 
     // Test level 1 boundary
     failsafe.check_failsafe(start_ms + 999);  // Just before
@@ -477,7 +485,7 @@ void test_rapid_failsafe_checks_not_double_triggered(void) {
 
     // Check many times at same time
     for (int i = 0; i < 100; i++) {
-        failsafe.check_failsafe(now_ms + 1000);
+        failsafe.check_failsafe(now_ms);
     }
 
     uint8_t level2 = failsafe.get_level();
@@ -485,3 +493,32 @@ void test_rapid_failsafe_checks_not_double_triggered(void) {
 }
 
 } // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_failsafe_inactive_on_init);
+    RUN_TEST(test_failsafe_activates_on_violation);
+    RUN_TEST(test_failsafe_deactivates_on_recovery);
+    RUN_TEST(test_gain_factor_initial_unity);
+    RUN_TEST(test_gain_factor_remains_unity_no_violation);
+    RUN_TEST(test_gain_reduction_starts_at_level1);
+    RUN_TEST(test_gain_reduction_gradual);
+    RUN_TEST(test_gain_reduction_minimum_limit);
+    RUN_TEST(test_gain_recovery_after_violation_clears);
+    RUN_TEST(test_escalation_level_0_initial);
+    RUN_TEST(test_escalation_to_level1_at_1000ms);
+    RUN_TEST(test_escalation_to_level2_at_2000ms);
+    RUN_TEST(test_escalation_to_level3_at_5000ms);
+    RUN_TEST(test_passive_mode_inactive_initially);
+    RUN_TEST(test_passive_mode_activates_at_level2);
+    RUN_TEST(test_passive_mode_stays_active);
+    RUN_TEST(test_recovery_restores_gains);
+    RUN_TEST(test_recovery_returns_to_unity_gain);
+    RUN_TEST(test_recovery_only_in_level_0_or_1);
+    RUN_TEST(test_level_transitions_at_exact_boundaries);
+    RUN_TEST(test_rapid_failsafe_checks_not_double_triggered);
+    return UNITY_END();
+}

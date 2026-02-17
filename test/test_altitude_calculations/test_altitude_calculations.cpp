@@ -62,3 +62,17 @@ void test_altitude_negative_values(void) {
 }
 
 }  // extern "C"
+
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(int argc, char **argv) {
+    UNITY_BEGIN();
+    RUN_TEST(test_hypsometric_formula_sea_level);
+    RUN_TEST(test_hypsometric_formula_high_altitude);
+    RUN_TEST(test_pressure_to_altitude_known_values);
+    RUN_TEST(test_altitude_calibration_offset);
+    RUN_TEST(test_altitude_with_temperature_compensation);
+    RUN_TEST(test_altitude_negative_values);
+    return UNITY_END();
+}

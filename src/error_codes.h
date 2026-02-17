@@ -42,6 +42,10 @@ typedef enum : uint8_t {
     EEPROM_SIGNATURE_INVALID = 80, // EEPROM data for state recovery is invalid
     // EEPROM_WRITE_FAIL (hard to detect reliably without read-back verification)
 
+    // Guidance and Control Failures (90-99)
+    GUIDANCE_STABILITY_FAIL = 90,       // Stability monitoring detected an issue (high rates, attitude error, saturation)
+    GUIDANCE_TARGET_NOT_SET = 91,       // Guidance update called without a target being set
+
     // System Level / Unknown (250-255)
     CONFIG_ERROR_MAIN_PARACHUTE = 250, // e.g. MAIN_PRESENT is false
 

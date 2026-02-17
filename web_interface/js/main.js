@@ -1,6 +1,24 @@
 // Main JavaScript file for the Flight Data Visualizer
 
+console.log("🚀 MAIN.JS: Script loaded and executing");
+
+// Global error handler to catch any uncaught errors
+window.addEventListener('error', (event) => {
+    console.error("🚨 GLOBAL ERROR:", event.error);
+    console.error("🚨 ERROR MESSAGE:", event.message);
+    console.error("🚨 ERROR FILENAME:", event.filename);
+    console.error("🚨 ERROR LINE:", event.lineno);
+    console.error("🚨 ERROR STACK:", event.error?.stack);
+});
+
+// Handle unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error("🚨 UNHANDLED PROMISE REJECTION:", event.reason);
+    console.error("🚨 PROMISE:", event.promise);
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log("🚀 MAIN.JS: DOM Content Loaded event fired");
     console.log("Flight Data Visualizer initialized.");
 
     const connectButton = document.getElementById('connectButton');
@@ -10,6 +28,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serialCommandInput = document.getElementById('serialCommandInput');
     const serialSendCommandButton = document.getElementById('serialSendCommandButton');
     
+    console.log("🚀 MAIN.JS: DOM elements found:", {
+        connectButton: !!connectButton,
+        disconnectButton: !!disconnectButton,
+        connectionStatusDiv: !!connectionStatusDiv,
+        serialTerminalOutput: !!serialTerminalOutput
+    });
+
     // --- Serial Terminal Logging Function ---
     function logToTerminal(message, type = 'info') {
         if (serialTerminalOutput) {
@@ -40,20 +65,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // --- Initialize Data Parser and UI ---
     try {
+        console.log("🚀 MAIN.JS: Starting initialization process");
+        
         if (connectButton) connectButton.disabled = true;
         updateConnectionStatus("Initializing...", "disconnected");
 
+        console.log("🚀 MAIN.JS: Calling initDataParser()");
         await initDataParser();
+        console.log("🚀 MAIN.JS: initDataParser() completed successfully");
         
+        console.log("🚀 MAIN.JS: Checking for initUI function:", typeof initUI);
         if (typeof initUI === 'function') {
+            console.log("🚀 MAIN.JS: Calling initUI()");
             initUI();
+            console.log("🚀 MAIN.JS: initUI() completed successfully");
+        } else {
+            console.error("🚀 MAIN.JS: initUI function not found!");
         }
 
         updateConnectionStatus("Ready to connect", "disconnected");
         if (connectButton) connectButton.disabled = false;
+        
+        console.log("🚀 MAIN.JS: Initialization completed successfully");
 
     } catch (error) {
-        console.error("Initialization failed:", error);
+        console.error("🚀 MAIN.JS: Initialization failed:", error);
+        console.error("🚀 MAIN.JS: Error stack:", error.stack);
         updateConnectionStatus("Initialization Error. Check console.", "error");
         if (connectButton) {
             connectButton.disabled = true;
@@ -71,14 +108,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function handleReceivedData(data) {
+        console.log("🔍 DEBUG: Raw data received:", data);
+        
         const parsedData = parseData(data);
+        console.log("🔍 DEBUG: Parsed data result:", parsedData);
 
         if (!parsedData) {
+            console.log("🔍 DEBUG: Data not parsed, logging to terminal");
             logToTerminal(data.trim(), 'received');
             return;
         }
         
         if (parsedData.isStateUpdate) {
+            console.log("🔍 DEBUG: State update detected:", parsedData);
             if (typeof updateUI === 'function') {
                 updateUI(parsedData);
             }
@@ -97,8 +139,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const condensed = parts.slice(0, 3).join(',') + `... (${parts.length} fields)`;
         logToTerminal(`CSV: ${condensed}`, 'received');
         
+        console.log("🔍 DEBUG: Calling updateUI with:", parsedData);
         if (typeof updateUI === 'function') {
             updateUI(parsedData);
+        } else {
+            console.error("🔍 DEBUG: updateUI function not available!");
         }
     }
 
@@ -109,11 +154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Button Event Listeners ---
-    if (connectButton) {
-        connectButton.addEventListener('click', () => {
-            connectSerial(handleSerialConnect, handleReceivedData, handleSerialDisconnect);
-        });
-    }
+    // Note: Connect button listener is now handled after browser compatibility check
 
     if (disconnectButton) {
         disconnectButton.disabled = true;
@@ -145,13 +186,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Initial Check for Web Serial API Support ---
-    if (!navigator.serial) {
-        const msg = "Web Serial API not supported by this browser.";
-        updateConnectionStatus(msg, "error");
-        if (connectButton) {
-            connectButton.disabled = true;
-            connectButton.title = msg;
+    function checkBrowserCompatibility() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+        const isEdge = userAgent.includes('edge');
+        const isOpera = userAgent.includes('opera') || userAgent.includes('opr');
+        const isFirefox = userAgent.includes('firefox');
+        const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+        
+        let browserName = 'Unknown';
+        if (isChrome) browserName = 'Chrome';
+        else if (isEdge) browserName = 'Edge';
+        else if (isOpera) browserName = 'Opera';
+        else if (isFirefox) browserName = 'Firefox';
+        else if (isSafari) browserName = 'Safari';
+        
+        // More detailed debug information
+        console.log("Browser compatibility check:", {
+            userAgent: navigator.userAgent,
+            browserName: browserName,
+            hasNavigatorSerial: !!navigator.serial,
+            navigatorSerial: navigator.serial,
+            isSecureContext: window.isSecureContext,
+            protocol: window.location.protocol,
+            location: window.location.href
+        });
+        
+        if (!navigator.serial) {
+            const msg = `Web Serial API not supported in ${browserName}. Use Chrome or Edge.`;
+            updateConnectionStatus(msg, "error");
+            logToTerminal(`Browser: ${browserName}`, 'error');
+            logToTerminal("SOLUTION: Use Chrome (recommended) or Microsoft Edge", 'info');
+            logToTerminal("NOT SUPPORTED: Firefox, Safari, Internet Explorer", 'error');
+            logToTerminal("DEBUG: navigator.serial = " + navigator.serial, 'error');
+            
+            if (connectButton) {
+                connectButton.disabled = true;
+                connectButton.title = `Web Serial API not supported in ${browserName}`;
+                connectButton.innerHTML = `❌ Not Supported in ${browserName}`;
+            }
+        } else {
+            logToTerminal(`Browser: ${browserName} ✅ (Web Serial API supported)`, 'info');
+            logToTerminal("Protocol: " + window.location.protocol, 'info');
+            logToTerminal("Secure context: " + window.isSecureContext, 'info');
+            logToTerminal("DEBUG: navigator.serial = " + typeof navigator.serial, 'info');
         }
+        
+        return !!navigator.serial; // Return the result for use by other functions
+    }
+    
+    const hasWebSerial = checkBrowserCompatibility();
+    
+    // Override the connect button to add extra checking
+    if (connectButton && hasWebSerial) {
+        connectButton.addEventListener('click', () => {
+            // Double-check serial API availability right before connecting
+            if (!navigator.serial) {
+                logToTerminal("ERROR: Web Serial API disappeared between page load and button click!", 'error');
+                updateConnectionStatus("Web Serial API not available", "error");
+                return;
+            }
+            
+            logToTerminal("Initiating serial connection...", 'info');
+            connectSerial(handleSerialConnect, handleReceivedData, handleSerialDisconnect);
+        });
     }
 });
 

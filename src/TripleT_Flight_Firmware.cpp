@@ -30,6 +30,10 @@
 #include <SerialFlash.h>
 // Library for controlling PWM Servo's
 #include <PWMServo.h>
+// Use the official Watchdog_t4 library
+#include <Watchdog_t4.h>
+WDT_T4<WDT1> wdt;
+
 // Set the version number
 #define TRIPLET_FLIGHT_VERSION 0.51
 
@@ -55,7 +59,9 @@
 #include "icm_20948_functions.h"  // Include ICM-20948 functions
 #include "kx134_functions.h"  // Include KX134 functions
 #include "log_format_definition.h" // For LOG_COLUMNS and LOG_COLUMN_COUNT
+#if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance and control functions
+#endif
 #include "flight_logic.h"     // For update_guidance_targets()
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
@@ -91,6 +97,11 @@ bool g_useKalmanFilter = true; // Always true - Kalman is the only orientation f
 float g_kalmanRoll = 0.0f;
 float g_kalmanPitch = 0.0f;
 float g_kalmanYaw = 0.0f;
+#if ENABLE_GUIDANCE == 1
+float g_kalmanRollRate = 0.0f;  // Angular rate from gyro (rad/s)
+float g_kalmanPitchRate = 0.0f; // Angular rate from gyro (rad/s)
+float g_kalmanYawRate = 0.0f;   // Angular rate from gyro (rad/s)
+#endif
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
 // External declarations for sensor data
@@ -117,11 +128,13 @@ bool baroCalibrated = false;               // Alias for g_baroCalibrated
 // Define sensor objects
 SparkFun_KX134 g_kx134Accel;  // Add KX134 accelerometer object definition
 
-// Servo objects for actuators
+// Servo objects for actuators (only if guidance is enabled)
+#if ENABLE_GUIDANCE == 1
 #include <PWMServo.h> // Ensure it's included (already there)
 PWMServo g_servo_pitch;
 PWMServo g_servo_roll;
 PWMServo g_servo_yaw;
+#endif
 
 // NeoPixel object
 Adafruit_NeoPixel g_pixels(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
@@ -226,11 +239,11 @@ bool createNewLogFile(SdFat& sd_obj, SFE_UBLOX_GNSS& gnss, FsFile& logFile_obj_r
     // This might require getGPSDateTime(gnss, year, month, day, hour, minute, second);
     getGPSDateTime(year, month, day, hour, minute, second); // If this uses global myGNSS, it won't use the passed 'gnss'
     
-    sprintf(local_fileName_buf, "DATA_%04d%02d%02d_%02d%02d%02d.csv",
+    snprintf(local_fileName_buf, sizeof(local_fileName_buf), "DATA_%04d%02d%02d_%02d%02d%02d.csv",
       year, month, day, hour, minute, second);
   } else {
     // No GPS fix, use millis()
-    sprintf(local_fileName_buf, "LOG_%lu.csv", millis());
+    snprintf(local_fileName_buf, sizeof(local_fileName_buf), "LOG_%lu.csv", millis());
   }
   
   Serial.print(F("Creating log file: "));
@@ -380,14 +393,27 @@ void WriteLogData(bool forceLog) {
   // Without dedicated getter functions, we log placeholders or last known values if available.
   // For now, logging placeholders (0.0f).
   // A more complete solution would involve adding getters to guidance_control.cpp.
+  #if ENABLE_GUIDANCE == 1
   guidance_get_target_euler_angles(logEntry.target_roll,
-                                   logEntry.target_pitch,
-                                   logEntry.target_yaw);
+                                    logEntry.target_pitch,
+                                    logEntry.target_yaw);
   guidance_get_pid_integrals(logEntry.pid_roll_integral,
                              logEntry.pid_pitch_integral,
                              logEntry.pid_yaw_integral);
-  
+
   guidance_get_actuator_outputs(logEntry.actuator_output_roll, logEntry.actuator_output_pitch, logEntry.actuator_output_yaw);
+#else
+  // Guidance disabled - zero out guidance-related log fields
+  logEntry.target_roll = 0.0f;
+  logEntry.target_pitch = 0.0f;
+  logEntry.target_yaw = 0.0f;
+  logEntry.pid_roll_integral = 0.0f;
+  logEntry.pid_pitch_integral = 0.0f;
+  logEntry.pid_yaw_integral = 0.0f;
+  logEntry.actuator_output_roll = 0.0f;
+  logEntry.actuator_output_pitch = 0.0f;
+  logEntry.actuator_output_yaw = 0.0f;
+#endif
 
   // Output to serial if enabled
   if (g_debugFlags.enableSerialCSV) {
@@ -572,6 +598,13 @@ void setup() {
   Serial.println(F("TripleT Flight Firmware Starting..."));
   Serial.print(F("Version: "));
   Serial.println(TRIPLET_FLIGHT_VERSION);
+
+  // Initialize Hardware Watchdog (2.0s timeout)
+  WDT_timings_t config;
+  config.trigger = 2; // 2 seconds
+  config.timeout = 5; // 5 seconds (reset if not fed)
+  wdt.begin(config);
+
   Serial.print(F("Board: "));
   Serial.println(BOARD_NAME);
 
@@ -589,9 +622,11 @@ void setup() {
   digitalWrite(PYRO_CHANNEL_2, LOW);
 
   // Initialize servo objects
+#if ENABLE_GUIDANCE == 1
   g_servo_pitch.attach(ACTUATOR_PITCH_PIN);
   g_servo_roll.attach(ACTUATOR_ROLL_PIN);
   g_servo_yaw.attach(ACTUATOR_YAW_PIN);
+#endif
 
   // Set servos to default positions
   g_servo_pitch.write(SERVO_DEFAULT_ANGLE);
@@ -628,7 +663,9 @@ void setup() {
   kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
 
   // Initialize guidance system
+#if ENABLE_GUIDANCE == 1
   guidance_init(); // Reset PID controllers and guidance state
+#endif
 
   // Create initial log file
   if (g_sdCardAvailable) {
@@ -737,6 +774,8 @@ void handleInitialStateManagement() {
 }
 
 void loop() {
+  wdt.feed(); // Feed the watchdog every loop iteration
+
   // Handle initial state management (runs once after setup)
   handleInitialStateManagement();
 
@@ -750,49 +789,67 @@ void loop() {
   bool sensorsUpdatedThisCycle = false; // Track if any sensor was updated this cycle
 
   // --- Serial Command Processing ---
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+  static char inputBuffer[64];
+  static size_t bufferIndex = 0;
 
-    // Populate SystemStatusContext
-    SystemStatusContext statusCtx = {
-        g_sdCardAvailable,
-        g_sdCardMounted,
-        g_sdCardPresent,
-        g_loggingEnabled,
-        g_logFileName,
-        g_availableSpace,
-        g_flashAvailable,
-        g_baroCalibrated,
-        g_icm20948_ready,
-        ms5611_initialized_ok, // extern, not prefixed with g_ unless defined here
-        g_kx134_initialized_ok,
-        &g_useKalmanFilter,
-        myGNSS,
-        g_ms5611Sensor       // Assuming g_ms5611Sensor is the global instance
-    };
+  while (Serial.available()) {
+    char c = Serial.read();
 
-    processCommand(command,
-                   g_currentFlightState,
-                   g_previousFlightState,
-                   g_stateEntryTime,
-                   statusCtx,
-                   g_debugFlags,
-                   g_SD,
-                   myGNSS,
-                   g_LogDataFile,
-                   g_logFileName,
-                   sizeof(g_logFileName),
-                   g_sdCardAvailable,
-                   g_loggingEnabled,
-                   g_sdCardMounted,
-                   g_sdCardPresent,
-                   g_availableSpace,
-                   g_pixels,
-                   g_baroCalibrated,
-                   g_ms5611Sensor
-                   );
-    command = ""; // Clear the command string after processing
+    if (c == '\n' || c == '\r') {
+      if (bufferIndex > 0) {
+        inputBuffer[bufferIndex] = '\0'; // Null-terminate
+        // String command(inputBuffer);     // REMOVED - passing char buffer keys directly
+        
+        // Populate SystemStatusContext
+        SystemStatusContext statusCtx = {
+            g_sdCardAvailable,
+            g_sdCardMounted,
+            g_sdCardPresent,
+            g_loggingEnabled,
+            g_logFileName,
+            g_availableSpace,
+            g_flashAvailable,
+            g_baroCalibrated,
+            g_icm20948_ready,
+            ms5611_initialized_ok, 
+            g_kx134_initialized_ok,
+            &g_useKalmanFilter,
+            myGNSS,
+            g_ms5611Sensor
+        };
+
+        processCommand(inputBuffer,
+                       g_currentFlightState,
+                       g_previousFlightState,
+                       g_stateEntryTime,
+                       statusCtx,
+                       g_debugFlags,
+                       g_SD,
+                       myGNSS,
+                       g_LogDataFile,
+                       g_logFileName,
+                       sizeof(g_logFileName),
+                       g_sdCardAvailable,
+                       g_loggingEnabled,
+                       g_sdCardMounted,
+                       g_sdCardPresent,
+                       g_availableSpace,
+                       g_pixels,
+                       g_baroCalibrated,
+                       g_ms5611Sensor
+                       );
+        
+        bufferIndex = 0; // Reset buffer
+      }
+    } else {
+      if (bufferIndex < sizeof(inputBuffer) - 1) {
+        inputBuffer[bufferIndex++] = c;
+      } else {
+        // Buffer overflow: reset and notify
+        Serial.println(F("ERROR: Command too long, buffer reset."));
+        bufferIndex = 0;
+      }
+    }
   }
 
   // --- Sensor Data Reads ---
@@ -877,6 +934,13 @@ void loop() {
             float kf_calibrated_gyro[3];
             ICM_20948_get_calibrated_gyro(kf_calibrated_gyro); // Get calibrated gyro data
 
+#if ENABLE_GUIDANCE == 1
+            // Update global Kalman rate variables with calibrated gyro data
+            g_kalmanRollRate = kf_calibrated_gyro[0];   // X-axis (roll rate)
+            g_kalmanPitchRate = kf_calibrated_gyro[1];  // Y-axis (pitch rate)
+            g_kalmanYawRate = kf_calibrated_gyro[2];    // Z-axis (yaw rate)
+#endif
+
             // Accel data for Kalman is now in current_accel_for_kalman (g's)
 
             kalman_predict(kf_calibrated_gyro[0], kf_calibrated_gyro[1], kf_calibrated_gyro[2], dt_kalman);
@@ -896,57 +960,57 @@ void loop() {
   }
 
   // --- Guidance Control Update ---
-  static unsigned long g_lastGuidanceUpdateTime = 0;
-  if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-      float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
-      if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
-          dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
-      }
-      g_lastGuidanceUpdateTime = millis();
+  #if ENABLE_GUIDANCE == 1
+  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT)
+  if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
+      static unsigned long g_lastGuidanceUpdateTime = 0;
+      if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
+          float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
+          if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
+              dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
+          }
+          g_lastGuidanceUpdateTime = millis();
 
-      // Assuming g_kalmanRoll, g_kalmanPitch, g_kalmanYaw are updated radians from Kalman filter
+          // Use Kalman filter rates instead of raw gyro to avoid timing mismatches
+          // g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate are already calculated and filtered
+          guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
+                          g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate,
+                          GPS_latitude, GPS_longitude, GPS_altitudeMSL / 1000.0f,
+                          dt_guidance);
 
-      float gu_calibrated_gyro[3];
-      ICM_20948_get_calibrated_gyro(gu_calibrated_gyro); // Get calibrated gyro data
+          float pitch_command_norm, roll_command_norm, yaw_command_norm; // Normalized (-1 to 1)
+          guidance_get_actuator_outputs(pitch_command_norm, roll_command_norm, yaw_command_norm);
 
-      guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
-                      gu_calibrated_gyro[0], gu_calibrated_gyro[1], gu_calibrated_gyro[2],
-                      dt_guidance);
+          // Map normalized commands to servo angles (degrees)
+          // Example: maps -1.0 -> 0 deg, 0.0 -> 90 deg (SERVO_DEFAULT_ANGLE), 1.0 -> 180 deg
+          // This assumes a servo travel of 90 degrees in each direction from center.
+          // Adjust the multiplier (90.0f) if servo travel is different (e.g., 45.0f for +/- 45 deg travel).
+          int pitch_servo_angle = static_cast<int>(pitch_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          int roll_servo_angle  = static_cast<int>(roll_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          int yaw_servo_angle   = static_cast<int>(yaw_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
 
-      float pitch_command_norm, roll_command_norm, yaw_command_norm; // Normalized (-1 to 1)
-      guidance_get_actuator_outputs(pitch_command_norm, roll_command_norm, yaw_command_norm);
+          // Constrain servo angles to typical 0-180 range
+          pitch_servo_angle = constrain(pitch_servo_angle, 0, 180);
+          roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
+          yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
 
-      // Map normalized commands to servo angles (degrees)
-      // Example: maps -1.0 -> 0 deg, 0.0 -> 90 deg (SERVO_DEFAULT_ANGLE), 1.0 -> 180 deg
-      // This assumes a servo travel of 90 degrees in each direction from center.
-      // Adjust the multiplier (90.0f) if servo travel is different (e.g., 45.0f for +/- 45 deg travel).
-      int pitch_servo_angle = static_cast<int>(pitch_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
-      int roll_servo_angle  = static_cast<int>(roll_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
-      int yaw_servo_angle   = static_cast<int>(yaw_command_norm * 90.0f + SERVO_DEFAULT_ANGLE);
+          // Command servos (we're already in the correct state check above)
+          g_servo_pitch.write(pitch_servo_angle);
+          g_servo_roll.write(roll_servo_angle);
+          g_servo_yaw.write(yaw_servo_angle);
 
-      // Constrain servo angles to typical 0-180 range
-      pitch_servo_angle = constrain(pitch_servo_angle, 0, 180);
-      roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
-      yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
-
-      // Only command servos if in an appropriate flight state
-      // Example: Active during COAST, DROGUE_DESCENT, MAIN_DESCENT. (Adjust as per actual flight plan)
-      // Or, if attitude hold is desired on pad before launch (e.g. ARMED state).
-      if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
-           // Adding !isStationary to prevent fighting on the ground if state is descent but already landed.
-           // isStationary is an extern bool from icm_20948_functions.h
-           g_servo_pitch.write(pitch_servo_angle);
-           g_servo_roll.write(roll_servo_angle);
-           g_servo_yaw.write(yaw_servo_angle);
-
-           if (g_debugFlags.enableSystemDebug) { // Optional: print servo commands
-              Serial.print(F("Servo CMDs (P,R,Y): "));
-              Serial.print(pitch_servo_angle); Serial.print(F(", "));
-              Serial.print(roll_servo_angle); Serial.print(F(", "));
-              Serial.println(yaw_servo_angle);
-           }
+          if (g_debugFlags.enableSystemDebug) { // Optional: print servo commands
+             Serial.print(F("Servo CMDs (P,R,Y): "));
+             Serial.print(pitch_servo_angle); Serial.print(F(", "));
+             Serial.print(roll_servo_angle); Serial.print(F(", "));
+             Serial.println(yaw_servo_angle);
+          }
       }
   }
+  #else
+  // Guidance system disabled - passive rocket mode
+  // No guidance updates or servo commands will be processed
+  #endif
 
   // --- Flight State Processing ---
   ProcessFlightState(); // Handle flight state machine logic

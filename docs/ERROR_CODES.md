@@ -1,6 +1,6 @@
 # Error Codes Reference
 
-**Version:** v0.51
+**Version:** v0.10.0
 
 ## Overview
 

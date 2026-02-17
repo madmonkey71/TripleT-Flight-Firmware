@@ -129,6 +129,84 @@ This document details the usage and configuration of major features within the T
     *   MARG Sensor Fusion system (specifically `convertQuaternionToEuler()` and global quaternions `icm_q0`, `icm_q1`, `icm_q2`, `icm_q3` to get the initial orientation).
     *   Arduino `millis()` function for timing.
 
+## Guidance Failsafe Mechanisms
+
+*   **Purpose**: To automatically detect and react to unstable flight conditions, enhancing safety. These mechanisms monitor angular rates, attitude errors, and control effort. If predefined thresholds are exceeded for a specified duration, the system flags a stability issue, logs an error (`GUIDANCE_STABILITY_FAIL`), and may transition to an `ERROR` state, typically disengaging active guidance.
+*   **Key Files**:
+    *   `src/guidance_control.cpp` (implements `guidance_check_stability()`, `guidance_is_stability_compromised()`)
+    *   `src/guidance_control.h`
+    *   `src/flight_logic.cpp` (integrates stability checks into `BOOST` and `COAST` states)
+    *   `src/config.h` (for all related thresholds and durations)
+    *   `src/error_codes.h` (for `GUIDANCE_STABILITY_FAIL`)
+*   **Configuration (`config.h`)**:
+    *   Deflection Limits (for context in saturation check):
+        *   `` `MAX_FIN_DEFLECTION_PITCH_DEG` ``, `` `MAX_FIN_DEFLECTION_YAW_DEG` ``, `` `MAX_FIN_DEFLECTION_ROLL_DEG` ``
+    *   Angular Rate Thresholds:
+        *   `` `STABILITY_MAX_PITCH_RATE_DPS` ``, `` `STABILITY_MAX_ROLL_RATE_DPS` ``, `` `STABILITY_MAX_YAW_RATE_DPS` ``
+    *   Attitude Error Thresholds:
+        *   `` `STABILITY_MAX_ATTITUDE_ERROR_PITCH_DEG` ``, `` `STABILITY_MAX_ATTITUDE_ERROR_ROLL_DEG` ``, `` `STABILITY_MAX_ATTITUDE_ERROR_YAW_DEG` ``
+    *   Control Saturation Threshold:
+        *   `` `STABILITY_ACTUATOR_SATURATION_LEVEL_PERCENT` ``
+    *   Violation Duration:
+        *   `` `STABILITY_VIOLATION_DURATION_MS` ``
+*   **Usage and Interaction**:
+    *   The stability checks are automatically performed within `flight_logic.cpp` during `BOOST` and `COAST` flight states if guidance is active.
+    *   `guidance_control.cpp` contains the core logic (`guidance_check_stability`) that compares current flight parameters (attitude, rates, actuator commands) against the configured thresholds.
+    *   If any criterion (high angular rate, large attitude error, or prolonged actuator saturation) is met for longer than `STABILITY_VIOLATION_DURATION_MS`, the `guidance_is_stability_compromised()` flag is set.
+    *   `flight_logic.cpp` checks this flag. If true, it sets `g_last_error_code` to `GUIDANCE_STABILITY_FAIL` and transitions the main flight state to `ERROR`.
+    *   This system aims to prevent further uncontrolled flight by disarming guidance during instability.
+*   **Logged Data**:
+    *   `stability_flags` (a bitfield indicating type of stability violation, currently general if any)
+    *   `max_pitch_rate_dps_so_far`, `max_roll_rate_dps_so_far`, `max_yaw_rate_dps_so_far` (maximum rates observed in the current state)
+    *   `max_pitch_att_err_deg_so_far`, `max_roll_att_err_deg_so_far`, `max_yaw_att_err_deg_so_far` (maximum attitude errors observed)
+    *   `LastErrorCode` will show `GUIDANCE_STABILITY_FAIL` if triggered.
+*   **Dependencies**:
+    *   Attitude (Kalman/MARG) and rate data from IMU.
+    *   Actuator command outputs from the PID controllers.
+    *   Flight state machine for conditional activation.
+
+## Trajectory Following (Path Guidance) - Initial Implementation
+
+*   **Purpose**: To enable the vehicle to follow a predefined 3D path consisting of waypoints. This initial version uses a simplified "go-to-waypoint" strategy, adjusting target pitch and yaw for the attitude control system.
+*   **Key Files**:
+    *   `src/guidance_control.cpp` (implements trajectory PIDs, waypoint logic in `guidance_update()`)
+    *   `src/guidance_control.h`
+    *   `src/data_structures.h` (defines `Trajectory_t`, `TrajectoryWaypoint_t`)
+    *   `src/config.h` (for trajectory PID gains, waypoint limits)
+*   **Configuration (`config.h`)**:
+    *   General Trajectory Settings:
+        *   `` `MAX_TRAJECTORY_WAYPOINTS` ``
+        *   `` `DEFAULT_WAYPOINT_ACCEPTANCE_RADIUS_M` ``
+    *   Trajectory Heading/XTE PID Gains:
+        *   `` `TRAJ_XTE_PID_KP` ``, `` `TRAJ_XTE_PID_KI` ``, `` `TRAJ_XTE_PID_KD` ``
+        *   `` `TRAJ_XTE_PID_INTEGRAL_LIMIT` ``, `` `TRAJ_XTE_PID_OUTPUT_LIMIT` ``
+    *   Trajectory Altitude PID Gains:
+        *   `` `TRAJ_ALT_PID_KP` ``, `` `TRAJ_ALT_PID_KI` ``, `` `TRAJ_ALT_PID_KD` ``
+        *   `` `TRAJ_ALT_PID_INTEGRAL_LIMIT` ``, `` `TRAJ_ALT_PID_OUTPUT_LIMIT` ``
+*   **Usage and Interaction (Conceptual - Full Integration Pending)**:
+    *   **Loading**: A trajectory (list of waypoints: lat, lon, alt_msl) would be loaded, e.g., from an SD card file (future) or using `guidance_load_test_trajectory()` for now.
+    *   **Activation**: Trajectory following is activated (e.g., via a serial command `traj_activate` calling `guidance_activate_trajectory(true)`). This would typically occur in a specific flight phase (e.g., `COAST` or a dedicated `GUIDED` state).
+    *   **Guidance Logic**:
+        *   When active, `guidance_update()` determines the current target waypoint.
+        *   It calculates the bearing and distance to this waypoint using current GPS data.
+        *   It also calculates the altitude error to the waypoint's MSL altitude.
+        *   The `target_yaw_rad_g` for the attitude PID is set to the calculated bearing to the waypoint.
+        *   The `target_pitch_rad_g` for the attitude PID is determined by the output of the Trajectory Altitude PID, which tries to nullify the altitude error.
+        *   `target_roll_rad_g` is typically set to 0 for wings-level flight.
+        *   **Waypoint Switching**: When the vehicle is within `DEFAULT_WAYPOINT_ACCEPTANCE_RADIUS_M` of the current target waypoint, the system advances to the next waypoint in the trajectory.
+    *   **Deactivation**: Trajectory following can be deactivated (e.g., `traj_deactivate` or automatically at the end of the path). The system then reverts to standard attitude hold or other guidance modes.
+*   **Logged Data**:
+    *   `current_target_wp_idx` (index of the current target waypoint)
+    *   `distance_to_target_wp_m` (distance in meters to the current target waypoint)
+    *   `bearing_to_target_wp_rad` (bearing in radians to the current target waypoint)
+    *   `altitude_error_to_wp_m` (altitude error in meters to the current target waypoint's MSL altitude)
+*   **Dependencies**:
+    *   GPS for current position (latitude, longitude, altitude MSL) and heading/velocity.
+    *   Attitude (Kalman/MARG) and rate data from IMU for the underlying attitude PIDs.
+    *   Attitude PID control system.
+    *   (Future) SD card interface for loading trajectory files.
+    *   (Future) Serial command interface for controlling trajectory loading/activation.
+
 ## Data Logging System
 
 *   **Purpose**: To record a wide array of sensor data, system states, derived values, and control parameters to an SD card for post-flight analysis, debugging, and performance evaluation.

@@ -4,6 +4,107 @@
 
 This web interface provides a real-time visualization of flight data received from a flight controller or similar device via the Web Serial API. It parses incoming CSV data, displays key metrics numerically, and plots altitude and acceleration data on interactive charts.
 
+## Browser Compatibility & Requirements
+
+### ⚠️ **Web Serial API Requirements**
+
+The Web Serial API is required for direct serial communication with the flight controller. This API has specific requirements:
+
+#### **Supported Browsers:**
+- ✅ **Chrome/Chromium** (version 89+) - **RECOMMENDED**
+- ✅ **Microsoft Edge** (version 89+)
+- ✅ **Opera** (version 75+)
+- ❌ **Firefox** - Not supported (as of 2024)
+- ❌ **Safari** - Not supported
+- ❌ **Internet Explorer** - Not supported
+
+#### **Security Requirements:**
+- **HTTPS or localhost**: Web Serial API requires a secure context
+- **User gesture**: Connection must be initiated by user interaction (button click)
+- **Same-origin policy**: Scripts must be served from the same origin
+
+### **Quick Fix - Use Chrome or Edge**
+
+If you're getting "Web Serial API not supported", switch to:
+1. **Google Chrome** (recommended)
+2. **Microsoft Edge** 
+3. Make sure you're using a recent version (2021 or newer)
+
+### **Running the Web Interface**
+
+#### **🚨 IMPORTANT: Avoiding HTTPS Redirection**
+
+Some browsers automatically redirect HTTP to HTTPS, which breaks the Web Serial API. Here are the best methods to avoid this:
+
+#### **Option 1: Local File Protocol (Recommended)**
+```bash
+# Navigate to the web interface directory
+cd web_interface
+
+# Open with Chrome/Edge directly (uses file:// protocol)
+google-chrome index.html
+# or
+microsoft-edge index.html
+```
+**✅ Advantages:** No server needed, no HTTPS redirection, works immediately
+
+#### **Option 2: Use the Launch Script**
+```bash
+# Navigate to the web interface directory
+cd web_interface
+
+# Linux/Mac: Run the interactive launcher script
+./run_local_server.sh
+
+# Windows: Run the batch file
+run_local_server.bat
+```
+**✅ Advantages:** Multiple server options, automatic browser detection, cross-platform
+
+#### **Option 3: Local HTTP Server on localhost**
+```bash
+# Using Python (if installed)
+cd web_interface
+python3 -m http.server 8000
+# Then open: http://localhost:8000
+
+# Using Node.js (if installed)
+npx http-server -p 8080
+# Then open: http://localhost:8080
+```
+**✅ Advantages:** localhost is treated as secure context, no HTTPS redirection
+
+#### **Option 4: Live Server (VS Code)**
+If using VS Code:
+1. Install "Live Server" extension
+2. Right-click on `index.html`
+3. Select "Open with Live Server"
+**⚠️ Note:** May use 127.0.0.1 which some browsers redirect to HTTPS
+
+#### **🔧 Troubleshooting HTTPS Issues**
+
+If you're still getting HTTPS redirection or SSL handshake errors:
+
+**🚨 Common Issue: Browser Auto-Redirects HTTP to HTTPS**
+- **Symptoms:** Server logs show SSL handshake attempts (`\x16\x03\x01` messages)
+- **Solutions:**
+  1. **Clear browser cache and cookies** (especially for localhost)
+  2. **Use incognito/private browsing mode**
+  3. **Try different ports:** `python3 -m http.server 3000` or `python3 -m http.server 9000`
+  4. **Use IP address:** `http://127.0.0.1:8000` instead of `localhost`
+  5. **Bind to specific IP:** `python3 -m http.server 8000 --bind 127.0.0.1`
+
+**🚨 Common Issue: "Initialization Error" with file:// protocol**
+- **Symptoms:** "Status: Initialization Error. Check console." when opening index.html directly
+- **Cause:** Browser blocks JSON file loading due to CORS policy
+- **Solution:** The interface now has fallback configuration - this should work automatically
+
+**🔧 Additional Troubleshooting Steps:**
+1. **Kill existing servers:** `pkill -f "python3 -m http.server"`
+2. **Check browser settings:** Disable HTTPS-only mode (Chrome: Settings → Privacy → Security → Advanced)
+3. **Try different browsers:** Edge, Opera, or different Chrome profile
+4. **Check firewall:** Ensure local ports aren't blocked
+
 ## Features
 
 *   **Web Serial Connection**: Connects directly to USB serial devices using the Web Serial API.
@@ -140,6 +241,7 @@ Open `test_message_filtering.html` in your browser to see a demonstration of how
 *   **UI Looks Incorrect / Styles Not Applied**:
     *   Clear your browser cache.
     *   Ensure all files (`index.html`, `css/style.css`, `js/*`) are present and in the correct locations.
+
 ---
 This README should provide a good starting point for users and developers.The `web_interface/README.md` file has been created successfully.
 

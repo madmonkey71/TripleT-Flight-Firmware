@@ -1,7 +1,9 @@
 // GPS Functions implementation for TripleT_Flight_Firmware
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+#include "config.h"
 #include "gps_config.h"
 #include "gps_functions.h"
 
@@ -27,12 +29,17 @@ byte GPS_hour = 0;
 byte GPS_minute = 0;
 byte GPS_second = 0;
 bool GPS_time_valid = false;
+bool g_gps_initialized_ok = false;
 
 // Add reference to debug flag
 extern volatile bool enableGPSDebug;
 
 #include "error_codes.h" // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
+
+// Watchdog reference - must feed during long init sequences
+#include <Watchdog_t4.h>
+extern WDT_T4<WDT1> wdt;
 
 // Create a single persistent NullStream that doesn't output anything
 class NullStream : public Stream {
@@ -74,41 +81,65 @@ void gps_init() {
   GPS_time_valid = false;
   
   // Initialize GPS connection
-  Wire.begin();
-  
-  // Simple message - debug status will be shown by the setGPSDebugging function
-  Serial.println(F("GPS init..."));
-  
-  // Ensure debugging is set to the desired state before any GPS operations
+  bool gpsInitOk = false;
+
+  // Feed watchdog before GPS init - begin() can take several seconds polling
+  wdt.feed();
+
+#if GPS_USE_SPI
+  Serial.println(F("GPS init (SPI)..."));
+  SPI.begin();
   setGPSDebugging(enableGPSDebug);
-  
-  // Direct initialization without checking connection
-  if (!myGNSS.begin(Wire)) {
+  // Use shorter maxWait (1000ms) to avoid exceeding watchdog timeout
+  gpsInitOk = myGNSS.begin(SPI, GPS_SPI_CS_PIN, GPS_SPI_SPEED, 1000);
+#else
+  Serial.println(F("GPS init (I2C)..."));
+  // Note: Wire.begin() is already called in main setup(), but safe to call again
+  Wire.begin();
+  setGPSDebugging(enableGPSDebug);
+  gpsInitOk = myGNSS.begin(Wire, 0x42, 1000);
+#endif
+
+  // Feed watchdog after GPS init attempt
+  wdt.feed();
+
+  if (!gpsInitOk) {
     Serial.println(F("ERROR: GPS module (myGNSS.begin()) failed to initialize!"));
+    Serial.println(F("   → Skipping GPS configuration"));
+    g_gps_initialized_ok = false;
     g_last_error_code = SENSOR_INIT_FAIL_GPS;
-    // Note: Unlike other sensors, we might not want to 'return' here,
-    // as the system might still attempt to configure and use it later.
-    // The g_icm20948_ready or equivalent for GPS isn't explicitly set here,
-    // but isSensorSuiteHealthy would catch this if GPS is vital.
+    return;
   }
-  
+
+  g_gps_initialized_ok = true;
+
   // Configure the GPS module
   Serial.print(F("Configuring GPS..."));
-  
-  // Set the I2C port to output UBX only (turn off NMEA noise)
+
+  // Set the port to output UBX only (turn off NMEA noise)
+#if GPS_USE_SPI
+  myGNSS.setSPIOutput(COM_TYPE_UBX);
+  const uint8_t gpsComPort = COM_PORT_SPI;
+#else
   myGNSS.setI2COutput(COM_TYPE_UBX);
-  
+  const uint8_t gpsComPort = COM_PORT_I2C;
+#endif
+
+  wdt.feed();
+
   // Configure in a single block
   bool configSuccess = true;
   configSuccess &= myGNSS.setAutoPVT(true);
   configSuccess &= myGNSS.setNavigationFrequency(5);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, COM_PORT_I2C, 1);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, COM_PORT_I2C, 5);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, COM_PORT_I2C, 1);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, COM_PORT_I2C, 1);
-  
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, gpsComPort, 1);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, gpsComPort, 5);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, gpsComPort, 1);
+  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, gpsComPort, 1);
+
+  wdt.feed();
+
   Serial.println(configSuccess ? F("OK") : F("failed"));
-  
+
   // Ensure debugging is still in the proper state after initialization
   setGPSDebugging(enableGPSDebug);
 }
@@ -123,6 +154,11 @@ void gps_init() {
 // }
 
 bool gps_read() {
+  // Skip if GPS module failed to initialize - avoid polling dead SPI/I2C bus
+  if (!g_gps_initialized_ok) {
+    return false;
+  }
+
   // Update GPS data if available
   if (myGNSS.getPVT()) {
     // Get basic positioning data
@@ -130,9 +166,19 @@ bool gps_read() {
     GPS_longitude = myGNSS.getLongitude();
     GPS_altitude = myGNSS.getAltitudeMSL();
     GPS_speed = myGNSS.getGroundSpeed();
-    GPS_fixType = myGNSS.getFixType();
-    SIV = myGNSS.getSIV();
-    
+    byte rawFixType = myGNSS.getFixType();
+    byte rawSIV = myGNSS.getSIV();
+
+    // Validate GPS data - reject corrupted values from bus errors
+    if (rawFixType > 5) {
+      // Fix type must be 0-5 per u-blox spec; anything else is corrupted
+      GPS_fixType = 0;
+      SIV = 0;
+      return true; // Data was read but is invalid, skip further processing
+    }
+    GPS_fixType = rawFixType;
+    SIV = (rawSIV <= 100) ? rawSIV : 0; // Reject unrealistic satellite counts
+
     // Update GPS time variables if we have a valid fix
     if (GPS_fixType > 0) {
       GPS_year = myGNSS.getYear();

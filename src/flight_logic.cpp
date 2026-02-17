@@ -6,7 +6,9 @@
 #include "utility_functions.h" // For get_accel_magnitude(), getStateName(), isSensorSuiteHealthy()
 #include "state_management.h" // For saveStateToEEPROM()
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
+#if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance_set_target_orientation_euler()
+#endif
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
 #include "gps_functions.h" // For getGPSAltitude() and getFixType()
 #include <Adafruit_NeoPixel.h>
@@ -41,6 +43,11 @@ extern bool ms5611_initialized_ok; // Declared extern for isSensorSuiteHealthy f
 extern float g_kalmanRoll;
 extern float g_kalmanPitch;
 extern float g_kalmanYaw;
+#if ENABLE_GUIDANCE == 1
+extern float g_kalmanRollRate;
+extern float g_kalmanPitchRate;
+extern float g_kalmanYawRate;
+#endif
 
 // Global variables for flight logic state progression, defined in this file
 unsigned long boostEndTime = 0;
@@ -51,6 +58,33 @@ float previousApogeeDetectAltitude = 0.0f;
 float lastLandingCheckAltitudeAgl = 0.0f;
 int descendingCount = 0;
 static unsigned long lastStateBroadcastTime = 0; // For broadcasting state when CSV is off
+
+// Stability metrics tracking for logging
+static float max_pitch_rate_current_state_rps = 0.0f;
+static float max_roll_rate_current_state_rps = 0.0f;
+static float max_yaw_rate_current_state_rps = 0.0f;
+static float max_pitch_att_err_current_state_rad = 0.0f;
+static float max_roll_att_err_current_state_rad = 0.0f;
+static float max_yaw_att_err_current_state_rad = 0.0f;
+static uint8_t current_stability_flags = 0; // Bitfield: 1=Rate, 2=Att, 4=Sat
+
+
+// Helper function to convert radians to degrees for logging max values
+static inline float rad_to_deg_local(float rad) {
+    return rad * (180.0f / M_PI);
+}
+
+// Helper function to reset stability metrics for logging at state changes
+static void reset_max_stability_metrics() {
+    max_pitch_rate_current_state_rps = 0.0f;
+    max_roll_rate_current_state_rps = 0.0f;
+    max_yaw_rate_current_state_rps = 0.0f;
+    max_pitch_att_err_current_state_rad = 0.0f;
+    max_roll_att_err_current_state_rad = 0.0f;
+    max_yaw_att_err_current_state_rad = 0.0f;
+    current_stability_flags = 0; // Reset flags as well
+}
+
 
 // Helper function to set LED color based on flight state
 void setFlightStateLED(FlightState state) {
@@ -130,6 +164,13 @@ void ProcessFlightState() {
                 g_stateEntryTime = millis(); // Ensure state entry time is updated
                 // When we transition to error, we should immediately save and log.
                 saveStateToEEPROM();
+                // Populate stability flags if this error was due to stability
+                if (g_last_error_code == GUIDANCE_STABILITY_FAIL) {
+                    // The stability_status_g in guidance_control would have the specifics
+                    // For now, just a general flag. More detailed flags could be set here
+                    // based on which check failed if guidance_check_stability provided more info.
+                    current_stability_flags |= 0b001; // General stability fail flag for logging
+                }
                 WriteLogData(true); // Log immediately with the error code
                 setFlightStateLED(g_currentFlightState);
                 g_pixels.show(); // Explicitly show error LED
@@ -225,15 +266,63 @@ void ProcessFlightState() {
         newStateSignal = true;
         g_previousFlightState = g_currentFlightState;
         g_stateEntryTime = millis();
+        reset_max_stability_metrics(); // Reset here for any state change
+        #if ENABLE_GUIDANCE == 1
+        guidance_reset_stability_status(); // Also reset guidance internal stability timers
+        #endif
 
         if (g_debugFlags.enableSystemDebug) {
             Serial.print(F("Transitioning to state: "));
             Serial.println(getStateName(g_currentFlightState));
         }
+        // Populate LogData with max stability metrics from the *previous* state before resetting.
+        // This means currentLogData needs to be populated *before* reset_max_stability_metrics if we want to log them.
+        // However, WriteLogData is called *after* this block.
+        // So, the stability metrics logged will be the fresh (zeroed) ones for the new state's first log entry.
+        // This is acceptable. Max values will be captured on subsequent logs within the new state.
         WriteLogData(true);
         saveStateToEEPROM();
         setFlightStateLED(g_currentFlightState);
     }
+
+    // Populate stability metrics for the current log entry BEFORE WriteLogData is called in the main loop.
+    // These are instantaneous values or max-so-far values for the *current* processing cycle.
+    // The LogData struct expects 'max_..._so_far' which implies these are accumulated.
+    // The reset_max_stability_metrics() call above clears them on state change.
+    // We need to update them during BOOST/COAST before WriteLogData happens.
+    // Let's assume currentLogData is populated elsewhere with instantaneous rates/errors,
+    // and we update the 'max_..._so_far' fields here based on those.
+
+    // For logging, we'll update the 'max_..._so_far' fields in currentLogData
+    // This should ideally be done where currentLogData is populated, right before WriteLogData()
+    // For now, we will assume that currentLogData.euler_roll, .euler_pitch, .euler_yaw,
+    // .icm_gyro[0,1,2] are fresh for this cycle.
+
+    if (g_currentFlightState == BOOST || g_currentFlightState == COAST) {
+        #if ENABLE_GUIDANCE == 1
+        if (fabs(g_kalmanPitchRate) > fabs(max_pitch_rate_current_state_rps)) max_pitch_rate_current_state_rps = g_kalmanPitchRate;
+        if (fabs(g_kalmanRollRate) > fabs(max_roll_rate_current_state_rps)) max_roll_rate_current_state_rps = g_kalmanRollRate;
+        if (fabs(g_kalmanYawRate) > fabs(max_yaw_rate_current_state_rps)) max_yaw_rate_current_state_rps = g_kalmanYawRate;
+
+        float temp_target_roll, temp_target_pitch, temp_target_yaw;
+        guidance_get_target_euler_angles(temp_target_roll, temp_target_pitch, temp_target_yaw);
+
+        float pitch_err = fabs(temp_target_pitch - g_kalmanPitch);
+        float roll_err = fabs(temp_target_roll - g_kalmanRoll);
+        float yaw_err = fabs(temp_target_yaw - g_kalmanYaw);
+        // Normalize yaw error for max tracking
+        while (yaw_err > M_PI) yaw_err -= 2.0f * M_PI;
+        while (yaw_err < -M_PI) yaw_err += 2.0f * M_PI;
+        yaw_err = fabs(yaw_err);
+
+        if (pitch_err > max_pitch_att_err_current_state_rad) max_pitch_att_err_current_state_rad = pitch_err;
+        if (roll_err > max_roll_att_err_current_state_rad) max_roll_att_err_current_state_rad = roll_err;
+        if (yaw_err > max_yaw_att_err_current_state_rad) max_yaw_att_err_current_state_rad = yaw_err;
+        #endif // ENABLE_GUIDANCE
+    }
+    // current_stability_flags is updated if a stability error occurs.
+    // The max_..._current_state_rps etc. are updated above. These will be used
+    // by the main loop in TripleT_Flight_Firmware.cpp to populate currentLogData.
 
     if (newStateSignal) {
         switch (g_currentFlightState) {
@@ -272,21 +361,65 @@ void ProcessFlightState() {
                         Serial.println(F(" m above current launch altitude."));
                     }
                 }
+                // Reset stability monitoring for the upcoming flight
+                reset_max_stability_metrics();
+                #if ENABLE_GUIDANCE == 1
+                guidance_reset_stability_status();
+                #endif
                 break;
             case BOOST:
                 if (g_useKalmanFilter && !g_icm20948_ready) {
+                    g_last_error_code = SENSOR_INIT_FAIL_ICM20948; // Or a more specific "guidance sensor missing"
                     g_currentFlightState = ERROR;
-                    if (g_debugFlags.enableSystemDebug) Serial.println(F("ERROR: Cannot detect liftoff; ICM20948 not ready."));
+                    if (g_debugFlags.enableSystemDebug) Serial.println(F("ERROR: ICM20948 not ready for BOOST (guidance depends on it)."));
+                    break; // Critical error, break from switch
                 }
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("BOOST: Liftoff detected!"));
                 g_maxAltitudeReached = currentAglAlt > 0 ? currentAglAlt : 0;
-                boostEndTime = 0;
+                boostEndTime = 0; // Reset boostEndTime, it's set by detectBoostEnd
+                // reset_max_stability_metrics(); // Already done when transitioning to ARMED, and again from ARMED to BOOST
+                // guidance_reset_stability_status();
                 break;
-            case COAST:
+            case COAST: {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("COAST: Motor burnout. Coasting to apogee."));
                 descendingCount = 0;
-                previousApogeeDetectAltitude = currentAbsoluteBaroAlt;
+                previousApogeeDetectAltitude = currentAbsoluteBaroAlt; // Capture altitude at start of coast for some apogee logic
+
+                #if ENABLE_GUIDANCE == 1
+                {
+                    // Set attitude hold target based on orientation at motor burnout (end of BOOST)
+                    float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
+                if (g_useKalmanFilter && g_icm20948_ready) {
+                    targetRollRad = g_kalmanRoll;    // These are current values at transition
+                    targetPitchRad = g_kalmanPitch;
+                    targetYawRad = g_kalmanYaw;
+                    if (g_debugFlags.enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD: Using Kalman orientation for target at COAST entry."));
+                    }
+                } else if (g_icm20948_ready) { // Fallback if Kalman somehow not primary
+                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad);
+                    if (g_debugFlags.enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD: Using ICM quaternion for target at COAST entry."));
+                    }
+                } else {
+                    if (g_debugFlags.enableSystemDebug) {
+                        Serial.println(F("ATT_HOLD_WARN: No valid orientation source at COAST entry. Target is 0,0,0."));
+                    }
+                }
+                guidance_set_target_orientation_euler(targetRollRad, targetPitchRad, targetYawRad);
+                if (g_debugFlags.enableSystemDebug) {
+                    Serial.print(F("ATT_HOLD: Set target R:")); Serial.print(targetRollRad * (180.0f/PI), 2);
+                    Serial.print(F(" P:")); Serial.print(targetPitchRad * (180.0f/PI), 2);
+                    Serial.print(F(" Y:")); Serial.println(targetYawRad * (180.0f/PI), 2);
+                }
+                }
+                #else
+                if (g_debugFlags.enableSystemDebug) {
+                    Serial.println(F("COAST: Guidance disabled - passive flight mode"));
+                }
+                #endif
                 break;
+            }
             case APOGEE:
                 if (g_debugFlags.enableSystemDebug) {
                     Serial.print(F("APOGEE: Peak altitude reached: "));
@@ -379,45 +512,79 @@ void ProcessFlightState() {
         case ARMED:
             if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) > BOOST_ACCEL_THRESHOLD) {
                 g_currentFlightState = BOOST;
+                // reset_max_stability_metrics(); // Already done in newStateSignal for ARMED
+                // guidance_reset_stability_status(); // Already done in newStateSignal for ARMED
             }
             break;
         case BOOST:
-            detectBoostEnd();
-            if (boostEndTime > 0) {
-                float targetRollRad = 0.0f, targetPitchRad = 0.0f, targetYawRad = 0.0f;
-                if (g_useKalmanFilter && g_icm20948_ready) {
-                    targetRollRad = g_kalmanRoll;
-                    targetPitchRad = g_kalmanPitch;
-                    targetYawRad = g_kalmanYaw;
-                    if (g_debugFlags.enableSystemDebug) {
-                        Serial.println(F("ATT_HOLD: Using Kalman orientation for target at BOOST->COAST."));
-                    }
-                } else if (g_icm20948_ready) {
-                    convertQuaternionToEuler(icm_q0, icm_q1, icm_q2, icm_q3, targetRollRad, targetPitchRad, targetYawRad);
-                    if (g_debugFlags.enableSystemDebug) {
-                        Serial.println(F("ATT_HOLD: Using ICM quaternion conversion for target at BOOST->COAST."));
-                    }
-                } else {
-                    targetRollRad = 0.0f;
-                    targetPitchRad = 0.0f;
-                    targetYawRad = 0.0f;
-                    if (g_debugFlags.enableSystemDebug) {
-                        Serial.println(F("ATT_HOLD_WARN: No valid orientation source at BOOST->COAST. Setting target to 0,0,0."));
-                    }
+            #if ENABLE_GUIDANCE == 1
+            { // Scope for act_x, act_y, act_z
+                float act_x, act_y, act_z; // x=pitch, y=roll, z=yaw (from guidance_get_actuator_outputs)
+                guidance_get_actuator_outputs(act_x, act_y, act_z);
+
+                // Call stability check: current R,P,Y, R_rate,P_rate,Y_rate, cmd_pitch, cmd_yaw, cmd_roll
+                guidance_check_stability(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
+                                         g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate,
+                                         act_x, act_z, act_y, // Map to: pitch_cmd, yaw_cmd, roll_cmd
+                                         millis());
+
+                if (guidance_is_stability_compromised()) {
+                    Serial.println(F("CRITICAL: Guidance stability compromised during BOOST!"));
+                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
+                    current_stability_flags |= 0b001; // Mark general stability failure
+                    g_currentFlightState = ERROR;
+                    break; // Exit switch case, newStateSignal block will handle logging/saving
                 }
-                guidance_set_target_orientation_euler(targetRollRad, targetPitchRad, targetYawRad);
-                if (g_debugFlags.enableSystemDebug) {
-                    Serial.print(F("ATT_HOLD: Set target orientation R:")); Serial.print(targetRollRad * (180.0f/PI), 2);
-                    Serial.print(F(" P:")); Serial.print(targetPitchRad * (180.0f/PI), 2);
-                    Serial.print(F(" Y:")); Serial.println(targetYawRad * (180.0f/PI), 2);
-                }
-                g_currentFlightState = COAST;
             }
+            #endif
+
             if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt > g_maxAltitudeReached) {
                  g_maxAltitudeReached = currentAglAlt;
             }
+            detectBoostEnd(); // This function internally sets g_currentFlightState = COAST if burnout detected
             break;
+
         case COAST:
+            // Reset apogee detection counters on first entry to COAST state
+            // This prevents false apogee detection from stale counter values on flight reuse
+            {
+                static FlightState lastCoastState = STARTUP;
+                static bool coastCountersReset = false;
+
+                if (lastCoastState != COAST && !coastCountersReset) {
+                    // First entry into COAST - reset all apogee detection static counters
+                    resetApogeeDetectionCounters();
+                    coastCountersReset = true;
+                }
+
+                lastCoastState = g_currentFlightState;
+
+                // Reset flag when leaving COAST so it triggers again on next COAST entry
+                if (g_currentFlightState != COAST) {
+                    coastCountersReset = false;
+                }
+            }
+
+            #if ENABLE_GUIDANCE == 1
+            { // Scope for act_x_c, act_y_c, act_z_c
+                float act_x_c, act_y_c, act_z_c; // x=pitch, y=roll, z=yaw
+                guidance_get_actuator_outputs(act_x_c, act_y_c, act_z_c);
+
+                guidance_check_stability(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
+                                         g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate,
+                                         act_x_c, act_z_c, act_y_c, // Map to: pitch_cmd, yaw_cmd, roll_cmd
+                                         millis());
+
+                if (guidance_is_stability_compromised()) {
+                    Serial.println(F("CRITICAL: Guidance stability compromised during COAST!"));
+                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
+                    current_stability_flags |= 0b001; // Mark general stability failure
+                    g_currentFlightState = ERROR;
+                    break; // Exit switch case
+                }
+            }
+            #endif
+
             if (detectApogee()) {
                 g_currentFlightState = APOGEE;
             }
@@ -428,27 +595,45 @@ void ProcessFlightState() {
         case APOGEE:
             if (DROGUE_PRESENT) {
                 g_currentFlightState = DROGUE_DEPLOY;
+                // Initialize entry time for pyro logic
+                g_stateEntryTime = millis(); 
             } else if (MAIN_PRESENT) {
                 g_currentFlightState = MAIN_DEPLOY;
+                g_stateEntryTime = millis();
             } else {
                 g_currentFlightState = DROGUE_DESCENT;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("Warning: Apogee reached but no parachutes configured!"));
             }
             break;
-        case DROGUE_DEPLOY:
+        case DROGUE_DEPLOY: {
+            // Non-blocking Pyro Logic
+            static bool drogueHasFired = false;
             if (DROGUE_PRESENT) {
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
-                digitalWrite(PYRO_CHANNEL_1, HIGH);
-                delay(PYRO_FIRE_DURATION);
-                digitalWrite(PYRO_CHANNEL_1, LOW);
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
+                unsigned long timeInState = millis() - g_stateEntryTime;
+
+                if (!drogueHasFired) {
+                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
+                    digitalWrite(PYRO_CHANNEL_1, HIGH);
+                    drogueHasFired = true;
+                }
+
+                if (timeInState >= PYRO_FIRE_DURATION) {
+                    digitalWrite(PYRO_CHANNEL_1, LOW);
+                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
+                    drogueHasFired = false;
+                    g_currentFlightState = DROGUE_DESCENT;
+                }
+            } else {
+                 drogueHasFired = false;
+                 g_currentFlightState = DROGUE_DESCENT;
             }
-            g_currentFlightState = DROGUE_DESCENT;
             break;
+        }
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
                 if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt < g_main_deploy_altitude_m_agl) {
                     g_currentFlightState = MAIN_DEPLOY;
+                    g_stateEntryTime = millis(); // Initialize timer for MAIN_DEPLOY
                 }
             } else {
                 if (detectLanding()) {
@@ -456,16 +641,30 @@ void ProcessFlightState() {
                 }
             }
             break;
-        case MAIN_DEPLOY:
+        case MAIN_DEPLOY: {
+            // Non-blocking Pyro Logic
+            static bool mainHasFired = false;
             if (MAIN_PRESENT) {
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
-                digitalWrite(PYRO_CHANNEL_2, HIGH);
-                delay(PYRO_FIRE_DURATION);
-                digitalWrite(PYRO_CHANNEL_2, LOW);
-                if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
+                 unsigned long timeInState = millis() - g_stateEntryTime;
+
+                 if (!mainHasFired) {
+                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
+                     digitalWrite(PYRO_CHANNEL_2, HIGH);
+                     mainHasFired = true;
+                 }
+
+                 if (timeInState >= PYRO_FIRE_DURATION) {
+                     digitalWrite(PYRO_CHANNEL_2, LOW);
+                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
+                     mainHasFired = false;
+                     g_currentFlightState = MAIN_DESCENT;
+                 }
+            } else {
+                mainHasFired = false;
+                g_currentFlightState = MAIN_DESCENT;
             }
-            g_currentFlightState = MAIN_DESCENT;
             break;
+        }
         case MAIN_DESCENT:
             if (detectLanding()) {
                 g_currentFlightState = LANDED;
@@ -726,20 +925,35 @@ void detectBoostEnd() {
     }
 }
 
+// File-scope static variables for apogee detection
+// Moved from function scope to allow proper reset between flights
+static int s_baro_descending_count = 0;
+static int s_accel_negative_count = 0;
+static int s_gps_descending_count = 0;
+static float s_maxGpsAltitude = 0.0f;
+
+// Helper function to reset apogee detection counters
+// Called when entering COAST state to prevent false apogee from stale values
+void resetApogeeDetectionCounters() {
+    s_baro_descending_count = 0;
+    s_accel_negative_count = 0;
+    s_gps_descending_count = 0;
+    s_maxGpsAltitude = 0.0f;
+}
+
 bool detectApogee() {
     bool apogeeDetected = false;
 
     // Method 1: Barometric Detection (Primary)
-    static int baro_descending_count = 0;
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         float currentBaroAlt = ms5611_get_altitude();
         if (currentBaroAlt < g_maxAltitudeReached) {
-            baro_descending_count++;
+            s_baro_descending_count++;
         } else {
-            baro_descending_count = 0;
+            s_baro_descending_count = 0;
         }
 
-        if (baro_descending_count >= APOGEE_CONFIRMATION_COUNT) {
+        if (s_baro_descending_count >= APOGEE_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Barometer)"));
             apogeeDetected = true;
         }
@@ -747,14 +961,13 @@ bool detectApogee() {
 
     // Method 2: Accelerometer Detection (Secondary)
     if (!apogeeDetected && g_icm20948_ready) {
-        static int accel_negative_count = 0;
         if (icm_accel[2] < 0.0f) {
-            accel_negative_count++;
+            s_accel_negative_count++;
         } else {
-            accel_negative_count = 0;
+            s_accel_negative_count = 0;
         }
 
-        if (accel_negative_count >= APOGEE_ACCEL_CONFIRMATION_COUNT) {
+        if (s_accel_negative_count >= APOGEE_ACCEL_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Accelerometer)"));
             apogeeDetected = true;
         }
@@ -762,18 +975,16 @@ bool detectApogee() {
 
     // Method 3: GPS Altitude Detection (Tertiary)
     if (!apogeeDetected && getFixType() > 0) {
-        static int gps_descending_count = 0;
-        static float maxGpsAltitude = 0.0f;
         float currentGpsAlt = getGPSAltitude();
 
-        if (currentGpsAlt > maxGpsAltitude) {
-            maxGpsAltitude = currentGpsAlt;
-            gps_descending_count = 0;
-        } else if (currentGpsAlt < maxGpsAltitude - 5.0) {
-            gps_descending_count++;
+        if (currentGpsAlt > s_maxGpsAltitude) {
+            s_maxGpsAltitude = currentGpsAlt;
+            s_gps_descending_count = 0;
+        } else if (currentGpsAlt < s_maxGpsAltitude - 5.0) {
+            s_gps_descending_count++;
         }
 
-        if (gps_descending_count >= APOGEE_GPS_CONFIRMATION_COUNT) {
+        if (s_gps_descending_count >= APOGEE_GPS_CONFIRMATION_COUNT) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (GPS)"));
             apogeeDetected = true;
         }
@@ -810,11 +1021,12 @@ bool detectLanding() {
     readIndex = (readIndex + 1) % numReadings;
     float avgAlt = total / numReadings;
 
+    static unsigned long firstLandedTime = 0; // Moved to function scope
+    
     // Check for landing conditions
     if (fabs(avgAlt - g_launchAltitude) < LANDING_ALTITUDE_STABLE_THRESHOLD) {
         float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
         if (accelMag >= LANDING_ACCEL_MIN_G && accelMag <= LANDING_ACCEL_MAX_G) {
-            static unsigned long firstLandedTime = 0;
             if (firstLandedTime == 0) firstLandedTime = millis();
             if (millis() - firstLandedTime >= LANDING_CONFIRMATION_TIME_MS) {
                 return true;
@@ -822,7 +1034,7 @@ bool detectLanding() {
         }
     } else {
         // Reset landing timer if altitude condition is not met
-        // firstLandedTime = 0;
+        firstLandedTime = 0;
     }
 
     return false;

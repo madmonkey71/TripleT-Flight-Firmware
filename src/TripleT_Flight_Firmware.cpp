@@ -239,11 +239,11 @@ bool createNewLogFile(SdFat& sd_obj, SFE_UBLOX_GNSS& gnss, FsFile& logFile_obj_r
     // This might require getGPSDateTime(gnss, year, month, day, hour, minute, second);
     getGPSDateTime(year, month, day, hour, minute, second); // If this uses global myGNSS, it won't use the passed 'gnss'
     
-    sprintf(local_fileName_buf, "DATA_%04d%02d%02d_%02d%02d%02d.csv",
+    snprintf(local_fileName_buf, sizeof(local_fileName_buf), "DATA_%04d%02d%02d_%02d%02d%02d.csv",
       year, month, day, hour, minute, second);
   } else {
     // No GPS fix, use millis()
-    sprintf(local_fileName_buf, "LOG_%lu.csv", millis());
+    snprintf(local_fileName_buf, sizeof(local_fileName_buf), "LOG_%lu.csv", millis());
   }
   
   Serial.print(F("Creating log file: "));
@@ -845,9 +845,9 @@ void loop() {
       if (bufferIndex < sizeof(inputBuffer) - 1) {
         inputBuffer[bufferIndex++] = c;
       } else {
-        // Buffer overflow: discard characters or reset
-        // For safety, let's keep the buffer full but don't overflow
-        // Alternatively, we could reset here: bufferIndex = 0;
+        // Buffer overflow: reset and notify
+        Serial.println(F("ERROR: Command too long, buffer reset."));
+        bufferIndex = 0;
       }
     }
   }

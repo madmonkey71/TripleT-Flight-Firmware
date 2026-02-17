@@ -605,28 +605,30 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("Warning: Apogee reached but no parachutes configured!"));
             }
             break;
-        case DROGUE_DEPLOY:
+        case DROGUE_DEPLOY: {
             // Non-blocking Pyro Logic
+            static bool drogueHasFired = false;
             if (DROGUE_PRESENT) {
                 unsigned long timeInState = millis() - g_stateEntryTime;
-                
-                if (timeInState == 0) { // First loop iteration (or close enough)
+
+                if (!drogueHasFired) {
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
                     digitalWrite(PYRO_CHANNEL_1, HIGH);
+                    drogueHasFired = true;
                 }
-                
-                // Ensure pin is HIGH
-                digitalWrite(PYRO_CHANNEL_1, HIGH);
 
                 if (timeInState >= PYRO_FIRE_DURATION) {
                     digitalWrite(PYRO_CHANNEL_1, LOW);
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
+                    drogueHasFired = false;
                     g_currentFlightState = DROGUE_DESCENT;
                 }
             } else {
-                 g_currentFlightState = DROGUE_DESCENT; // Should have been handled in APOGEE, but safe fallback
+                 drogueHasFired = false;
+                 g_currentFlightState = DROGUE_DESCENT;
             }
             break;
+        }
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
                 if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt < g_main_deploy_altitude_m_agl) {
@@ -639,28 +641,30 @@ void ProcessFlightState() {
                 }
             }
             break;
-        case MAIN_DEPLOY:
+        case MAIN_DEPLOY: {
             // Non-blocking Pyro Logic
+            static bool mainHasFired = false;
             if (MAIN_PRESENT) {
                  unsigned long timeInState = millis() - g_stateEntryTime;
 
-                 if (timeInState == 0) {
+                 if (!mainHasFired) {
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
                      digitalWrite(PYRO_CHANNEL_2, HIGH);
+                     mainHasFired = true;
                  }
-                 
-                 // Ensure pin is HIGH
-                 digitalWrite(PYRO_CHANNEL_2, HIGH);
 
                  if (timeInState >= PYRO_FIRE_DURATION) {
                      digitalWrite(PYRO_CHANNEL_2, LOW);
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
+                     mainHasFired = false;
                      g_currentFlightState = MAIN_DESCENT;
                  }
             } else {
+                mainHasFired = false;
                 g_currentFlightState = MAIN_DESCENT;
             }
             break;
+        }
         case MAIN_DESCENT:
             if (detectLanding()) {
                 g_currentFlightState = LANDED;

@@ -153,7 +153,7 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
             float sea_level_Pa = STANDARD_SEA_LEVEL_PRESSURE * HPA_TO_PA_CONVERSION_FACTOR; // Convert from hPa to Pa
             
             float raw_altitude = HYPSOMETRIC_CONSTANT_A * (1.0 - pow(current_pressure_Pa / sea_level_Pa, HYPSOMETRIC_EXPONENT));
-            baro_altitude_offset = (GPS_altitude / MM_TO_M_CONVERSION_FACTOR) - raw_altitude;  // Convert GPS altitude from mm to m
+            baro_altitude_offset = (static_cast<float>(GPS_altitude) / MM_TO_M_CONVERSION_FACTOR) - raw_altitude;  // Convert GPS altitude from mm to m
             
             Serial.print(F("Calibration attempt #"));
             Serial.print(attempts);

@@ -1,6 +1,6 @@
 # Hardware Requirements
 
-**Version:** v0.51  
+**Version:** v0.10.0
 **Target Platform:** Teensy 4.1
 
 ## Core Components

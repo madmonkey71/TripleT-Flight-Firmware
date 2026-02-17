@@ -505,7 +505,8 @@ void processCommand(const char* command,
         char flagIdentifier[32]; 
         
         if (len < sizeof(flagIdentifier)) {
-            strcpy(flagIdentifier, flagPart);
+            strncpy(flagIdentifier, flagPart, sizeof(flagIdentifier) - 1);
+            flagIdentifier[sizeof(flagIdentifier) - 1] = '\0';
             
             // Check for " on"
             if (len > 3 && strcasecmp(flagIdentifier + len - 3, " on") == 0) {

@@ -97,6 +97,11 @@ void recoverFromPowerLoss() {
 
   // Valid data loaded into stateData. Now, restore global state variables.
   FlightState savedStateEnum = static_cast<FlightState>(stateData.state);
+  // Validate enum value is within valid range
+  if (static_cast<uint8_t>(savedStateEnum) > static_cast<uint8_t>(ERROR)) {
+    Serial.println(F("WARNING: Invalid FlightState in EEPROM, defaulting to STARTUP"));
+    savedStateEnum = STARTUP;
+  }
   currentFlightState = savedStateEnum; // Restore current flight state
 
   // Restore other critical variables based on the loaded stateData

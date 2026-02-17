@@ -1,8 +1,8 @@
 # TripleT Flight Firmware
 
-**Current Version:** v0.51  
-**Current State:** Beta (Ready for Controlled Test Flights)  
-**Last Updated:** July 2025
+**Current Version:** v0.10.0
+**Current State:** Pre-Release (Phases 1-5 Complete, Phase 6 Planning)
+**Last Updated:** February 2026
 
 ## Project Lead
 **Matthew Thom** - Project Lead and Primary Developer
@@ -15,21 +15,31 @@ This firmware is designed for the **Teensy 4.1** microcontroller and provides co
 
 - **Multi-Phase Flight Management**: Handles all 14 flight phases from pad idle through recovery.
 - **Advanced Sensor Fusion**: Kalman filter combining data from ICM-20948 IMU, KX134 high-G accelerometer, MS5611 barometer, and u-blox GPS.
+- **Hardware Abstraction Layer (HAL)**: Modular architecture enabling desktop testing without hardware.
+- **Sensor Modularity**: Interface-based sensor design supporting ICM-20948, BNO085, and KX134 with automatic failover.
 - **Dual Accelerometer Strategy**: Intelligently uses KX134 for high-G events and ICM-20948 for general flight.
-- **Redundant Apogee Detection**: Four distinct methods: barometric, accelerometer, GPS, and backup timer.
+- **Multi-Path Apogee Detection**: Four methods (barometric, accelerometer, GPS, backup timer) with 2-of-3 voting consensus.
 - **Comprehensive Recovery System**: SOS audio beacon, LED strobe patterns, and GPS coordinate transmission (Serial).
-- **Persistent Calibration**: Magnetometer calibration data is saved to EEPROM, removing the need to recalibrate before every flight.
+- **Watchdog Recovery**: Automatic state recovery from power loss or watchdog reset via EEPROM persistence.
 - **Real-time Data Logging**: 62 data points logged to SD card in CSV format.
+- **CI/CD Testing**: Unit tests run on every push via GitHub Actions.
 - **Interactive Command Interface**: Rich serial command system for diagnostics and control.
 
 ## Project Status & Roadmap
 
-Please refer to `UPDATED_GAP_ANALYSIS_2025.md` for the most up-to-date status of features.
+See `IMPLEMENTATION_PLAN_2026.md` for the full roadmap and `PHASE_6_PLAN.md` for next steps.
 
-**Major Missing Features:**
-1. **Live Telemetry:** The wireless link code is currently a placeholder.
-2. **Automated Testing:** Unit tests are not yet implemented.
-3. **Quaternion GNC:** Orientation logic currently relies on Euler angles.
+**Completed Phases:**
+- Phase 1: HAL Foundation (v0.7.0)
+- Phase 2: Sensor Modularity (v0.8.0)
+- Phase 3: Testing Infrastructure (v0.9.0)
+- Phase 4: Safety & Reliability (v0.10.0)
+- Phase 5: Documentation
+
+**Remaining Work:**
+1. **Live Telemetry:** Wireless link code is a placeholder (Phase 6).
+2. **Trajectory Following:** Waypoint navigation under development (Phase 6).
+3. **Test Coverage Expansion:** Unit test suite growing toward 47+ tests.
 
 ## Quick Start
 
@@ -41,7 +51,7 @@ Please refer to `UPDATED_GAP_ANALYSIS_2025.md` for the most up-to-date status of
 
 ## Documentation
 
-- 📋 **[Gap Analysis](UPDATED_GAP_ANALYSIS_2025.md)** - Current progress and remaining tasks.
+- 📋 **[Implementation Plan](IMPLEMENTATION_PLAN_2026.md)** - Full roadmap and phase completion status.
 - 🔧 **[Hardware Requirements](docs/HARDWARE.md)** - Complete hardware setup and pin configuration.
 - 🚀 **[Flight Operations](docs/FLIGHT_OPERATIONS.md)** - Flight states, operations, and safety procedures.
 - ⚙️ **[Configuration Guide](docs/CONFIGURATION.md)** - Parameter settings and customization.

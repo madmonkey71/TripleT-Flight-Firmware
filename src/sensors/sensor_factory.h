@@ -44,12 +44,13 @@ public:
   }
 
   // Create the dual-sensor IMU manager for automatic failover
+  // Uses static allocation to prevent heap fragmentation on embedded systems
   static IMUManager* createIMUManager() {
-    IMUManager* manager = new IMUManager();
-    IMUInterface* primary = createPrimarySensor();
-    IMUInterface* backup = createBackupSensor();
-    manager->begin(primary, backup);
-    return manager;
+    static IMUManager manager;
+    static IMUInterface* primary = createPrimarySensor();
+    static IMUInterface* backup = createBackupSensor();
+    manager.begin(primary, backup);
+    return &manager;
   }
 
   // Create just primary sensor (if you don't want redundancy)

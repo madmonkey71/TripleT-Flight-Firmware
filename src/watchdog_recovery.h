@@ -43,18 +43,38 @@ public:
   // ========================================================================
 
   static RecoveryReason detectResetReason() {
-    // Check Teensy reset reason register
-    // NOTE: This is platform-specific and may require hardware access
-    // For now, we provide a placeholder
+#ifdef ARDUINO
+    // Teensy 4.1 (NXP i.MX RT1062) System Reset Controller Status Register
+    volatile uint32_t* SRC_SRSR = (volatile uint32_t*)0x400F8008;
+    uint32_t resetFlags = *SRC_SRSR;
 
-    // TODO: Read actual reset register from hardware:
-    // - Check if this is first power-on vs reset
-    // - Check watchdog reset bit
-    // - Check brownout reset bit
+    RecoveryReason reason = NORMAL_STARTUP;
 
-    // Placeholder: Always assume normal startup
-    // Production code should check hardware status registers
+    // Bit 3: WDOG1 reset, Bit 5: WDOG3 reset (Teensy WDT)
+    if (resetFlags & ((1 << 3) | (1 << 5))) {
+      reason = WATCHDOG_RESET;
+    }
+    // Bit 1: brownout reset
+    else if (resetFlags & (1 << 1)) {
+      reason = BROWNOUT_RESET;
+    }
+    // Bit 0: power-on reset
+    else if (resetFlags & (1 << 0)) {
+      reason = NORMAL_STARTUP;
+    }
+    // Bit 16: software reset
+    else if (resetFlags & (1 << 16)) {
+      reason = UNKNOWN_RESET;
+    }
+
+    // Clear status register by writing 1s to detected bits
+    *SRC_SRSR = resetFlags;
+
+    return reason;
+#else
+    // Desktop/test builds
     return NORMAL_STARTUP;
+#endif
   }
 
   static bool isWatchdogReset() {

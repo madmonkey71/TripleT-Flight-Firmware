@@ -1,7 +1,7 @@
 # Development Status
 
-**Version:** v0.51  
-**Last Updated:** July 2025
+**Version:** v0.10.0
+**Last Updated:** February 2026
 
 ## Development Status Assessment
 
@@ -41,7 +41,7 @@
 - 🚧 **Sensor Fusion Validation**: Kalman filter and sensor fusion implemented, but orientation accuracy needs validation against known reference data (physical testing)
 - 🚧 **Expanded Sensor Support**: Extend the platform to allow for a wider variety of sensor hardware and eventually the microprocessor platform (Long term)
 
-## Recent Updates (v0.51)
+## Recent Updates (v0.10.0)
 
 - ✅ **Critical Compilation Fixes**: Fixed multiple compilation errors including missing extern declarations, variable naming inconsistencies, function structure issues, and missing braces
 - ✅ **Enhanced Recovery State**: Implemented complete SOS audible beacon pattern with proper timing

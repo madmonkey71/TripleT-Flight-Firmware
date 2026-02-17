@@ -160,46 +160,55 @@ function isCSVDataMessage(message) {
     
     const trimmedMessage = message.trim();
     
-    // TEMPORARY: Much more lenient CSV detection for debugging
-    console.log(`CSV Detection: Checking message: "${trimmedMessage.substring(0, 50)}..."`);
-    
     // Check if it starts with a number (sequence number)
     if (!/^\d+/.test(trimmedMessage)) {
-        console.log('CSV Detection: Does not start with number');
         return false;
     }
     
     // Count comma-separated fields
     const fields = trimmedMessage.split(',');
-    console.log(`CSV Detection: Found ${fields.length} fields`);
     
-    // Much more lenient - just need a few fields
+    // Check for reasonable field count (CSV data should have many fields)
     if (fields.length < 5) {
-        console.log(`CSV Detection: Message has only ${fields.length} fields, need at least 5`);
         return false;
     }
-    
-    // Skip the field count check temporarily for debugging
-    // if (columnMappings && Math.abs(fields.length - columnMappings.length) > 10) {
-    //     console.log(`CSV Detection: Field count ${fields.length} differs too much from expected ${columnMappings.length}`);
-    //     return false;
-    // }
     
     // Very lenient numeric check - just check if first field is a number
     const firstField = fields[0].trim();
     if (!/^\d+$/.test(firstField)) {
-        console.log(`CSV Detection: First field (${firstField}) is not a pure number`);
         return false;
     }
     
-    console.log(`CSV Detection: ✓ Message identified as CSV data with ${fields.length} fields`);
     return true;
+}
+
+/**
+ * Parses servo command messages from the firmware debug output.
+ * @param {string} message - The message to parse
+ * @returns {object|null} Parsed servo data or null if not a servo command
+ */
+function parseServoCommand(message) {
+    // Pattern: "Servo CMDs (P,R,Y): 66, 86, 81"
+    const servoPattern = /^Servo CMDs \(P,R,Y\):\s*(\d+),\s*(\d+),\s*(\d+)$/;
+    const match = message.match(servoPattern);
+    
+    if (match) {
+        return {
+            isServoCommand: true,
+            timestamp: Date.now(), // Use current time since servo commands don't have timestamps
+            pitchServo: parseInt(match[1]),
+            rollServo: parseInt(match[2]),
+            yawServo: parseInt(match[3])
+        };
+    }
+    
+    return null;
 }
 
 /**
  * Categorizes a message type for appropriate handling.
  * @param {string} message - The incoming message to categorize
- * @returns {string} Message category: 'csv_data', 'info', 'system', 'unknown'
+ * @returns {string} Message category: 'csv_data', 'servo_command', 'info', 'system', 'unknown'
  */
 function categorizeMessage(message) {
     if (!message || typeof message !== 'string') {
@@ -208,6 +217,11 @@ function categorizeMessage(message) {
     
     if (isCSVDataMessage(message)) {
         return 'csv_data';
+    }
+    
+    // Check for servo command messages
+    if (parseServoCommand(message)) {
+        return 'servo_command';
     }
     
     if (shouldIgnoreMessage(message)) {
@@ -271,7 +285,7 @@ async function initDataParser() {
 
 /**
  * Parses a single line of text from the serial port.
- * It can handle both full CSV lines and the special JSON state messages.
+ * It can handle both full CSV lines, servo command messages, and special JSON state messages.
  * @param {string} line - The raw line of text from the serial port.
  * @returns {object|null} A structured data object or null if the line is not valid data.
  */
@@ -296,7 +310,13 @@ function parseData(line) {
         }
     }
 
-    // 2. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
+    // 2. Handle servo command messages: "Servo CMDs (P,R,Y): 66, 86, 81"
+    const servoData = parseServoCommand(trimmedLine);
+    if (servoData) {
+        return servoData;
+    }
+
+    // 3. Handle CSV data lines from firmware, which do not have a "CSV:" prefix.
     // We identify them by checking if the first part is a number (sequence number).
     const parts = trimmedLine.split(',');
     console.log("🔍 PARSE DEBUG: CSV parts:", parts.length, "Expected headers:", config.csvHeaders.length);

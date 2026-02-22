@@ -54,7 +54,7 @@
 
 // --- GPS Interface Configuration ---
 // Set GPS_USE_SPI to 1 for SPI connection, 0 for I2C connection
-#define GPS_USE_SPI 1 // 0=I2C (default), 1=SPI
+#define GPS_USE_SPI 0 // 0=I2C (default), 1=SPI
 
 // GPS SPI Pins (Targeting NXP MIMXRT1062 BGA Balls: E8=MOSI, E7=MISO, D7=CS,
 // D8=SCK) These correspond to Teensy 4.1 hardware SPI0: 11(MOSI), 12(MISO),
@@ -93,6 +93,8 @@
 #define COAST_ACCEL_THRESHOLD                                                  \
   0.5f // Acceleration threshold (in g) to detect the end of the boost phase
        // (motor burnout).
+#define COAST_CONFIRMATION_COUNT                                               \
+  3 // Consecutive readings below COAST_ACCEL_THRESHOLD to confirm burnout.
 #define APOGEE_CONFIRMATION_COUNT                                              \
   5 // Number of consecutive barometer readings required to confirm apogee.
 #define LANDING_CONFIRMATION_COUNT                                             \

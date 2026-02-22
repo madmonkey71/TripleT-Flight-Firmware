@@ -992,9 +992,17 @@ void ProcessFlightState() {
 void detectBoostEnd() {
     if (g_currentFlightState != BOOST) return;
 
+    static int coastConfirmCount = 0;
+
     if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
-        boostEndTime = millis();
-        g_currentFlightState = COAST;
+        coastConfirmCount++;
+        if (coastConfirmCount >= COAST_CONFIRMATION_COUNT) {
+            boostEndTime = millis();
+            g_currentFlightState = COAST;
+            coastConfirmCount = 0;
+        }
+    } else {
+        coastConfirmCount = 0;
     }
 }
 

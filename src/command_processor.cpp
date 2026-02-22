@@ -266,6 +266,7 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.println(F("  arm"));
   Serial.println(F("  clear_errors"));
   Serial.println(F("  clear_to_calibration"));
+  Serial.println(F("  skip_calibration      (skip GPS cal, use raw baro altitude)"));
   Serial.println(F("  sensor_requirements"));
   Serial.println(F("  scan_i2c"));
 
@@ -563,6 +564,30 @@ void processCommand(const char* command,
     }
     else if (strcasecmp(command, "scan_i2c") == 0) {
         scan_i2c();
+    }
+    else if (strcasecmp(command, "skip_calibration") == 0) {
+        if (currentFlightState_ref == CALIBRATION || currentFlightState_ref == ERROR) {
+            if (statusCtx.ms5611_initialized_ok) {
+                Serial.println(F("Skipping GPS-based calibration."));
+                Serial.println(F("Using raw barometric altitude (offset = 0)."));
+                Serial.println(F("WARNING: Altitude readings may be less accurate without GPS calibration."));
+                extern float baro_altitude_offset;
+                extern bool baro_calibration_done;
+                baro_altitude_offset = 0.0f;
+                baro_calibration_done = true;
+                baroCalibrated_ref = true;
+                previousFlightState_ref = currentFlightState_ref;
+                currentFlightState_ref = PAD_IDLE;
+                stateEntryTime_ref = millis();
+                saveStateToEEPROM();
+                Serial.println(F("Calibration skipped. System transitioned to PAD_IDLE."));
+            } else {
+                Serial.println(F("ERROR: Cannot skip calibration - barometer (MS5611) not initialized."));
+            }
+        } else {
+            Serial.print(F("Skip calibration only available in CALIBRATION or ERROR state. Current: "));
+            Serial.println(getStateName(currentFlightState_ref));
+        }
     }
     else if (strcasecmp(command, "sensor_requirements") == 0) {
         Serial.println(F("=== Sensor Requirements by Flight State ==="));

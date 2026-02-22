@@ -154,6 +154,10 @@
 #define ERROR_RECOVERY_ATTEMPT_MS                                              \
   10000 // Milliseconds in ERROR state before attempting recovery
 #endif
+#ifndef CALIBRATION_AUTO_TIMEOUT_MS
+#define CALIBRATION_AUTO_TIMEOUT_MS                                            \
+  120000 // Milliseconds in CALIBRATION before fallback calibration (2 mins)
+#endif
 
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \

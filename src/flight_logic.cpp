@@ -498,11 +498,67 @@ void ProcessFlightState() {
                     Serial.println(F("CALIBRATION: Barometer calibrated, transitioning to PAD_IDLE."));
                 }
             } else {
-                // Periodic message while waiting in CALIBRATION state
+                // Auto-calibrate when GPS fix becomes available (non-blocking)
                 static unsigned long lastCalibWaitMsgTime = 0;
-                if (g_debugFlags.enableSystemDebug && (millis() - lastCalibWaitMsgTime > 5000)) { // Print every 5s
-                    Serial.println(F("CALIBRATION: Waiting for barometer calibration (use 'calibrate' command)..."));
+                static bool autoCalibAttempted = false;
+
+                unsigned long timeInCalibration = millis() - g_stateEntryTime;
+
+                // Try auto-calibration if GPS has a good fix
+                if (!autoCalibAttempted && GPS_fixType >= 3 && pDOP < 300 && ms5611_initialized_ok) {
+                    autoCalibAttempted = true;
+                    Serial.println(F("CALIBRATION: GPS fix acquired, attempting auto-calibration..."));
+
+                    // Read fresh pressure
+                    int result = ms5611_read();
+                    if (result == MS5611_READ_OK && pressure >= 700.0f && pressure <= 1200.0f && GPS_altitude != 0) {
+                        float current_pressure_Pa = pressure * 100.0;
+                        float sea_level_Pa = STANDARD_SEA_LEVEL_PRESSURE * 100.0;
+                        float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / sea_level_Pa, 0.190295));
+                        baro_altitude_offset = (GPS_altitude / 1000.0f) - raw_altitude;
+                        baro_calibration_done = true;
+                        baroCalibrated = true;
+                        g_baroCalibrated = true;
+
+                        Serial.print(F("CALIBRATION: Auto-calibration successful! GPS Alt="));
+                        Serial.print(GPS_altitude / 1000.0f);
+                        Serial.print(F("m, Baro Raw="));
+                        Serial.print(raw_altitude);
+                        Serial.print(F("m, Offset="));
+                        Serial.print(baro_altitude_offset);
+                        Serial.println(F("m"));
+                    } else {
+                        autoCalibAttempted = false; // Retry on next loop if reading failed
+                        if (g_debugFlags.enableSystemDebug) {
+                            Serial.println(F("CALIBRATION: Auto-calibration reading failed, will retry..."));
+                        }
+                    }
+                }
+
+                // Timeout fallback: calibrate without GPS after CALIBRATION_AUTO_TIMEOUT_MS
+                if (!g_baroCalibrated && timeInCalibration > CALIBRATION_AUTO_TIMEOUT_MS) {
+                    Serial.println(F("CALIBRATION: Timeout reached, performing fallback calibration without GPS."));
+                    Serial.println(F("CALIBRATION: Using raw barometric altitude (offset = 0). Altitude may be less accurate."));
+                    baro_altitude_offset = 0.0f;
+                    baro_calibration_done = true;
+                    baroCalibrated = true;
+                    g_baroCalibrated = true;
+                }
+
+                // Periodic status message
+                if (!g_baroCalibrated && (millis() - lastCalibWaitMsgTime > 5000)) {
                     lastCalibWaitMsgTime = millis();
+                    unsigned long remaining = 0;
+                    if (timeInCalibration < CALIBRATION_AUTO_TIMEOUT_MS) {
+                        remaining = (CALIBRATION_AUTO_TIMEOUT_MS - timeInCalibration) / 1000;
+                    }
+                    Serial.print(F("CALIBRATION: Waiting for GPS fix (type="));
+                    Serial.print(GPS_fixType);
+                    Serial.print(F(", pDOP="));
+                    Serial.print(pDOP / 100.0, 2);
+                    Serial.print(F("). Auto-fallback in "));
+                    Serial.print(remaining);
+                    Serial.println(F("s. Use 'calibrate' for manual or 'skip_calibration' to skip."));
                 }
             }
             break;

@@ -3,11 +3,13 @@ title: Kalman Filter — AHRS Orientation Estimation
 type: concept
 tags: [kalman, ahrs, orientation, sensor-fusion]
 created: 2026-04-15
-updated: 2026-04-15
-related_files: [src/kalman_filter.cpp, src/kalman_filter.h]
+updated: 2026-04-22
+related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, docs/QUATERNION_MIGRATION_PLAN.md]
 ---
 
-Custom Kalman filter that fuses gyroscope and accelerometer data to estimate orientation as quaternion + Euler angles. Replaced the deprecated Madgwick complementary filter.
+Custom Kalman filter that fuses gyroscope, accelerometer, and magnetometer data to estimate orientation. Outputs both a quaternion and Euler angles. Replaced the deprecated Madgwick complementary filter.
+
+**Current representation**: Euler angles (with quaternion also output for logging). Attitude estimates degrade near ±90° pitch (gimbal lock). Avoid sustained pitch excursions above ±80° until the quaternion migration (see below) ships.
 
 ## State Vector
 
@@ -60,3 +62,20 @@ float q0, q1, q2, q3;              // Orientation quaternion (w,x,y,z)
 float euler_roll, euler_pitch, euler_yaw;  // Radians
 float gyro_bias_x, gyro_bias_y, gyro_bias_z;  // Estimated biases
 ```
+
+## Planned: Quaternion Migration
+
+`docs/QUATERNION_MIGRATION_PLAN.md` outlines replacing the Euler-angle predict/update with a direct quaternion-state filter (q0..q3). Motivation:
+
+- Eliminate gimbal lock at ±90° pitch (high-angle guided flight becomes safe).
+- More accurate rate-to-angle integration.
+- Simpler linearisation around the current quaternion.
+
+`LogData` already carries q0..q3, so the logging schema is unaffected. A separate `src/ukf.cpp` exists but is not the production filter — treat as experimental. Migration is tracked in [[queries/roadmap-2026]].
+
+## Related
+
+- [[concepts/sensor-redundancy]] — where the sensor data comes from
+- [[concepts/calibration]] — gyro bias / mag cal prerequisites
+- [[entities/guidance-control]] — consumer of the orientation estimate
+- [[concepts/data-logging]] — LogData fields populated by the filter

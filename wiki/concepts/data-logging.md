@@ -3,15 +3,15 @@ title: Data Logging & Telemetry
 type: concept
 tags: [logging, sd-card, web-interface, csv, telemetry]
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-04-22
 related_files: [src/data_structures.h, src/log_format_definition.cpp, src/TripleT_Flight_Firmware.cpp, web_interface/]
 ---
 
-Flight data is logged to CSV on the Teensy 4.1's built-in SDIO SD card and optionally streamed in real-time via USB to a web interface.
+Flight data is logged to CSV on the Teensy 4.1's built-in SDIO SD card and optionally streamed in real-time via USB to a web interface. Authoritative schema lives in `LogData` (`src/data_structures.h`); CSV column order lives in `src/log_format_definition.cpp` — the two **must** stay in lockstep.
 
 ## LogData Struct
 
-Defined in `src/data_structures.h`. ~50 fields written every 200ms (configurable):
+Defined in `src/data_structures.h`. ~62 fields per row; streamed at ~100 Hz when `enableSerialCSV` is on (`debug_serial_csv on`); SD writes batched for efficiency.
 
 | Category | Fields |
 |----------|--------|
@@ -54,8 +54,28 @@ Test harness for parser: `web_interface/test_message_filtering.html`
 
 ## Telemetry (ESP32)
 
-Two companion ESP32 projects for wireless telemetry:
-- `esp32_telemetry_transmitter/` — Onboard, reads Teensy serial and RF-transmits
-- `esp32_ground_station_receiver/` — Ground station, receives and forwards to PC
+Two companion ESP32 projects for wireless telemetry over ESP-NOW:
+- `esp32_telemetry_transmitter/` — onboard, reads Teensy UART and RF-transmits
+- `esp32_ground_station_receiver/` — ground station, receives and forwards to PC
 
-Protocol details in each project's README.
+Current status: firmware stubs exist; Teensy-side `ENABLE_TELEMETRY` gate not yet wired. See [[entities/esp32-telemetry]] for protocol design and progress.
+
+## Post-Flight Analysis
+
+CSV logs are the authoritative flight record. Typical analyses:
+
+- Apogee altitude vs prediction (expect ±10 %).
+- Descent rate under drogue vs main (sanity-check parachute deployment).
+- Peak acceleration vs motor thrust curve.
+- `flightState` column timeline — verify every transition fired.
+- Guidance review: `target_*` vs `euler_*`, PID integrals, `stability_flags`, `guidance_active`.
+- Error-code post-mortem: any non-zero `last_error_code`, timing relative to flight events.
+- Watchdog reset markers: data-gap > 1 s around a boot banner line.
+
+## Related
+
+- [[entities/web-interface]] — CSV consumer
+- [[entities/esp32-telemetry]] — wireless path
+- [[concepts/kalman-filter]] — source of orientation fields
+- [[entities/flight-logic]] — source of state field
+- [[entities/error-handling]] — `error_code` interpretation

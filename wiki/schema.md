@@ -3,7 +3,7 @@ title: Wiki Schema & Conventions
 type: overview
 tags: [schema, conventions, wiki]
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-04-22
 ---
 
 Conventions for maintaining this wiki.
@@ -35,7 +35,7 @@ related_files: [src/path/file.cpp, src/path/file.h]
 | `overview` | `wiki/` root | Architecture overview, schema |
 | `concept` | `wiki/concepts/` | Architectural patterns, algorithms, flows |
 | `entity` | `wiki/entities/` | Specific modules, files, classes |
-| `query` | `wiki/queries/` | Filed answers to interesting questions |
+| `query` | `wiki/queries/` | Time-stamped snapshots: roadmap, code-review audits, status reports. Concepts/entities describe *how things work*; queries describe *where things are at a given moment*. Include the date in the title/filename.|
 
 ## Source of Truth
 

@@ -3,7 +3,7 @@ title: Testing Strategy
 type: concept
 tags: [testing, unity, native, ci, mocks]
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-04-22
 related_files: [test/unit/, platformio.ini, .github/workflows/test.yml]
 ---
 
@@ -57,3 +57,31 @@ Unity test → Mock HAL (MockTimer, MockSerial, etc.) → src/ logic
 1. **Synthetic**: `MockIMUSensor::setAcceleration(ax, ay, az)` — deterministic input
 2. **Recorded flights**: `MockIMUSensor::loadFlightData("fixtures/nominal_flight.log")` — real data replay
 3. **Failure injection**: `FailureInjector::injectSensorFailure()` — test error handling
+
+## CI/CD Pipeline
+
+`.github/workflows/test.yml` defines two jobs that run on every push and PR:
+
+- **`unit-tests`** — `pio test -e native_test`; artifacts under `.pio/test/` uploaded.
+- **`firmware-build`** — `pio run -e teensy41`; verifies the production build still links and fits the flash budget.
+
+Branch protection on `master` / `develop` requires both green before merge. Performance budget: full CI < 5 min; unit tests < 10 s; firmware build < 30 s.
+
+## Flight-Critical Code Coverage (non-negotiable)
+
+These paths MUST reach > 95 %:
+
+- Apogee detection and backup timer ([[concepts/apogee-detection]])
+- Landing detection
+- Pyro-firing sequencing
+- State transitions at every boundary ([[concepts/flight-state-transitions]])
+- Error-state entry + auto-recovery ([[entities/error-handling]])
+- Graceful guidance degradation (soft error 90) ([[concepts/guidance-degradation]])
+
+A change that drops coverage on any of these is a regression; tests should land with the code change, not after.
+
+## Related
+
+- [[concepts/developer-workflow]] — how to run tests day-to-day
+- [[concepts/hal-abstraction]] — why native tests can exist at all
+- [[concepts/sensor-redundancy]] — `IMUInterface` is the mock seam

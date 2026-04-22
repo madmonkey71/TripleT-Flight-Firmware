@@ -3,7 +3,7 @@ title: TripleT Flight Firmware — Architecture Overview
 type: overview
 tags: [architecture, firmware, teensy, rocketry]
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-04-22
 related_files: [src/config.h, src/data_structures.h, src/TripleT_Flight_Firmware.cpp, platformio.ini]
 ---
 
@@ -118,11 +118,45 @@ Sensors (20-100ms) → Kalman Filter (AHRS) → Flight Logic → Guidance/PID
 
 ## Critical Design Decisions
 
-See [[concepts/hal-abstraction]], [[concepts/sensor-redundancy]], [[concepts/apogee-detection]], [[concepts/guidance-degradation]].
+See [[concepts/layered-architecture]] for the dependency model, and the individual deep dives: [[concepts/hal-abstraction]], [[concepts/sensor-redundancy]], [[concepts/apogee-detection]], [[concepts/guidance-degradation]], [[concepts/system-robustness]].
 
-1. **HAL abstraction** — enables desktop unit testing without Teensy hardware
-2. **IMUInterface adapters** — runtime polymorphism for sensor swap/failover
-3. **2-of-3 apogee voting** — barometer + accelerometer + GPS; backup timer at 20s
-4. **EEPROM state persistence** — survives power-loss and watchdog resets
-5. **Kalman filter** — replaces deprecated Madgwick; handles gyro + accel + GPS altitude
-6. **Graceful guidance degradation** — stability failure disables guidance (orange LED), does NOT trigger ERROR state; parachutes still deploy normally
+1. **Layered architecture** — HAL → sensors → flight logic → guidance; upper layers never reach past their abstraction
+2. **HAL abstraction** — enables desktop unit testing without Teensy hardware
+3. **IMUInterface adapters** — runtime polymorphism for sensor swap/failover
+4. **2-of-3 apogee voting** — barometer + accelerometer + GPS; backup timer at 20 s
+5. **EEPROM state persistence** — survives power-loss and watchdog resets
+6. **Kalman filter** — replaces deprecated Madgwick; handles gyro + accel + mag (Euler state; quaternion migration planned — see [[concepts/kalman-filter]])
+7. **Graceful guidance degradation** — stability failure disables guidance (orange LED), does NOT trigger `ERROR` state; parachutes still deploy normally
+
+## Phase Progression
+
+Development is organised into phases tracked against semantic versions. Status as of 2026-04-22:
+
+| Phase | Version target | Scope | Status |
+|-------|---------------|-------|--------|
+| 1 HAL foundation | v0.7.0 | 8 HAL interfaces, Teensy + Mock | ✅ merged |
+| 2 Sensor modularity | v0.8.0 | `IMUInterface`, adapters, `IMUManager` | ✅ merged |
+| 3 Testing infrastructure | v0.9.0 | Unity native, ArduinoFake, CI | ✅ merged |
+| 4 Safety & redundancy | v0.10.0 | Multi-path apogee, cross-validation, graceful degrade | ✅ merged (current) |
+| 5 Documentation & polish | v1.0.0-rc1 | `docs/` suite + wiki | ⏳ partial |
+| 6 Advanced features + production readiness | v1.0.0 | Trajectory, power/thermal, pre-flight, validation | 🟡 6.2 merged; 6.1/6.3/6.4 in progress |
+
+Full plan: [[queries/roadmap-2026]]. Current gaps: [[queries/development-status-2026-04]]. Historical audit: [[queries/code-review-findings-2026]].
+
+## Known Limitations
+
+- Kalman filter uses Euler angles internally — avoid sustained pitch beyond ±80° (quaternion migration planned).
+- No live wireless telemetry yet — ESP32 link is stubs only ([[entities/esp32-telemetry]]).
+- Trajectory SD-card loading incomplete; only hard-coded test trajectory today.
+- Fixed-timestep loop not enforced; Kalman `dt` varies slightly with loop load.
+
+## Related
+
+- [[concepts/layered-architecture]] — dependency model
+- [[concepts/flight-state-transitions]] — detailed state transition reference
+- [[concepts/system-robustness]] — 4-layer defence model
+- [[entities/hardware-platform]] — physical loadout
+- [[entities/configuration-system]] — `config.h` and feature flags
+- [[entities/error-handling]] — error codes and recovery
+- [[entities/web-interface]] — visualisation client
+- [[concepts/developer-workflow]] — build / test / flash cycle

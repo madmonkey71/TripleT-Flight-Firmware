@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other LLMs when 
 - `IMPLEMENTATION_PLAN_2026.md` - Complete refactoring roadmap with checkpoints
 - This file (CLAUDE.md) - Project conventions and architecture overview
 - `AI.md` - Generic guidance for any LLM
+- `wiki/index.md` - Project wiki with architecture docs, concept explanations, and module references. Consult for architecture questions. Keep wiki updated after structural code changes.
 
 **Current version**: Check `src/config.h` for `#define FIRMWARE_VERSION`
 **Current branch**: Use `git branch` to see where you are

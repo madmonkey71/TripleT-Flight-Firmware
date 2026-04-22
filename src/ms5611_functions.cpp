@@ -107,14 +107,16 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
         attempts++;
         gps_read();  // Update GPS data
         
-        // Check for user abort
-        if (Serial.available()) {
-            char c = Serial.peek();
+        // Check for user abort - read all available characters looking for abort key
+        while (Serial.available()) {
+            char c = Serial.read();
             if (c == 'x' || c == 'X' || c == 'q' || c == 'Q') {
-                Serial.read(); // Consume it
+                // Drain remaining characters (e.g., \r\n after 'x')
+                while (Serial.available()) Serial.read();
                 Serial.println(F("Calibration aborted by user."));
                 return false;
             }
+            // Ignore other characters (e.g., \r, \n from previous command)
         }
 
         // Check for good GPS fix and accuracy

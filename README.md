@@ -28,6 +28,7 @@ The current state is ready for more extensive testing and is now held back by th
 - **Comprehensive Recovery System**: SOS audio beacon, LED strobe patterns, and GPS coordinate transmission (Serial).
 - **Watchdog Recovery**: Automatic state recovery from power loss or watchdog reset via EEPROM persistence.
 - **Real-time Data Logging**: 62 data points logged to SD card in CSV format.
+- **Wireless Telemetry (opt-in)**: Optional Teensy → ESP32 → ESP-NOW → ground-station bridge, gated by `ENABLE_TELEMETRY` in `src/config.h`. 40-byte packed binary on the radio, CSV-shaped text on the ground-side USB. See [Wireless telemetry](wiki/entities/esp32-telemetry.md). *Status: code shipped, hardware bench-test pending before v1.0.0.*
 - **CI/CD Testing**: Unit tests run on every push via GitHub Actions.
 - **Interactive Command Interface**: Rich serial command system for diagnostics and control.
 
@@ -42,10 +43,12 @@ See [`wiki/queries/roadmap-2026.md`](wiki/queries/roadmap-2026.md) for the full 
 - Phase 4: Safety & Reliability (v0.10.0)
 - Phase 5: Documentation
 
-**Remaining Work:**
-1. **Live Telemetry:** Wireless link code is a placeholder (Phase 6).
-2. **Trajectory Following:** Waypoint navigation under development (Phase 6).
-3. **Test Coverage Expansion:** Unit test suite growing toward 47+ tests.
+**Remaining Work for v1.0.0:**
+1. **Live Telemetry:** Code shipped (Teensy + both ESP32 firmwares); needs a hardware bench-test and a flight on the radio link.
+2. **Trajectory Following:** Waypoint navigation present but SD waypoint loader missing; cross-track error still a placeholder.
+3. **Flight Validation:** 5 successful flights on v0.10.0+ firmware before tagging v1.0.0.
+
+`PowerManager`, `PreflightChecker`, thermal management, and the quaternion Kalman migration are deferred to v1.1 — see [`wiki/queries/v1-release-gate-2026-05.md`](wiki/queries/v1-release-gate-2026-05.md).
 
 ## Quick Start
 
@@ -54,6 +57,15 @@ See [`wiki/queries/roadmap-2026.md`](wiki/queries/roadmap-2026.md) for the full 
 3. **Initialize**: System performs startup checks and enters `PAD_IDLE` state.
 4. **Arm**: Use `arm` command when ready for flight.
 5. **Recovery**: If lost, the rocket will emit an SOS beacon and strobe light.
+
+### Optional: Enable Wireless Telemetry
+
+1. Flash [`esp32_ground_station_receiver`](esp32_ground_station_receiver/) to a USB-connected ESP32; note the MAC address it prints at boot.
+2. Paste that MAC into `ground_station_mac` in [`esp32_telemetry_transmitter/esp32_telemetry_transmitter.cpp`](esp32_telemetry_transmitter/esp32_telemetry_transmitter.cpp); flash this firmware to the onboard ESP32 and wire its UART2 RX (default GPIO16) to Teensy `Serial5 TX` (pin 20), plus GND in common.
+3. Set `ENABLE_TELEMETRY 1` in [`src/config.h`](src/config.h) and rebuild the Teensy firmware.
+4. Open the ground-station ESP32 on USB serial at 115200 baud; you'll see `TELEM,...` lines every ~200 ms once the Teensy starts logging.
+
+Protocol details and packet layout: [Wireless telemetry](wiki/entities/esp32-telemetry.md).
 
 ## Documentation
 

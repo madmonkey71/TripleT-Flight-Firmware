@@ -72,4 +72,4 @@ Same serial port is used to send commands back to the Teensy (e.g. `arm`, `calib
 
 - [[concepts/data-logging]] — CSV format / `LogData` struct
 - [[entities/command-processor]] — commands available over the same link
-- [[entities/esp32-telemetry]] — planned wireless path to the same dashboard
+- [[entities/esp32-telemetry]] — wireless path to the same dashboard; ground-side ESP32 emits `TELEM,...` text lines on USB serial (parser extension still needed in the web console)

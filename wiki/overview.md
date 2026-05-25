@@ -154,7 +154,7 @@ Full plan: [[queries/roadmap-2026]]. Current gaps: [[queries/development-status-
 ## Known Limitations
 
 - Kalman filter uses Euler angles internally — avoid sustained pitch beyond ±80° (quaternion migration planned).
-- No live wireless telemetry yet — ESP32 link is stubs only ([[entities/esp32-telemetry]]).
+- Wireless telemetry is wired in code but not yet bench-tested or flown — `ENABLE_TELEMETRY` in `src/config.h` plus both ESP32 firmwares are ready; needs a hardware round-trip before being trusted ([[entities/esp32-telemetry]]).
 - Trajectory SD-card loading incomplete; only hard-coded test trajectory today.
 - Fixed-timestep loop not enforced; Kalman `dt` varies slightly with loop load.
 

@@ -35,7 +35,7 @@ See `src/config.h` directly for up-to-date values — this wiki page documents t
 | `-DUSE_BNO085_VARIANT` | Swap primary IMU to BNO085 adapter |
 | `-DUSE_BONO85_BACKUP` | Swap backup sensor to BNO085 (instead of KX134) |
 | `-DGPS_USE_SPI` | Use SPI for GPS instead of I2C |
-| `-DENABLE_TELEMETRY` *(planned)* | Emit telemetry packets on Serial5 to ESP32 bridge |
+| `ENABLE_TELEMETRY` *(in `config.h`, default `0`)* | When `1`: opens `Serial5` at `TELEMETRY_BAUD` (115200) in `setup()` and writes a 43-byte framed `TelemetryPacket` inside `WriteLogData()`. Pure addition — does not change SD CSV or USB serial. Companion defines: `TELEMETRY_BAUD`, `TELEMETRY_PERIOD_MS` (currently piggybacks on the 5 Hz log cadence). See [[entities/esp32-telemetry]]. |
 
 Flags map to conditional compilation in `src/hal/hal_factory.h` and `src/sensors/sensor_factory.cpp`. See [[concepts/hal-abstraction]] and [[concepts/sensor-redundancy]].
 

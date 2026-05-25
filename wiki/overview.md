@@ -15,8 +15,8 @@ Flight computer firmware for a guided amateur rocket on Teensy 4.1 (ARM Cortex-M
 |-------|-----------|
 | MCU | Teensy 4.1 (ARM Cortex-M7 @ 600 MHz) |
 | Framework | Arduino + PlatformIO |
-| Build envs | `teensy41` (production), `native` (desktop unit tests) |
-| Test framework | Unity + ArduinoFake |
+| Build envs | `teensy41` (production), `native` (desktop unit tests, compile flag `-D UNIT_TEST_NATIVE`) |
+| Test framework | Unity + ArduinoFake; auto-discovered from `test/test_<name>/` |
 | CI/CD | GitHub Actions (`.github/workflows/test.yml`) |
 
 ## Key Libraries
@@ -68,14 +68,22 @@ src/
     ├── sensor_factory.h/.cpp     # Factory pattern for sensor selection
     └── sensor_factory.cpp
 test/
-├── unit/                         # Unity test files (run on native)
-│   ├── test_state_machine.cpp
-│   ├── test_apogee_detection.cpp
-│   ├── test_guidance_failsafe.cpp
-│   ├── test_math_functions.cpp
-│   ├── test_servo_smoother.cpp
-│   └── test_stability_monitor.cpp
-└── mocks/                        # Mock sensor implementations
+├── test_state_machine/           # Unity suites (one folder per suite — PlatformIO layout)
+├── test_flight_logic/
+├── test_apogee_detection/
+├── test_landing_detection/
+├── test_guidance_failsafe/
+├── test_stability_monitor/
+├── test_sensor_health/
+├── test_gps_validation/
+├── test_altitude_calculations/
+├── test_math_functions/
+├── test_servo_smoother/
+├── fixtures/                     # Recorded flight data for replay
+├── mocks/                        # Mock sensor implementations
+├── GPS_Test.ino                  # Hardware-only GPS integration sketch
+├── compile_gps_test.sh           # Wrapper to build GPS test
+└── platformio.ini                # Test-only PIO config (gps_test_serial env)
 web_interface/                    # Real-time data visualization (Web Serial API)
 esp32_ground_station_receiver/    # ESP32 telemetry ground station
 esp32_telemetry_transmitter/      # ESP32 telemetry transmitter

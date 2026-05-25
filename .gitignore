@@ -35,9 +35,6 @@ flight_visualizer/.venv
 .venv
 
 # Remove AI unneeded controls
-CLAUDE.md
-Claude.md
-claude.md
 GEMINI.md
 Gemini.md
 gemini.md

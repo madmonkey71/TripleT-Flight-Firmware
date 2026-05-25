@@ -4,7 +4,7 @@ type: concept
 tags: [kalman, ahrs, orientation, sensor-fusion]
 created: 2026-04-15
 updated: 2026-04-22
-related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, docs/QUATERNION_MIGRATION_PLAN.md]
+related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, .archived/docs/QUATERNION_MIGRATION_PLAN.md]
 ---
 
 Custom Kalman filter that fuses gyroscope, accelerometer, and magnetometer data to estimate orientation. Outputs both a quaternion and Euler angles. Replaced the deprecated Madgwick complementary filter.
@@ -65,7 +65,7 @@ float gyro_bias_x, gyro_bias_y, gyro_bias_z;  // Estimated biases
 
 ## Planned: Quaternion Migration
 
-`docs/QUATERNION_MIGRATION_PLAN.md` outlines replacing the Euler-angle predict/update with a direct quaternion-state filter (q0..q3). Motivation:
+`.archived/docs/QUATERNION_MIGRATION_PLAN.md` outlines replacing the Euler-angle predict/update with a direct quaternion-state filter (q0..q3). Motivation:
 
 - Eliminate gimbal lock at ±90° pitch (high-angle guided flight becomes safe).
 - More accurate rate-to-angle integration.

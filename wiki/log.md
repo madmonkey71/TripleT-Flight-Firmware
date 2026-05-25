@@ -75,3 +75,48 @@ Append-only chronological record of all wiki operations.
 - `PHASE_6_4_INDEX.md` and other redundant PHASE_6_4 variants — planning churn; essentials captured in `queries/roadmap-2026.md`
 - `FIX_WALKTHROUGH.md` — minimal / dated
 - `AI.md` — workflow meta, not functional spec
+
+---
+
+## 2026-05-25 — CONSOLIDATE (move sources to .archived/)
+
+**Operation**: Consolidate all project `.md` files under `wiki/`. Move already-integrated and superseded sources to `.archived/` to leave a single coherent documentation tree.
+**Branch**: develop
+**Firmware version**: v0.10.0
+
+**Decisions confirmed with user**:
+- Keep `README.md` and `AI.md` in project root.
+- Move `CLAUDE.md` into wiki (ADRs extracted to new page; the rest archived). NOTE: Claude Code will no longer auto-load `CLAUDE.md` from root; project-level LLM guidance now lives in `AI.md` + `wiki/`.
+- Keep component-specific READMEs in place (`esp32_*/README.md`, `web_interface/README.md`, `web_interface/SYSTEM_STATUS.md`, `test/README.md`).
+- Archive originals of already-integrated docs (`.archived/` rather than delete).
+- Archive stale/superseded files (`.archived/`).
+
+**New wiki content**:
+- `wiki/concepts/architecture-decisions.md` — ADR-001..ADR-005 extracted from `CLAUDE.md`.
+- `wiki/concepts/developer-workflow.md` — added Common Development Tasks, Quick Decision Matrix ("what goes where"), Branch & Release Workflow sections.
+
+**Drift fixed during this pass**:
+- Test layout: `test/unit/*.cpp` (claimed) → `test/test_<name>/test_<name>.cpp` (actual PlatformIO Unity discovery layout).
+- Test env name: `native_test` (claimed) → `native` (actual env in `platformio.ini`; CI runs `pio test -e native -vv`).
+- Test compile flag: noted both `-DUNIT_TEST_NATIVE` (platformio.ini) and `-DNATIVE_TEST_BUILD` (referenced in `src/hal/hal_factory.h`).
+- Test suite list updated to actual 11 suites (added: `flight_logic`, `landing_detection`, `sensor_health`, `gps_validation`, `altitude_calculations`).
+- Updated `overview.md`, `concepts/testing-strategy.md`, `concepts/developer-workflow.md`.
+- Updated wiki internal references that pointed at root/`docs/` paths to use `.archived/...` so they still resolve.
+
+**Files moved to `.archived/`** (root-level, 29 files):
+`ACTUATOR_VISUALIZATION_FIX.md`, `BENCH_TEST_PROCEDURE.md`, `CLAUDE.md`, `CODE_REVIEW_FINDINGS_2026.md`, `COMPETITOR_ANALYSIS.md`, `COMPREHENSIVE_TESTING_STRATEGY.md`, `EXECUTIVE_SUMMARY_2026.md`, `Firmware Function Documentation.md`, `FIX_WALKTHROUGH.md`, `FLIGHT_PROFILE_H125W_SUMMARY.md`, `FLIGHT_TEST_PREPARATION.md`, `IMPLEMENTATION_PLAN_2026.md`, `PHASE_6.3_INTEGRATION_GUIDE.md`, `PHASE_6.3_README.md`, `PHASE_6_4_INDEX.md`, `PHASE_6_4_QUICK_REFERENCE.md`, `PHASE_6_4_SUMMARY.md`, `PHASE_6_4_TEST_IMPLEMENTATION_GUIDE.md`, `PHASE_6_4_TESTING_FRAMEWORK.md`, `PHASE_6_PLAN.md`, `PRODUCTION_READINESS_PLAN.md`, `PRODUCTION_READINESS_SUMMARY.md`, `TESTING_DOCUMENTATION_INDEX.md`, `TESTING_IMPLEMENTATION_GUIDE.md`, `TESTING_QUICK_REFERENCE.md`, `TripleT Flight Firmware Function Documentation.md`, `TripleT UKF Documentation.md`, `UPDATED_GAP_ANALYSIS_2025.md`, `USER_GUIDE.md`.
+
+**Files moved to `.archived/docs/`** (19 files, then empty `docs/` removed):
+`ARCHITECTURE.md`, `COMMANDS.md`, `CONFIGURATION.md`, `DEVELOPER_GUIDE.md`, `DEVELOPMENT_STATUS.md`, `DOCS_MAINTENANCE.md`, `ERROR_CODES.md`, `Feature_Usage_And_Configuration.md`, `FLIGHT_STATE_MACHINE.md`, `GETTING_STARTED.md`, `HARDWARE.md`, `PHASE_6_6_DOCUMENTATION_PLAN.md`, `QUATERNION_MIGRATION_PLAN.md`, `SAFETY.md`, `SENSOR_EVALUATION.md`, `STM32_MIGRATION_ANALYSIS.md`, `TELEMETRY_IMPLEMENTATION_PLAN.md`, `TESTING.md`, `TripleT_Flight_Firmware_Documentation.md`.
+
+**README.md & AI.md edits (root, intentionally not moved)**:
+- README "Project Status & Roadmap" and "Documentation" sections now point at `wiki/` pages instead of removed `IMPLEMENTATION_PLAN_2026.md` / `PHASE_6_PLAN.md` / `docs/*.md`.
+- AI.md "Key Files to Know", directory layout, "Starting Work", "Before Committing", "Asking for Help", and footer all updated to point at `wiki/`; test command corrected to `pio test -e native -vv`.
+
+**Final state**:
+- Root: `README.md`, `AI.md`, `MEMORY.md` (+ project files). No other root-level `.md`.
+- `docs/` directory removed.
+- All architectural / conceptual / planning docs live under `wiki/`.
+- Component-specific READMEs (`esp32_*`, `web_interface/`, `test/`) untouched.
+- Historical/superseded docs preserved under `.archived/` and `.archived/docs/`.
+

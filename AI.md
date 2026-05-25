@@ -18,10 +18,12 @@ This file provides guidance for any AI assistant (Claude, Gemini, etc.) working 
 ## Key Files to Know
 
 ### Architecture & Planning
-- **IMPLEMENTATION_PLAN_2026.md** - 5-phase refactoring roadmap (read first if starting new work)
-- **CLAUDE.md** - Claude-specific guidance (also useful for other LLMs)
-- **MEMORY.md** - Persistent notes across sessions (check before starting)
-- **docs/DEVELOPER_GUIDE.md** - Detailed development patterns (check for new patterns added)
+- **wiki/index.md** - Wiki catalogue — start here for architecture, concepts, modules, queries
+- **wiki/overview.md** - Tech stack, directory layout, state machine, phase summary
+- **wiki/concepts/architecture-decisions.md** - ADRs (HAL, IMUInterface, apogee voting, EEPROM persistence, Kalman)
+- **wiki/queries/roadmap-2026.md** - Phase plan and current version status
+- **wiki/concepts/developer-workflow.md** - Build / test / flash cycle and common dev tasks
+- **MEMORY.md** - Persistent LLM notes across sessions (check before starting)
 
 ### Core Configuration
 - **src/config.h** - Flight parameters, safety limits, hardware configuration, version number
@@ -129,9 +131,8 @@ git diff HEAD                     # See uncommitted changes
 │       ├── nominal_flight_2025.log
 │       └── [other recorded flights]
 ├── web_interface/               # Web-based data viewer
-├── docs/                        # Developer & user documentation
-├── IMPLEMENTATION_PLAN_2026.md  # Refactoring roadmap (READ THIS FIRST)
-├── CLAUDE.md                    # Claude-specific guidance
+├── wiki/                        # All project documentation (architecture, concepts, modules)
+├── .archived/                   # Historical/superseded docs (preserved for context)
 ├── AI.md                        # This file (generic LLM guidance)
 ├── MEMORY.md                    # Persistent session notes
 ├── platformio.ini               # Build configuration
@@ -167,7 +168,7 @@ git diff HEAD                     # See uncommitted changes
 ## Development Workflow
 
 ### Starting Work
-1. Read `IMPLEMENTATION_PLAN_2026.md` to understand current phase
+1. Read `wiki/queries/roadmap-2026.md` to understand current phase
 2. Check `MEMORY.md` for context from previous sessions
 3. Verify current version in `src/config.h`
 4. Check current branch: `git branch`
@@ -175,16 +176,16 @@ git diff HEAD                     # See uncommitted changes
 
 ### During Development
 1. **Always maintain a working system** - commits should compile
-2. **Run tests frequently**: `pio test -e native_test`
+2. **Run tests frequently**: `pio test -e native -vv`
 3. **Verify on hardware**: `pio run -e teensy41` compiles
-4. **Write tests** for new flight-critical code
+4. **Write tests** for new flight-critical code (see `wiki/concepts/testing-strategy.md`)
 5. **Use conventional commits** (feat/fix/test/docs/refactor)
-6. **Document architectural decisions** in MEMORY.md or docs/
+6. **Document architectural decisions** in `wiki/concepts/architecture-decisions.md`
 
 ### Before Committing
 ```bash
 pio run -e teensy41              # Verify production build
-pio test -e native_test          # Verify all tests pass
+pio test -e native -vv           # Verify all tests pass
 git diff HEAD                    # Review changes
 git status                       # See all files changed
 ```
@@ -200,7 +201,7 @@ git status                       # See all files changed
 ## Testing Strategy
 
 ### Unit Tests (Desktop - No Hardware)
-- Run via: `pio test -e native_test`
+- Run via: `pio test -e native -vv`
 - Framework: Unity (C-based unit test framework)
 - Mocks: All hardware abstracted via HAL
 - 47+ tests covering flight logic, sensors, state machine
@@ -318,10 +319,11 @@ git push origin v0.7.0
 If you encounter unclear requirements, architectural questions, or blockers:
 
 1. **Check existing documentation:**
-   - IMPLEMENTATION_PLAN_2026.md (if implementing a phase)
-   - CLAUDE.md (if Claude-specific patterns needed)
-   - docs/DEVELOPER_GUIDE.md (if patterns not documented yet)
-   - MEMORY.md (if context from previous sessions)
+   - `wiki/index.md` (catalogue — start here)
+   - `wiki/queries/roadmap-2026.md` (if implementing a phase)
+   - `wiki/concepts/developer-workflow.md` (if asking "how do I…?")
+   - `wiki/concepts/architecture-decisions.md` (if asking "why was it built this way?")
+   - `MEMORY.md` (if context from previous sessions)
 
 2. **For safety-critical code:**
    - Always err on the side of caution
@@ -338,7 +340,7 @@ If you encounter unclear requirements, architectural questions, or blockers:
 ## Success Metrics
 
 ✅ Code compiles: `pio run -e teensy41` succeeds
-✅ Tests pass: `pio test -e native_test` all pass
+✅ Tests pass: `pio test -e native -vv` all pass
 ✅ No new warnings in build output
 ✅ Safety-critical code has test coverage
 ✅ Commits have conventional message format
@@ -349,12 +351,12 @@ If you encounter unclear requirements, architectural questions, or blockers:
 
 - **Build problems**: Check `platformio.ini` and library versions
 - **Test failures**: Check mock sensor setup and test fixtures
-- **Design questions**: Reference IMPLEMENTATION_PLAN_2026.md and MEMORY.md
+- **Design questions**: Reference `wiki/concepts/architecture-decisions.md` and `MEMORY.md`
 - **Git issues**: Use `git status`, `git log`, `git diff` to understand current state
 - **Sensor-specific**: Check the sensor datasheet and existing driver code
 
 ---
 
-**Document Status**: Current as of February 2026
-**For Claude specifically**: See CLAUDE.md
-**For implementation guidance**: See IMPLEMENTATION_PLAN_2026.md
+**Document Status**: Current as of 2026-05-25
+**For wiki structure & conventions**: See `wiki/schema.md`
+**For implementation guidance**: See `wiki/queries/roadmap-2026.md`

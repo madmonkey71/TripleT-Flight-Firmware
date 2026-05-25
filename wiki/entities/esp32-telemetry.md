@@ -3,20 +3,22 @@ title: ESP32 Telemetry Link (Wireless Bridge)
 type: entity
 tags: [esp32, telemetry, wireless, esp-now]
 created: 2026-04-22
-updated: 2026-04-22
-related_files: [esp32_telemetry_transmitter/esp32_telemetry_transmitter.cpp, esp32_ground_station_receiver/esp32_ground_station_receiver.cpp, docs/TELEMETRY_IMPLEMENTATION_PLAN.md]
+updated: 2026-05-25
+related_files: [src/telemetry.h, src/telemetry.cpp, src/TripleT_Flight_Firmware.cpp, esp32_telemetry_transmitter/esp32_telemetry_transmitter.cpp, esp32_ground_station_receiver/esp32_ground_station_receiver.cpp, .archived/docs/TELEMETRY_IMPLEMENTATION_PLAN.md]
 ---
 
-Planned wireless telemetry path: Teensy → ESP32 transmitter (onboard) → ESP-NOW radio → ESP32 receiver (ground station) → USB serial → [[entities/web-interface|web console]]. Firmware stubs live in `esp32_telemetry_transmitter/` and `esp32_ground_station_receiver/`; integration is tracked as Phase 6 work.
+Wireless telemetry path: Teensy → ESP32 transmitter (onboard) → ESP-NOW radio → ESP32 receiver (ground station) → USB serial → [[entities/web-interface|web console]].
 
-## Status
+## Status (2026-05-25 — telemetry PR)
 
-- ✅ Protocol and packet layout specified in `docs/TELEMETRY_IMPLEMENTATION_PLAN.md`.
-- ✅ ESP32 firmware skeletons exist (both TX and RX).
-- ⏳ Not yet enabled in Teensy main loop (gate on `ENABLE_TELEMETRY` flag + Serial5 output in `WriteLogData`).
-- ⏳ End-to-end integration test pending.
+- ✅ Teensy side implemented: `ENABLE_TELEMETRY` flag in `src/config.h`; `src/telemetry.h` / `src/telemetry.cpp` define the 40-byte binary packet, CRC-8, and framing; `Serial5.begin(115200)` and a packed-frame write are wired into `WriteLogData()`.
+- ✅ Unit tests: `test/test_telemetry/` covers struct size, scaling, NaN handling, CRC reference vectors, frame layout, corruption detection (16 cases).
+- ✅ ESP32 TX firmware: `esp32_telemetry_transmitter/esp32_telemetry_transmitter.cpp` parses UART frames, validates CRC, broadcasts the bare payload over ESP-NOW.
+- ✅ ESP32 RX firmware: `esp32_ground_station_receiver/esp32_ground_station_receiver.cpp` receives ESP-NOW packets and emits a `TELEM,...` CSV-shaped line on USB Serial. Status / diagnostic lines start with `#`.
+- ⏳ End-to-end bench test (Teensy + 2 ESP32s + web console) pending — needs hardware.
+- ⏳ Web console parser: today it parses the 62-field SD-card CSV; needs a small extension to recognise the `TELEM,` prefix.
 
-Treat this page as **the design**, not the current shipped feature. [[queries/development-status-2026-04]] tracks real status.
+Required for v1.0.0 ([[queries/v1-release-gate-2026-05]]): bench-test round-trip + at least one flight on radio link.
 
 ## Link Topology
 
@@ -29,34 +31,53 @@ LogData ──Serial5──▶  UART in ─▶ pack/checksum ─ESP-NOW▶  ESP-
 
 ESP-NOW is chosen for low-latency peer-to-peer 2.4 GHz broadcast without Wi-Fi association. 250-byte packet limit drives the compact binary format.
 
-## Packet Layout (planned)
+## Packet Layout (shipped)
 
-Fixed-size binary struct (`TelemetryPacket`) covering the high-value subset of `LogData`:
+Fixed-size 40-byte binary struct `TelemetryPacket` (see `src/telemetry.h`). All multi-byte integers are little-endian; floats are scaled to fixed-point so the wire format is deterministic.
 
-| Field | Size | Notes |
-|-------|------|-------|
-| timestamp | 4 B | ms since boot |
-| flight_state | 1 B | enum |
-| error_code | 1 B | `ErrorCode_t` |
-| lat, lon, alt_gps | 3×4 B | fixed-point |
-| altitude (baro) | 4 B | meters AGL |
-| accel x/y/z | 3×2 B | int16, scaled |
-| quat q0..q3 | 4×2 B | int16, scaled |
-| battery_v | 2 B | mV |
-| stability_flags | 1 B | bitfield |
-| checksum | 1 B | XOR or CRC-8 |
+| Field | Offset | Size | Encoding |
+|-------|--------|------|----------|
+| `timestamp_ms` | 0 | 4 | uint32 — ms since boot |
+| `flight_state` | 4 | 1 | uint8 — `FlightState` enum |
+| `error_code` | 5 | 1 | uint8 — last `ErrorCode_t` |
+| `latitude_e7` | 6 | 4 | int32 — degrees × 1e7 |
+| `longitude_e7` | 10 | 4 | int32 — degrees × 1e7 |
+| `altitude_gps_mm` | 14 | 4 | int32 — GPS MSL altitude, mm |
+| `altitude_baro_mm` | 18 | 4 | int32 — barometer altitude, mm |
+| `accel_x_mg`/`_y`/`_z` | 22–27 | 3 × 2 | int16 — g × 1000 (milli-g), clamped |
+| `q0_q14`/`q1`/`q2`/`q3` | 28–35 | 4 × 2 | int16 — quaternion × 16384 (Q14 fixed-point) |
+| `battery_mv` | 36 | 2 | uint16 — battery voltage, mV |
+| `stability_flags` | 38 | 1 | uint8 — bitfield (rate / attitude / saturation) |
+| `guidance_active` | 39 | 1 | uint8 — 1 = guidance commanding, 0 = degraded |
 
-Total well under 250 B, leaving headroom for growth.
+UART framing (Teensy → onboard ESP32, Serial5):
 
-## Teensy-Side Integration Points
+```
+[0xA5 SYNC][0x28 LEN=40][... 40-byte payload ...][CRC8 over payload]
+```
 
-1. Add `Serial5.begin(115200)` in `setup()` behind `ENABLE_TELEMETRY`.
-2. In `WriteLogData()` (or a dedicated `sendTelemetryPacket()`), pack the `LogData` subset and write to `Serial5`.
-3. Preserve the existing USB-serial CSV path — the two are independent outputs.
+CRC-8/SMBUS (poly 0x07, init 0x00). 43 bytes per UART frame.
 
-## Ground-Side Integration
+ESP-NOW payload: just the 40-byte struct, no framing — ESP-NOW provides radio-level integrity.
 
-The RX-side ESP32 turns received packets back into a CSV-compatible line and emits them on USB serial. The [[entities/web-interface|web console]] parses either source identically — local or radio — because the field mapping is the same.
+## Teensy-Side Integration (shipped)
+
+1. `ENABLE_TELEMETRY 0|1` in `src/config.h` gates the whole link. Default 0 — zero behavioural change to existing builds.
+2. `setup()` calls `Serial5.begin(TELEMETRY_BAUD)` when enabled.
+3. Inside `WriteLogData()` (same call site, same 5 Hz cadence as the SD log), `telemetry_pack(logEntry, packet)` builds the packet and `telemetry_frame()` writes the framed bytes to `Serial5`.
+4. USB serial CSV and SD-card logging are unchanged.
+
+## Ground-Side Integration (shipped)
+
+The RX-side ESP32 receives ESP-NOW packets and emits one text line per packet on USB serial:
+
+```
+TELEM,<timestamp_ms>,<flight_state>,<error_code>,<lat>,<lon>,<alt_gps_m>,<alt_baro_m>,<ax_g>,<ay_g>,<az_g>,<q0>,<q1>,<q2>,<q3>,<battery_v>,<stability_flags>,<guidance_active>
+```
+
+The `TELEM,` prefix lets the [[entities/web-interface|web console]] distinguish radio packets from the 62-field SD-card CSV pass-through. Status / diagnostic lines begin with `#` (e.g., the receiver's MAC address printed at boot) — parsers should ignore them.
+
+> ⚠️ The web console's current CSV parser only knows the 62-field SD-card format. Adding a `TELEM,` branch is a small follow-up before flight validation can use the radio link as the sole data source.
 
 ## Failure Modes
 

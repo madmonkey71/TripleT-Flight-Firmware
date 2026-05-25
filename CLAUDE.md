@@ -13,4 +13,4 @@ Quick links for common questions:
 
 Historical / superseded docs are preserved under `.archived/`.
 
-Generic LLM guidance (not Claude-specific) lives in [`AI.md`](AI.md). Persistent cross-session notes are in `MEMORY.md` (auto-managed).
+Generic LLM guidance (not Claude-specific) lives in [`AI.md`](AI.md). Claude's persistent cross-session notes live outside the project tree at `~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md` — Claude Code auto-loads them.

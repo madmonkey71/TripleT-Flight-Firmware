@@ -38,9 +38,10 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 
 ## Queries — Time-Stamped Snapshots
 
-- [queries/roadmap-2026.md](queries/roadmap-2026.md) — Phase plan v0.6.0 → v1.0.0 (status as of 2026-04-22)
-- [queries/code-review-findings-2026.md](queries/code-review-findings-2026.md) — Feb-2026 audit on v0.51 baseline (archival)
+- [queries/v1-release-gate-2026-05.md](queries/v1-release-gate-2026-05.md) — **Active gate**: v1.0.0 ships on trajectory + telemetry + flight validation; 6.3 deferred to v1.1
+- [queries/roadmap-2026.md](queries/roadmap-2026.md) — Phase plan v0.6.0 → v1.0.0 (status as of 2026-05-25)
 - [queries/development-status-2026-04.md](queries/development-status-2026-04.md) — Shipped / outstanding / next actions
+- [queries/code-review-findings-2026.md](queries/code-review-findings-2026.md) — Feb-2026 audit on v0.51 baseline (archival)
 
 ## Operation Log
 

@@ -23,7 +23,7 @@ This file provides guidance for any AI assistant (Claude, Gemini, etc.) working 
 - **wiki/concepts/architecture-decisions.md** - ADRs (HAL, IMUInterface, apogee voting, EEPROM persistence, Kalman)
 - **wiki/queries/roadmap-2026.md** - Phase plan and current version status
 - **wiki/concepts/developer-workflow.md** - Build / test / flash cycle and common dev tasks
-- **MEMORY.md** - Persistent LLM notes across sessions (check before starting)
+- **Claude auto-memory** - Persistent cross-session notes managed by Claude Code at `~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md` (not in the project tree). Check it at the start of a session for prior context.
 
 ### Core Configuration
 - **src/config.h** - Flight parameters, safety limits, hardware configuration, version number
@@ -134,7 +134,6 @@ git diff HEAD                     # See uncommitted changes
 ├── wiki/                        # All project documentation (architecture, concepts, modules)
 ├── .archived/                   # Historical/superseded docs (preserved for context)
 ├── AI.md                        # This file (generic LLM guidance)
-├── MEMORY.md                    # Persistent session notes
 ├── platformio.ini               # Build configuration
 └── README.md                    # Project overview
 ```
@@ -169,7 +168,7 @@ git diff HEAD                     # See uncommitted changes
 
 ### Starting Work
 1. Read `wiki/queries/roadmap-2026.md` to understand current phase
-2. Check `MEMORY.md` for context from previous sessions
+2. Check Claude's auto-memory (`~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md`) for cross-session context
 3. Verify current version in `src/config.h`
 4. Check current branch: `git branch`
 5. Review acceptance criteria for current checkpoint
@@ -192,7 +191,7 @@ git status                       # See all files changed
 
 ### Resuming After Break
 1. Pull latest: `git fetch origin`
-2. Check MEMORY.md for context
+2. Check Claude's auto-memory for cross-session context (`~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md`)
 3. Review recent commits: `git log --oneline develop -10`
 4. Identify your current work branch
 5. Verify build state: `pio run -e teensy41`
@@ -323,7 +322,7 @@ If you encounter unclear requirements, architectural questions, or blockers:
    - `wiki/queries/roadmap-2026.md` (if implementing a phase)
    - `wiki/concepts/developer-workflow.md` (if asking "how do I…?")
    - `wiki/concepts/architecture-decisions.md` (if asking "why was it built this way?")
-   - `MEMORY.md` (if context from previous sessions)
+   - Claude auto-memory (`~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md`) for cross-session context
 
 2. **For safety-critical code:**
    - Always err on the side of caution
@@ -351,7 +350,7 @@ If you encounter unclear requirements, architectural questions, or blockers:
 
 - **Build problems**: Check `platformio.ini` and library versions
 - **Test failures**: Check mock sensor setup and test fixtures
-- **Design questions**: Reference `wiki/concepts/architecture-decisions.md` and `MEMORY.md`
+- **Design questions**: Reference `wiki/concepts/architecture-decisions.md` and Claude's auto-memory
 - **Git issues**: Use `git status`, `git log`, `git diff` to understand current state
 - **Sensor-specific**: Check the sensor datasheet and existing driver code
 

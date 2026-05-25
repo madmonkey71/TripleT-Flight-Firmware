@@ -3,8 +3,8 @@ title: Development Status — 2026-04
 type: query
 tags: [status, gaps, current-state]
 created: 2026-04-22
-updated: 2026-04-22
-related_files: [src/config.h, docs/DEVELOPMENT_STATUS.md, UPDATED_GAP_ANALYSIS_2025.md]
+updated: 2026-05-25
+related_files: [src/config.h, .archived/docs/DEVELOPMENT_STATUS.md, .archived/UPDATED_GAP_ANALYSIS_2025.md]
 ---
 
 Point-in-time snapshot of what's merged, what's live, and what remains before v1.0.0. Grounded in `git log` as of **2026-04-22** and the shipping `FIRMWARE_VERSION = "v0.10.0"`.
@@ -35,19 +35,26 @@ Point-in-time snapshot of what's merged, what's live, and what remains before v1
 
 Flight validation is the gate: needs recorded flights for PID tuning confidence before turning guidance on by default.
 
-## Outstanding (blocks v1.0.0)
+## Outstanding — blocks v1.0.0 (release gate)
+
+Per the 2026-05-25 scope decision ([[queries/v1-release-gate-2026-05]]), v1.0.0 is gated on these three items only:
 
 | Gap | Owner area | Notes |
 |-----|-----------|-------|
-| Live telemetry bridge | [[entities/esp32-telemetry]] | ESP32 stubs exist; Teensy `ENABLE_TELEMETRY` / Serial5 not wired yet |
-| Quaternion Kalman | [[concepts/kalman-filter]] | Plan in `.archived/docs/QUATERNION_MIGRATION_PLAN.md`; gimbal lock above ±80° pitch is a real risk |
-| Trajectory SD loading | Phase 6.1 | Only hard-coded test trajectory; waypoint-file parser incomplete |
-| `PowerManager` | Phase 6.3 | 4-mode power scheme specified; not yet implemented |
+| **Trajectory SD loading + XTE** | Phase 6.1 | Hard-coded waypoints in `guidance_control.cpp:744-768`; SD parser missing; cross-track error commented out at `:872` |
+| **Live telemetry bridge** | [[entities/esp32-telemetry]] | ESP32 stubs exist; Teensy `ENABLE_TELEMETRY` / Serial5 not wired yet |
+| **Flight validation** | Phase 6.4 | ≥ 5 good flights on v0.10.0+ firmware |
+
+## Deferred to v1.1 (documented, not blocker)
+
+| Gap | Owner area | Notes |
+|-----|-----------|-------|
+| Quaternion Kalman | [[concepts/kalman-filter]] | Plan in `.archived/docs/QUATERNION_MIGRATION_PLAN.md`; gimbal-lock zone documented as a known limitation |
+| `PowerManager` | Phase 6.3 | 4-mode power scheme specified; deferred |
 | Edge-case handlers | Phase 6.3 | GPS loss, wind-driven gain reduction, sensor saturation, EEPROM corruption |
-| `PreflightChecker` | Phase 6.3 | 7-check runner + `preflight` command; spec done |
-| Thermal management | Phase 6.3 | 70/85/95 °C thresholds, reactive throttling |
-| Flight validation | Phase 6.4 | ≥ 5 good flights on v0.10.0+ |
-| Test coverage | Phase 3+ | Infrastructure delivered; keep climbing toward 70 % / 95 % |
+| `PreflightChecker` | Phase 6.3 | 7-check runner + `preflight` command; deferred |
+| Thermal management | Phase 6.3 | 70/85/95 °C thresholds, reactive throttling; deferred |
+| Test coverage to 70 % / 95 % | Phase 3+ | Infrastructure delivered; keep climbing — not a hard gate but tracked |
 
 ## Known Limitations (current code)
 
@@ -72,13 +79,16 @@ Flight validation is the gate: needs recorded flights for PID tuning confidence 
 | `d797801` | Phase 3 testing infrastructure |
 | `557f8c8` | Phase 5 doc suite |
 
-## Next Actions (short list)
+## Next Actions (release-gate order)
 
-1. Wire `ENABLE_TELEMETRY` on Teensy and field-test the ESP-NOW link.
-2. Either deliver the quaternion Kalman upgrade or add a compile-time guard that caps attitude at ±80° pitch in guidance.
-3. Implement `PreflightChecker` — biggest single operational win per effort.
-4. Backfill unit tests toward the 70 %/95 % targets; apogee-detection path should be ≥ 95 %.
-5. Schedule 5 real flights to validate v0.10.0 end-to-end.
+Per [[queries/v1-release-gate-2026-05]]:
+
+1. **Telemetry first** — wire `ENABLE_TELEMETRY` on Teensy, `Serial5` packet output, finish the ESP32 TX/RX firmware enough for a round-trip bench test.
+2. **Trajectory SD loader + XTE** — replace hard-coded waypoints, implement `guidance_load_trajectory_from_file()`, finish the cross-track-error calc, add tests.
+3. **Bench-test both** with web console and recorded flight replay before any real flight.
+4. **Begin flight-validation programme** — 5 flights on v0.10.0+ firmware; log review and archive after each.
+5. **Parallel refactor track** — split `ProcessFlightState()` and `TripleT_Flight_Firmware.cpp` while touching the same files; backfill flight-critical unit tests toward 95 %.
+6. **(v1.1 work, NOT blocking)** — quaternion Kalman, `PowerManager`, `PreflightChecker`, thermal, edge-case handlers.
 
 ## Related
 

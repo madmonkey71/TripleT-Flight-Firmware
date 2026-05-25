@@ -120,3 +120,30 @@ Append-only chronological record of all wiki operations.
 - Component-specific READMEs (`esp32_*`, `web_interface/`, `test/`) untouched.
 - Historical/superseded docs preserved under `.archived/` and `.archived/docs/`.
 
+---
+
+## 2026-05-25 — SCOPE DECISION (v1.0.0 release gate)
+
+**Operation**: Capture the v1.0.0 release-gate decision in the wiki, fix stale references uncovered during the post-PR-#13 review.
+**Branch**: docs/v1-release-gate
+**Firmware version**: v0.10.0
+
+**Decision summary** (from the code review report on PR #13):
+
+- v1.0.0 ships when **trajectory (6.1) + live telemetry + 5 flight validations** are done.
+- Phase 6.3 (`PowerManager`, `PreflightChecker`, thermal management, edge-case handlers) **deferred to v1.1**. Existing redundancy/safety layers already meet the bar; 6.3 is operational polish, not a safety gate.
+- Quaternion Kalman migration stays deferred; Euler-state gimbal-lock zone (±80° pitch) documented as a known v1.0.0 limitation.
+
+**Wiki changes**:
+- New: `wiki/queries/v1-release-gate-2026-05.md` — explicit acceptance criteria for trajectory SD loader + XTE, telemetry round-trip, flight validation; deferred-list with rationale; refactoring-debt parallel track.
+- Updated `wiki/queries/roadmap-2026.md` — Phase 5 marked ✅; Phase 6 split into v1.0.0 vs v1.1 lines; success criteria rewritten around the gate.
+- Updated `wiki/queries/development-status-2026-04.md` — outstanding-gaps table split into "blocks v1.0.0" vs "deferred to v1.1"; Next Actions reordered to gate priority.
+- Updated `wiki/index.md` — added the new gate page at the top of Queries.
+
+**MEMORY.md reference cleanup**:
+- `AI.md` referenced `MEMORY.md` as if it lived at the project root. Actual location is `~/.claude/projects/-mnt-GAMES-SSD-matt-Code-TripleT-Flight-Firmware/memory/MEMORY.md` (Claude Code auto-memory). Updated all 6 references in `AI.md` and the closing line of `CLAUDE.md` to point at the real path.
+
+**Not changed in this pass**:
+- No source code edits. The trajectory + telemetry implementation work is the next step (see [[queries/v1-release-gate-2026-05]] for the action list).
+
+

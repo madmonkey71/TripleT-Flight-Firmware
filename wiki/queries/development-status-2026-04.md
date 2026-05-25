@@ -40,7 +40,7 @@ Flight validation is the gate: needs recorded flights for PID tuning confidence 
 | Gap | Owner area | Notes |
 |-----|-----------|-------|
 | Live telemetry bridge | [[entities/esp32-telemetry]] | ESP32 stubs exist; Teensy `ENABLE_TELEMETRY` / Serial5 not wired yet |
-| Quaternion Kalman | [[concepts/kalman-filter]] | Plan in `docs/QUATERNION_MIGRATION_PLAN.md`; gimbal lock above ±80° pitch is a real risk |
+| Quaternion Kalman | [[concepts/kalman-filter]] | Plan in `.archived/docs/QUATERNION_MIGRATION_PLAN.md`; gimbal lock above ±80° pitch is a real risk |
 | Trajectory SD loading | Phase 6.1 | Only hard-coded test trajectory; waypoint-file parser incomplete |
 | `PowerManager` | Phase 6.3 | 4-mode power scheme specified; not yet implemented |
 | Edge-case handlers | Phase 6.3 | GPS loss, wind-driven gain reduction, sensor saturation, EEPROM corruption |

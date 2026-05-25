@@ -4,7 +4,7 @@ type: concept
 tags: [testing, unity, native, ci, mocks]
 created: 2026-04-15
 updated: 2026-04-22
-related_files: [test/unit/, platformio.ini, .github/workflows/test.yml]
+related_files: [test/, platformio.ini, .github/workflows/test.yml]
 ---
 
 Three-tier testing strategy: desktop unit tests (no hardware), integration tests (real hardware), and flight validation.
@@ -12,21 +12,26 @@ Three-tier testing strategy: desktop unit tests (no hardware), integration tests
 ## Tier 1: Desktop Unit Tests
 
 - **Framework**: Unity via PlatformIO `native` environment
-- **Location**: `test/unit/*.cpp`
-- **Hardware**: None required — uses ArduinoFake + Mock HAL
-- **Run**: `pio test -e native_test` (or `pio test -e native`)
+- **Location**: `test/test_<name>/test_<name>.cpp` (PlatformIO auto-discovery layout)
+- **Hardware**: None required — uses ArduinoFake (compile flag `-D UNIT_TEST_NATIVE`)
+- **Run**: `pio test -e native -vv`
 - **CI**: Runs on every push via `.github/workflows/test.yml`
 
 ### Test Suites
 
-| File | Coverage |
-|------|----------|
-| `test_state_machine.cpp` | Flight state transitions, EEPROM persistence |
-| `test_apogee_detection.cpp` | All three detection methods + backup timer |
-| `test_guidance_failsafe.cpp` | Escalation levels, passive mode, gain reduction |
-| `test_math_functions.cpp` | Hypsometric formula, quaternion math |
-| `test_servo_smoother.cpp` | Rate limiting, clamping |
-| `test_stability_monitor.cpp` | Threshold checks, violation persistence |
+| Folder | Coverage |
+|--------|----------|
+| `test_state_machine/` | Flight state transitions, EEPROM persistence |
+| `test_flight_logic/` | High-level state-machine driver, integrations |
+| `test_apogee_detection/` | All three detection methods + backup timer |
+| `test_landing_detection/` | Stable-accel window, recovery transition |
+| `test_guidance_failsafe/` | Escalation levels, passive mode, gain reduction |
+| `test_stability_monitor/` | Threshold checks, violation persistence |
+| `test_sensor_health/` | Cross-sensor sanity checks, fault flagging |
+| `test_gps_validation/` | Fix quality, sat count, lat/lon sanity |
+| `test_altitude_calculations/` | Hypsometric formula, AGL vs MSL |
+| `test_math_functions/` | Vector/quaternion math, utility helpers |
+| `test_servo_smoother/` | Rate limiting, clamping |
 
 ### Mock Stack
 
@@ -38,13 +43,13 @@ Unity test → Mock HAL (MockTimer, MockSerial, etc.) → src/ logic
 ## Tier 2: Integration Tests (Hardware)
 
 - GPS test via `test/compile_gps_test.sh`
-- Bench test procedure documented in `BENCH_TEST_PROCEDURE.md`
+- Bench test procedure archived at `.archived/BENCH_TEST_PROCEDURE.md`
 - Use `pio device monitor --baud 115200` + serial commands for validation
 
 ## Tier 3: Flight Testing
 
 - Minimum 5 test flights before release
-- `FLIGHT_TEST_PREPARATION.md` — pre-flight checklist
+- Pre-flight checklist archived at `.archived/FLIGHT_TEST_PREPARATION.md`
 - Post-flight analysis via CSV log + web interface
 
 ## Coverage Targets
@@ -62,8 +67,8 @@ Unity test → Mock HAL (MockTimer, MockSerial, etc.) → src/ logic
 
 `.github/workflows/test.yml` defines two jobs that run on every push and PR:
 
-- **`unit-tests`** — `pio test -e native_test`; artifacts under `.pio/test/` uploaded.
-- **`firmware-build`** — `pio run -e teensy41`; verifies the production build still links and fits the flash budget.
+- **`test`** — `pio test -e native -vv`; runs Unity suites against ArduinoFake mocks.
+- **`build`** — `pio run -e teensy41`; verifies the production build still links and fits the flash budget.
 
 Branch protection on `master` / `develop` requires both green before merge. Performance budget: full CI < 5 min; unit tests < 10 s; firmware build < 30 s.
 

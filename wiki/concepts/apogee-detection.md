@@ -36,4 +36,4 @@ elif (time_since_burnout > 20s) → APOGEE forced (failsafe)
 - Noisy data → majority vote filters spikes
 - Backup timer → last resort if all sensors fail (guarantees drogue deploy)
 
-Equivalent rationale documented in CLAUDE.md ADR-003.
+Full rationale and rejected alternatives: [[concepts/architecture-decisions]] ADR-003.

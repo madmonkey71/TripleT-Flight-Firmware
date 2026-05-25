@@ -77,7 +77,7 @@ struct SystemStatusContext {
 
 ## Planned Additions (Phase 6.3)
 
-`PRODUCTION_READINESS_PLAN.md` scopes these new commands; spec only, not yet implemented:
+`.archived/PRODUCTION_READINESS_PLAN.md` scopes these new commands; spec only, not yet implemented:
 
 - `preflight` — run `PreflightChecker` (7 checks, PASS/WARN/FAIL each).
 - `telemetry_on` / `telemetry_off` — enable/disable ESP32 bridge ([[entities/esp32-telemetry]]).

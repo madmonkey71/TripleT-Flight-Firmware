@@ -10,6 +10,7 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 ## Concepts — Architectural Patterns
 
 - [concepts/layered-architecture.md](concepts/layered-architecture.md) — HAL → sensors → flight logic → guidance; dependency rules
+- [concepts/architecture-decisions.md](concepts/architecture-decisions.md) — ADRs: HAL, IMUInterface, apogee voting, EEPROM persistence, Kalman
 - [concepts/hal-abstraction.md](concepts/hal-abstraction.md) — 8 pure-virtual HAL interfaces enabling desktop testing
 - [concepts/sensor-redundancy.md](concepts/sensor-redundancy.md) — IMUInterface adapters, IMUManager primary/backup failover
 - [concepts/sensor-evaluation.md](concepts/sensor-evaluation.md) — Sensor selection rationale and alternatives (BNO085, ICM-20649, BMP388)
@@ -21,7 +22,7 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 - [concepts/system-robustness.md](concepts/system-robustness.md) — 4-layer defence, SPF ledger, failure-scenario walkthroughs
 - [concepts/data-logging.md](concepts/data-logging.md) — LogData, 62-field CSV, SD card, post-flight analysis
 - [concepts/testing-strategy.md](concepts/testing-strategy.md) — Unity native, ArduinoFake, 3-tier mocks, CI/CD, coverage targets
-- [concepts/developer-workflow.md](concepts/developer-workflow.md) — Build, test, flash, debug; feature-development contract
+- [concepts/developer-workflow.md](concepts/developer-workflow.md) — Build, test, flash, debug; common dev tasks; branch & release flow
 
 ## Entities — Module & Component Reference
 

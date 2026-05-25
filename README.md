@@ -33,7 +33,7 @@ The current state is ready for more extensive testing and is now held back by th
 
 ## Project Status & Roadmap
 
-See `IMPLEMENTATION_PLAN_2026.md` for the full roadmap and `PHASE_6_PLAN.md` for next steps.
+See [`wiki/queries/roadmap-2026.md`](wiki/queries/roadmap-2026.md) for the full phase plan and [`wiki/queries/development-status-2026-04.md`](wiki/queries/development-status-2026-04.md) for outstanding gaps.
 
 **Completed Phases:**
 - Phase 1: HAL Foundation (v0.7.0)
@@ -57,11 +57,18 @@ See `IMPLEMENTATION_PLAN_2026.md` for the full roadmap and `PHASE_6_PLAN.md` for
 
 ## Documentation
 
-- 📋 **[Implementation Plan](IMPLEMENTATION_PLAN_2026.md)** - Full roadmap and phase completion status.
-- 🔧 **[Hardware Requirements](docs/HARDWARE.md)** - Complete hardware setup and pin configuration.
-- 🚀 **[Flight Operations](docs/FLIGHT_OPERATIONS.md)** - Flight states, operations, and safety procedures.
-- ⚙️ **[Configuration Guide](docs/CONFIGURATION.md)** - Parameter settings and customization.
-- 💻 **[Serial Commands](docs/COMMANDS.md)** - Complete command reference.
+All project documentation lives in the [`wiki/`](wiki/) folder. Start at [`wiki/index.md`](wiki/index.md).
+
+- 🗺️ **[Architecture overview](wiki/overview.md)** — Tech stack, directory layout, state machine
+- 🔧 **[Hardware platform](wiki/entities/hardware-platform.md)** — Teensy 4.1, sensors, wiring, pyro
+- 🚀 **[Flight state transitions](wiki/concepts/flight-state-transitions.md)** — All 14 states and guards
+- ⚙️ **[Configuration system](wiki/entities/configuration-system.md)** — `config.h` parameters and compile flags
+- 💻 **[Serial commands](wiki/entities/command-processor.md)** — Full command catalogue
+- 🛡️ **[Safety / robustness](wiki/concepts/system-robustness.md)** — 4-layer defence, redundancy
+- 🛠️ **[Developer workflow](wiki/concepts/developer-workflow.md)** — Build / test / flash cycle
+- 📋 **[Roadmap](wiki/queries/roadmap-2026.md)** — Phase plan v0.6.0 → v1.0.0
+
+Historical/superseded documents are preserved under `.archived/`.
 
 ## License
 

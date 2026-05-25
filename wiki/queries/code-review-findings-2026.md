@@ -4,7 +4,7 @@ type: query
 tags: [audit, code-quality, technical-debt, history]
 created: 2026-04-22
 updated: 2026-04-22
-related_files: [CODE_REVIEW_FINDINGS_2026.md, EXECUTIVE_SUMMARY_2026.md, FIX_WALKTHROUGH.md]
+related_files: [.archived/CODE_REVIEW_FINDINGS_2026.md, .archived/EXECUTIVE_SUMMARY_2026.md, .archived/FIX_WALKTHROUGH.md]
 ---
 
 Archival snapshot of the Feb 2026 code review that catalysed the refactoring captured in [[queries/roadmap-2026]]. Scored the firmware **5.4 / 10** at v0.51 and proposed a target of 8+ post-Phases 1-4. Most critical findings have since been addressed; this page records what was found and where it landed.

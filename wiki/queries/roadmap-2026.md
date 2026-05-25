@@ -4,10 +4,10 @@ type: query
 tags: [roadmap, phases, planning, versions]
 created: 2026-04-22
 updated: 2026-04-22
-related_files: [IMPLEMENTATION_PLAN_2026.md, EXECUTIVE_SUMMARY_2026.md, src/config.h]
+related_files: [.archived/IMPLEMENTATION_PLAN_2026.md, .archived/EXECUTIVE_SUMMARY_2026.md, src/config.h]
 ---
 
-Snapshot of the 2026 roadmap taking TripleT from a refactoring baseline at v0.6.0-dev to a v1.0.0 production release. Phase structure is per `IMPLEMENTATION_PLAN_2026.md`; status fields reflect what is merged as of **2026-04-22** (verified against `git log`).
+Snapshot of the 2026 roadmap taking TripleT from a refactoring baseline at v0.6.0-dev to a v1.0.0 production release. Phase structure is per `.archived/IMPLEMENTATION_PLAN_2026.md`; status fields reflect what is merged as of **2026-04-22** (verified against `git log`).
 
 ## Phase Summary
 
@@ -45,13 +45,13 @@ Merged: `docs/` suite (Architecture, Developer Guide, Safety, Configuration, Com
 
 - **6.1 Trajectory following** — Waypoint navigation, cross-track error / altitude PIDs, SD-card trajectory loader. Status: partial (controller present, SD loader incomplete).
 - **6.2 Advanced guidance control** — Stability monitor with grace period, failsafe escalation. Status: ✅ merged `a560c9a`; follow-up fix `8aeb589` aligned failsafe with graceful-degrade philosophy.
-- **6.3 Production readiness** — `PowerManager` (ACTIVE / COAST_OPT / RECOVERY / SLEEP modes), edge-case handlers (GPS loss, high wind, sensor saturation), `PreflightChecker`, thermal management. Status: specified in `PRODUCTION_READINESS_PLAN.md`; implementation pending.
+- **6.3 Production readiness** — `PowerManager` (ACTIVE / COAST_OPT / RECOVERY / SLEEP modes), edge-case handlers (GPS loss, high wind, sensor saturation), `PreflightChecker`, thermal management. Status: specified in `.archived/PRODUCTION_READINESS_PLAN.md`; implementation pending.
 - **6.4 Validation & release** — Integration-test suite, doc finalisation, v1.0.0 tag. Status: specified; gated on 6.3.
 
 ## Outstanding Gaps (high-priority)
 
 1. **Live telemetry** — ESP32 transmitter/receiver firmware exists as stubs; Teensy-side `ENABLE_TELEMETRY` + Serial5 output not wired in. See [[entities/esp32-telemetry]].
-2. **Quaternion filter** — Kalman currently propagates via Euler angles; plan in `docs/QUATERNION_MIGRATION_PLAN.md` would eliminate gimbal lock at ±90° pitch. See [[concepts/kalman-filter]].
+2. **Quaternion filter** — Kalman currently propagates via Euler angles; plan in `.archived/docs/QUATERNION_MIGRATION_PLAN.md` would eliminate gimbal lock at ±90° pitch. See [[concepts/kalman-filter]].
 3. **Trajectory SD loading** — Waypoint file parser incomplete; only hard-coded test trajectory works today.
 4. **Flight validation** — Need ≥ 5 successful real flights on the v0.10.0+ firmware before tagging v1.0.0.
 
@@ -60,7 +60,7 @@ Merged: `docs/` suite (Architecture, Developer Guide, Safety, Configuration, Com
 - All sub-phases of 6 complete and merged.
 - ≥ 70 % overall code coverage; ≥ 95 % on flight-critical paths.
 - 5+ real flights with no critical regressions.
-- Documentation (wiki + `docs/`) consistent with shipped code — see `DOCS_MAINTENANCE.md`.
+- Documentation (wiki) consistent with shipped code — see [[schema]] for the update protocol.
 
 ## Notes on Timeline
 

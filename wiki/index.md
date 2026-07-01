@@ -14,6 +14,7 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 - [concepts/hal-abstraction.md](concepts/hal-abstraction.md) — 8 pure-virtual HAL interfaces enabling desktop testing
 - [concepts/sensor-redundancy.md](concepts/sensor-redundancy.md) — IMUInterface adapters, IMUManager primary/backup failover
 - [concepts/sensor-evaluation.md](concepts/sensor-evaluation.md) — Sensor selection rationale and alternatives (BNO085, ICM-20649, BMP388)
+- [concepts/hardware-alternatives.md](concepts/hardware-alternatives.md) — MCU platform comparison (Teensy 4.1 vs Portenta H7, ESP32-S3, STM32F4)
 - [concepts/apogee-detection.md](concepts/apogee-detection.md) — 2-of-3 voting (baro + accel + GPS) + 20 s backup timer
 - [concepts/flight-state-transitions.md](concepts/flight-state-transitions.md) — Transition table, guards, timing, edge cases
 - [concepts/guidance-degradation.md](concepts/guidance-degradation.md) — Soft error 90; guidance disabled without aborting flight

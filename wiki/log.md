@@ -122,6 +122,22 @@ Append-only chronological record of all wiki operations.
 
 ---
 
+## 2026-07-01 — ADD (hardware alternatives comparison)
+
+**Operation**: Add a hardware platform comparison page, requested via user review of the flight computer MCU choice.
+**Branch**: claude/hardware-platform-review-2qggw3
+**Firmware version**: v0.10.0
+
+**Files created**:
+- `wiki/concepts/hardware-alternatives.md` — Teensy 4.1 vs Portenta H7 (STM32H747), ESP32-S3 (standalone), STM32F405, and "Teensy + ESP32-S3 bridge" compared on real-time margin, driver/library risk, SD logging, wireless, cost; recommends staying on Teensy 4.1 and finishing the planned ESP32 telemetry bridge rather than re-platforming.
+
+**Sources consulted**: `wiki/overview.md`, `wiki/entities/hardware-platform.md`, `wiki/concepts/sensor-evaluation.md`, `wiki/entities/esp32-telemetry.md`, `.archived/docs/STM32_MIGRATION_ANALYSIS.md` (prior STM32 feasibility study this page builds on).
+
+**Files updated**:
+- `wiki/index.md` — added the new page under Concepts.
+
+---
+
 ## 2026-05-25 — SCOPE DECISION (v1.0.0 release gate)
 
 **Operation**: Capture the v1.0.0 release-gate decision in the wiki, fix stale references uncovered during the post-PR-#13 review.

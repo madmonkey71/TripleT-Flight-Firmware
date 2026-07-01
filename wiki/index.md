@@ -34,7 +34,7 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 - [entities/command-processor.md](entities/command-processor.md) — Serial command catalogue, debug toggles
 - [entities/error-handling.md](entities/error-handling.md) — `ErrorCode_t` taxonomy, hard vs soft errors, recovery
 - [entities/web-interface.md](entities/web-interface.md) — Browser console, Web Serial API, CSV parser
-- [entities/esp32-telemetry.md](entities/esp32-telemetry.md) — Planned ESP-NOW wireless bridge
+- [entities/esp32-telemetry.md](entities/esp32-telemetry.md) — ESP-NOW wireless bridge (Teensy ↔ ESP32 TX ↔ ESP32 RX ↔ web console); Teensy side and ESP32 firmware shipped, bench-test pending
 
 ## Queries — Time-Stamped Snapshots
 

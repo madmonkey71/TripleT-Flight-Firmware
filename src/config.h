@@ -52,6 +52,16 @@
 #define USE_KX134                                                              \
   1 // Use KX134 high-g sensor alongside ICM20948 (1=Use, 0=Don't Use)
 
+// --- Telemetry (Phase 6, v1.0.0 release gate) ---
+// Set to 1 to enable the Serial5 -> ESP32 -> ESP-NOW radio link.
+// When 0, the firmware behaves exactly as before — Serial5 is untouched, no
+// packets are emitted, no extra CPU cost in the main loop.
+// See wiki/entities/esp32-telemetry.md for the link topology and
+// wiki/queries/v1-release-gate-2026-05.md for v1.0.0 acceptance criteria.
+#define ENABLE_TELEMETRY 0
+#define TELEMETRY_BAUD 115200      // Serial5 baud rate to onboard ESP32 TX
+#define TELEMETRY_PERIOD_MS 100    // Send a packet every N ms (10 Hz default)
+
 // --- GPS Interface Configuration ---
 // Set GPS_USE_SPI to 1 for SPI connection, 0 for I2C connection
 #define GPS_USE_SPI 0 // 0=I2C (default), 1=SPI

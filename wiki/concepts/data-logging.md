@@ -58,7 +58,7 @@ Two companion ESP32 projects for wireless telemetry over ESP-NOW:
 - `esp32_telemetry_transmitter/` — onboard, reads Teensy UART and RF-transmits
 - `esp32_ground_station_receiver/` — ground station, receives and forwards to PC
 
-Current status: firmware stubs exist; Teensy-side `ENABLE_TELEMETRY` gate not yet wired. See [[entities/esp32-telemetry]] for protocol design and progress.
+Current status: Teensy side shipped (`src/telemetry.h`, `src/telemetry.cpp`, `ENABLE_TELEMETRY` flag in `src/config.h`, `Serial5` write inside `WriteLogData()`); both ESP32 firmwares replaced with real code; bench-test on hardware and a flight on radio still needed. See [[entities/esp32-telemetry]] for the 40-byte packet layout and integration steps.
 
 ## Post-Flight Analysis
 

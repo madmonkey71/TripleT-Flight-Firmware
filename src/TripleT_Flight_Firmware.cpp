@@ -66,6 +66,7 @@ WDT_T4<WDT1> wdt;
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
+#include "telemetry.h"       // For ENABLE_TELEMETRY packing & framing
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
 // Define variables declared as extern in utility_functions.h
@@ -464,6 +465,19 @@ void WriteLogData(bool forceLog) {
     }
   }
   
+  // --- Telemetry (gated by ENABLE_TELEMETRY in config.h) ---
+  // Send the same LogData snapshot we're about to log over Serial5 as a
+  // packed binary frame. See src/telemetry.h and wiki/entities/esp32-telemetry.md.
+#if ENABLE_TELEMETRY
+  {
+    TelemetryPacket tpkt;
+    telemetry_pack(logEntry, tpkt);
+    uint8_t frame[TELEMETRY_FRAME_SIZE];
+    telemetry_frame(tpkt, frame);
+    Serial5.write(frame, sizeof(frame));
+  }
+#endif
+
   // At this point, g_LogDataFile should be open. Attempt to write the log entry.
   String logString = logDataToString(logEntry);
   if (!g_LogDataFile.println(logString)) {
@@ -601,6 +615,13 @@ void setup() {
   Serial.println(F("TripleT Flight Firmware Starting..."));
   Serial.print(F("Version: "));
   Serial.println(TRIPLET_FLIGHT_VERSION);
+
+#if ENABLE_TELEMETRY
+  // Initialise the UART link to the onboard ESP32 telemetry transmitter.
+  // Wire framing + packed binary protocol defined in src/telemetry.h.
+  Serial5.begin(TELEMETRY_BAUD);
+  Serial.println(F("Telemetry: Serial5 enabled @115200 baud"));
+#endif
 
   // Initialize Hardware Watchdog (2.0s timeout)
   WDT_timings_t config;

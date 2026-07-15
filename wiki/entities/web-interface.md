@@ -3,11 +3,11 @@ title: Web Interface — Browser-Based Flight Console
 type: entity
 tags: [web-serial, telemetry, visualization, dashboard]
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [web_interface/index.html, web_interface/js/data_parser.js, web_interface/js/serial_handler.js, web_interface/js/flight_console_data_mapping.json]
 ---
 
-Browser-based real-time flight console that speaks to the Teensy over [Web Serial API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API). Parses the 62-field CSV telemetry stream into charts, gauges, and a 3D orientation model — no flashing or install required.
+Browser-based real-time flight console that speaks to the Teensy over [Web Serial API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API). Parses the 63-field CSV telemetry stream into charts, gauges, and a 3D orientation model — no flashing or install required.
 
 ## Entry Point
 
@@ -31,7 +31,7 @@ Chrome / Edge only — Web Serial is not available in Firefox or Safari.
 
 ```
 Teensy USB Serial (115200 baud)
-  ├─ CSV data line    (62 fields, ~100 Hz when enabled)
+  ├─ CSV data line    (63 fields, 5 Hz when enabled — the WriteLogData cadence)
   ├─ INFO / WARN / ERROR / DEBUG lines
   └─ command echoes
 
@@ -42,7 +42,7 @@ Web console
   └─ ui/charts/3d model      → render
 ```
 
-The mapping JSON must stay in sync with `LogData` in `src/data_structures.h` and the CSV header produced by `src/log_format_definition.cpp`. If fields drift, the parser will mis-map — see [[concepts/data-logging]].
+The mapping JSON must stay in sync with `LogData` in `src/data_structures.h` and the CSV header produced by `src/log_format_definition.cpp`. The root copy, the `web_interface/js/` copy, and the fallback table in `data_parser.js` all carry the full 63 columns (including `GuidanceActive`) as of 2026-07. If fields drift, the parser will mis-map — see [[concepts/data-logging]].
 
 ## Dashboard Panels
 
@@ -66,7 +66,8 @@ Same serial port is used to send commands back to the Teensy (e.g. `arm`, `calib
 
 - **HTTPS restriction**: some browsers block Web Serial on `http://` except `localhost`. Use `file://` or `localhost` during development.
 - **Field-count drift**: if `LogData` gains a field but the mapping JSON is not updated, all downstream fields shift. Integration test via `test_message_filtering.html` before flight.
-- **Backpressure**: at 100 Hz, charts need throttling; heavy tabs can stall the reader and cause buffer overrun on the Teensy side.
+- **Backpressure**: the 5 Hz stream is light, but heavy tabs can still stall the reader and cause buffer overrun on the Teensy side.
+- **No radio-feed parsing**: the console parses only the direct-USB numeric CSV; the ground station's `TELEM,...` lines fall through to the raw terminal log (parser extension pending).
 
 ## Related
 

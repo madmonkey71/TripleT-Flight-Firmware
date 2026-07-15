@@ -3,11 +3,11 @@ title: Graceful Guidance Degradation
 type: concept
 tags: [guidance, safety, failsafe, stability]
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-07-02
 related_files: [src/guidance_control.cpp, src/guidance_failsafe.cpp, src/stability_monitor.h, src/guidance_control.h]
 ---
 
-When the guidance system detects a stability violation during BOOST or COAST, it gracefully disables itself rather than triggering an ERROR state. This ensures parachute deployment is never skipped.
+When the guidance system detects a sustained stability violation, it gracefully degrades and ultimately disables itself rather than triggering an ERROR state. This ensures parachute deployment is never skipped. Two paths enforce this: the Phase-6.2 `StabilityMonitor` + failsafe escalation running at 50 Hz inside `guidance_update()` (active guidance states: COAST / DROGUE_DESCENT / MAIN_DESCENT), and a legacy `guidance_check_stability()` check called by the state machine during BOOST and COAST. Both now use the **same threshold set** — the legacy `STABILITY_*` constants alias the `GUIDANCE_STABILITY_*` values in `config.h`.
 
 ## Problem Solved
 
@@ -29,7 +29,7 @@ When set to `false`:
 
 ## Stability Monitor
 
-`StabilityMonitor` class (`src/stability_monitor.h`) tracks violations against thresholds:
+`StabilityMonitor` class (`src/stability_monitor.h`) tracks violations against thresholds (the single unified set, `GUIDANCE_STABILITY_*` in `config.h`, also aliased by the legacy `STABILITY_*` names):
 
 | Metric | Default Limit |
 |--------|--------------|
@@ -40,18 +40,20 @@ When set to `false`:
 | Actuator saturation | 95% |
 | Violation persistence | 500 ms |
 
-A violation must persist for 500 ms before action is taken (prevents noise-triggered disables).
+A violation must persist for 500 ms before action is taken (prevents noise-triggered disables). The monitor sets `is_stable` on every update, so once conditions return to normal the failsafe automatically recovers gains.
 
 ## Failsafe Escalation
 
-`guidance_failsafe_check()` (`src/guidance_failsafe.cpp`) implements a 4-level escalation:
+`guidance_failsafe_check()` (`src/guidance_failsafe.cpp`) implements a 4-level escalation, checked at 50 Hz inside `guidance_update()`:
 
-| Level | State | Action |
-|-------|-------|--------|
-| 0 | Normal | PID control at full gains |
-| 1 | Gain Reduction | PID gains multiplied by < 1.0 factor |
-| 2 | Passive | Servos centered, control disabled (`g_guidance_active = false`) |
-| 3 | Error | (Reserved; currently maps to level 2 to avoid ERROR state) |
+| Level | Trigger | Action |
+|-------|---------|--------|
+| 0 — Normal | — | PID control at full gains |
+| 1 — Gain Reduction | violation ≥ 1 s | PID gain factor reduced −0.02 per call, floor `GUIDANCE_FAILSAFE_MIN_GAIN` = 0.3 |
+| 2 — Passive | violation ≥ 2 s, or saturation > 95% | Servos centered, control disabled |
+| 3 — Disabled | violation ≥ 5 s | `g_guidance_active = false` **permanently** — guidance off for the rest of the flight; no ERROR state; parachute logic unaffected |
+
+Level 3 is implemented and distinct from level 2 (it is not "reserved"). **Recovery:** when the monitor reports stable again before level 3, gains climb back at +0.05 per call and the failsafe deactivates once gains reach 1.0 (levels below 2 only). A level-3 disable is not undone by recovery — only `guidance_failsafe_reset()` on a flight-state transition clears the failsafe state.
 
 ## Key Functions
 

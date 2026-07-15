@@ -12,10 +12,10 @@ Content catalog for the project wiki. See [overview.md](overview.md) for the arc
 - [concepts/layered-architecture.md](concepts/layered-architecture.md) — HAL → sensors → flight logic → guidance; dependency rules
 - [concepts/architecture-decisions.md](concepts/architecture-decisions.md) — ADRs: HAL, IMUInterface, apogee voting, EEPROM persistence, Kalman
 - [concepts/hal-abstraction.md](concepts/hal-abstraction.md) — 8 pure-virtual HAL interfaces enabling desktop testing
-- [concepts/sensor-redundancy.md](concepts/sensor-redundancy.md) — IMUInterface adapters, IMUManager primary/backup failover
+- [concepts/sensor-redundancy.md](concepts/sensor-redundancy.md) — IMUInterface adapters, IMUManager primary/backup failover (dormant scaffolding; live failover is the 16 g KX134 Kalman switch)
 - [concepts/sensor-evaluation.md](concepts/sensor-evaluation.md) — Sensor selection rationale and alternatives (BNO085, ICM-20649, BMP388)
 - [concepts/hardware-alternatives.md](concepts/hardware-alternatives.md) — MCU platform comparison (Teensy 4.1 vs Portenta H7, ESP32-S3, STM32F4)
-- [concepts/apogee-detection.md](concepts/apogee-detection.md) — 2-of-3 voting (baro + accel + GPS) + 20 s backup timer
+- [concepts/apogee-detection.md](concepts/apogee-detection.md) — four detection methods, OR/first-match (baro + accel + GPS + 20 s backup timer)
 - [concepts/flight-state-transitions.md](concepts/flight-state-transitions.md) — Transition table, guards, timing, edge cases
 - [concepts/guidance-degradation.md](concepts/guidance-degradation.md) — Soft error 90; guidance disabled without aborting flight
 - [concepts/kalman-filter.md](concepts/kalman-filter.md) — Kalman AHRS; current Euler state; quaternion migration plan

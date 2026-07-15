@@ -3,7 +3,7 @@ title: Data Logging & Telemetry
 type: concept
 tags: [logging, sd-card, web-interface, csv, telemetry]
 created: 2026-04-15
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [src/data_structures.h, src/log_format_definition.cpp, src/TripleT_Flight_Firmware.cpp, web_interface/]
 ---
 
@@ -11,7 +11,7 @@ Flight data is logged to CSV on the Teensy 4.1's built-in SDIO SD card and optio
 
 ## LogData Struct
 
-Defined in `src/data_structures.h`. ~62 fields per row; streamed at ~100 Hz when `enableSerialCSV` is on (`debug_serial_csv on`); SD writes batched for efficiency.
+Defined in `src/data_structures.h`. 63 fields per row (`LOG_COLUMN_COUNT`). Logging runs at **5 Hz** (hard-coded 200 ms gate in `WriteLogData()`; the `LOG_INTERVAL` constant is unused) in every flight state; the same 5 Hz row is echoed to USB serial when `enableSerialCSV` is on (`debug_serial_csv on`). SD writes are direct `println` calls with a flush every 10 rows (~2 s) — there is no RAM ring buffer or batching.
 
 | Category | Fields |
 |----------|--------|
@@ -31,14 +31,18 @@ Defined in `src/data_structures.h`. ~62 fields per row; streamed at ~100 Hz when
 
 ```cpp
 // src/config.h
-#define SD_CARD_MIN_FREE_SPACE  5 * 1024 * 1024  // 5 MB minimum
-#define SD_CACHE_SIZE           8                  // Cache factor
-#define LOG_PREALLOC_SIZE       5000000            // Pre-allocate 5 MB
+#define SD_CARD_MIN_FREE_SPACE  5 * 1024 * 1024  // 5 MB minimum — live (low-space warning)
+#define SD_CACHE_SIZE           8                  // defined but UNUSED
+#define LOG_PREALLOC_SIZE       5000000            // defined but UNUSED (no preallocation happens)
 ```
+
+Only the minimum-free-space check is live; the cache and preallocation constants are never referenced by the code.
 
 ## Log Format
 
-CSV with headers defined in `src/log_format_definition.cpp`. Headers and struct fields must be kept manually synchronized — there is no compile-time enforcement.
+CSV with headers defined in `src/log_format_definition.cpp` (`LOG_COLUMNS[]`, 63 columns — single source of truth for the header). Headers and struct fields must be kept manually synchronized — there is no compile-time enforcement.
+
+Log files are named `DATA_YYYYMMDD_HHMMSS.csv` when a GPS time fix is available, else `LOG_<millis>.csv` (built in — and stored in — 64-byte buffers).
 
 ## Web Interface
 
@@ -48,7 +52,7 @@ Browser-based real-time dashboard in `web_interface/index.html` using the **Web 
 - GPS map display
 - Flight state indicator
 
-Data field mapping: `flight_console_data_mapping.json` in repo root.
+Data field mapping: `flight_console_data_mapping.json` (repo root, with a copy in `web_interface/js/` and a matching fallback in `data_parser.js`) — all three now carry the full 63 columns including `GuidanceActive`.
 
 Test harness for parser: `web_interface/test_message_filtering.html`
 
@@ -58,7 +62,7 @@ Two companion ESP32 projects for wireless telemetry over ESP-NOW:
 - `esp32_telemetry_transmitter/` — onboard, reads Teensy UART and RF-transmits
 - `esp32_ground_station_receiver/` — ground station, receives and forwards to PC
 
-Current status: Teensy side shipped (`src/telemetry.h`, `src/telemetry.cpp`, `ENABLE_TELEMETRY` flag in `src/config.h`, `Serial5` write inside `WriteLogData()`); both ESP32 firmwares replaced with real code; bench-test on hardware and a flight on radio still needed. See [[entities/esp32-telemetry]] for the 40-byte packet layout and integration steps.
+Current status: Teensy side shipped (`src/telemetry.h`, `src/telemetry.cpp`, `ENABLE_TELEMETRY` flag in `src/config.h` — default `0`, `Serial5` write inside `WriteLogData()`); both ESP32 firmwares replaced with real code; bench-test on hardware and a flight on radio still needed. Sending piggybacks on the 5 Hz log cadence and sits after the SD early-returns, so **no SD card ⇒ no telemetry packets**. See [[entities/esp32-telemetry]] for the 40-byte packet layout and integration steps.
 
 ## Post-Flight Analysis
 

@@ -3,7 +3,7 @@ title: command_processor — Serial Command Interface
 type: entity
 tags: [commands, serial, interface, debugging]
 created: 2026-04-15
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [src/command_processor.cpp, src/command_processor.h, src/debug_flags.h]
 ---
 
@@ -16,43 +16,49 @@ Text-based serial command interface for controlling and diagnosing the flight co
 | Command | Description | State guard |
 |---------|-------------|-------------|
 | `arm` | Transition to `ARMED`, enabling launch detection | `PAD_IDLE` only; rejected with error 71 on unhealthy sensors |
+| `disarm` | Return from `ARMED` to `PAD_IDLE` | `ARMED` only. (A 5-minute `ARMED_TIMEOUT_MS` auto-disarm also returns to `PAD_IDLE` if no launch is detected.) |
 | `clear_errors` | Manual recovery from `ERROR` state | `ERROR` only |
+| `clear_to_calibration` | Recover from `ERROR` into `CALIBRATION` | `ERROR` only |
+| `skip_calibration` | Skip GPS-based baro calibration, use raw baro altitude (offset 0) | `CALIBRATION` or `ERROR` |
 
 ### Calibration
 
 | Command | Description |
 |---------|-------------|
-| `calibrate` | Barometric calibration: set current altitude as 0 m AGL ([[concepts/calibration]]) |
+| `calibrate` | Barometric calibration ([[concepts/calibration]]); allowed in `PAD_IDLE` / `CALIBRATION` / `ERROR` |
 | `calibrate_gyro` | Sample stationary gyro bias |
-| `calibrate_mag` | Interactive magnetometer calibration (rotate through orientations) |
+| `calibrate_mag` | Interactive magnetometer calibration — 30 s figure-eight capture routine (requires ICM ready) |
 | `save_mag_cal` | Persist current mag calibration to EEPROM |
 
 ### Diagnostics
 
 | Command | Description |
 |---------|-------------|
-| `status_sensors` | Per-sensor health summary ([[entities/error-handling]]) |
+| `status` | System/sensor status summary (there is no `status_sensors` command) |
+| `sd_status` | SD card / logging status |
+| `sensor_requirements` | Show per-state sensor health requirements ([[entities/error-handling]]) |
 | `scan_i2c` | List responding I2C addresses |
+| `start_log` | Start SD logging / create a new log file |
 | `help` | Emit full command list |
 
-### Debug output toggles
+### Digit shortcuts and debug toggles
 
-Runtime flags; no rebuild required. Both shortcut (digit) and named forms exist:
+Runtime flags; no rebuild required. Digits `0`–`6` toggle debug output; digits `7`–`9` are actions:
 
 | Shortcut | Named | Purpose |
 |----------|-------|---------|
-| `0` | `debug_serial_csv off` | Stop 62-field CSV stream |
-| — | `debug_serial_csv on` | Start CSV stream |
+| `0` | `debug_serial_csv on/off` | Toggle 63-field CSV stream |
 | `1` | `debug_system on/off` | System messages |
 | `2` | `debug_imu on/off` | IMU raw samples |
 | `3` | `debug_gps on/off` | GPS fix/status |
 | `4` | `debug_baro on/off` | Barometer / altitude |
-| `5` | `debug_state on/off` | State transitions |
-| `6` | `debug_guidance on/off` | PID / stability monitor |
-| `7` | `debug_battery on/off` | Battery voltage |
-| `8`–`9` | additional subsystems | See `src/debug_flags.h` |
+| `5` | `debug_storage on/off` | SD/storage debug |
+| `6` | `debug_icm_raw on/off` | ICM-20948 raw output |
+| `7` | — | Start logging (action, not a toggle) |
+| `8` | — | SD card status (action) |
+| `9` | — | Shutdown (action) |
 
-See [[entities/configuration-system]] for the full flag catalogue.
+Additional named forms: `debug_battery`, `debug_all_off`, `summary`, `set_orientation_filter` / `get_orientation_filter`, and `TEST_FREEZE` (blocks 6 s to exercise the watchdog). Letter shortcuts `a`–`j` cover help/status/storage/display utilities (three flash commands are "Not Implemented" stubs). There are no `debug_state` / `debug_guidance` toggles. See [[entities/configuration-system]] for the full flag catalogue.
 
 ## Architecture
 
@@ -92,5 +98,5 @@ Track progress in [[queries/roadmap-2026]].
 
 - [[entities/configuration-system]] — debug-flag definitions and compile-time flags
 - [[concepts/calibration]] — what the calibration commands do
-- [[entities/error-handling]] — meaning of `status_sensors` output
+- [[entities/error-handling]] — meaning of `status` / `sensor_requirements` output
 - [[entities/web-interface]] — GUI client for this same command stream

@@ -3,7 +3,7 @@ title: Sensor Calibration Procedures
 type: concept
 tags: [calibration, barometer, magnetometer, gyroscope, gps]
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [src/command_processor.cpp, src/ms5611_functions.cpp, src/icm_20948_functions.cpp, src/gps_functions.cpp]
 ---
 
@@ -13,25 +13,25 @@ Three sensors require calibration before flight: barometer (ground reference), g
 
 Sets current altitude as 0 m AGL by sampling pressure and deriving a reference offset.
 
-**Manual**: `calibrate` serial command.
-**Automatic**: fires on GPS fix acquisition during `CALIBRATION` state; falls back to a timeout if GPS never locks (commit `eecbf86`).
+**Manual**: `calibrate` serial command (valid in `PAD_IDLE`, `CALIBRATION`, or `ERROR`), or `skip_calibration` to force offset 0.
+**Automatic**: fires on GPS fix acquisition during `CALIBRATION` state; falls back after `CALIBRATION_AUTO_TIMEOUT_MS` (120 s) to offset 0 if GPS never locks (commit `eecbf86`).
 
 Preconditions:
 - Rocket sitting at the pad (do not move during cal).
-- GPS: ≥ 4 satellites, pDOP ≤ 5 (preferred, gives an absolute reference via GPS MSL altitude).
-- MS5611 responding to I2C polls.
+- GPS: 3D fix (fixType ≥ 3) with pDOP < 3.0 — there is no satellite-count check; the GPS MSL altitude gives the absolute reference (`offset = GPS_alt − raw_baro_alt`).
+- MS5611 responding to I2C polls, pressure within 700–1200 hPa.
 
 Outcome:
-- Reference pressure/altitude saved to RAM; current `altitude_m_agl = 0`.
-- Offset persisted to EEPROM for watchdog-reset recovery.
+- Reference offset applied in RAM; current `altitude_m_agl = 0`.
+- Offset also persisted to EEPROM as part of `FlightStateData` (`baroAltitudeOffset` / `baroCalibrated` fields) on state saves; it is restored on reboot only when recovering into `ARMED` or a later state — pre-arm recovery recalibrates fresh. See [[entities/state-management]].
 - On failure: error `BARO_CALIBRATION_FAIL_NO_GPS` (60) or `BARO_CALIBRATION_FAIL_TIMEOUT` (61).
 
 ## Gyroscope Bias Calibration
 
 Samples stationary gyro readings to compute a per-axis bias that is subtracted during flight.
 
-**Command**: `calibrate_gyro` (or included in a combined `calibrate` where defined).
-**Procedure**: hold the rocket motionless and level for a few seconds; the firmware averages samples and stores the bias.
+**Command**: `calibrate_gyro` (separate from the baro-only `calibrate` command).
+**Procedure**: hold the rocket motionless and level; the firmware discards 100 warm-up reads, averages 2000 samples, and stores the per-axis bias in RAM (not persisted across reboots).
 
 Why this matters: an uncalibrated gyro drifts attitude during the Kalman prediction step, which poisons guidance and the orientation log field. See [[concepts/kalman-filter]].
 
@@ -39,9 +39,9 @@ Why this matters: an uncalibrated gyro drifts attitude during the Kalman predict
 
 Corrects hard-iron and soft-iron distortion from nearby metal / electronics.
 
-**Command**: `calibrate_mag` → follow prompts; rotate the rocket through multiple orientations (figure-of-eight motion for a few seconds).
-**Persist**: `save_mag_cal` → writes bias/scale matrix to EEPROM.
-**Load**: on boot, firmware reads the stored calibration; failure logs `MAG_CALIBRATION_LOAD_FAIL` (62).
+**Command**: `calibrate_mag` → interactive 30-second routine (`ICM_20948_calibrate_mag_interactive()`, `src/icm_20948_functions.cpp:492`): rotate the rocket slowly through all orientations (figure-of-eight motion) while the firmware records each axis' min/max envelope. It then computes the hard-iron bias (envelope midpoints) and a diagonal soft-iron scale (per-axis radius normalisation; off-diagonals left at 0) and applies them immediately. Send `x` to abort. The routine rejects the capture (existing calibration unchanged) if fewer than 100 samples were taken or any axis spread is under 5 µT.
+**Persist**: `save_mag_cal` → writes bias/scale matrix to EEPROM (`MAG_CAL_EEPROM_ADDR` = 100).
+**Load**: on boot, firmware reads the stored calibration (falls back to hard-coded defaults); failure logs `MAG_CALIBRATION_LOAD_FAIL` (62).
 
 Skip scenario: if the firmware doesn't use the magnetometer in the Kalman update (configurable), calibration is optional.
 
@@ -57,7 +57,7 @@ Do a fresh calibration whenever any of the following is true:
 
 ## Verification
 
-After calibration, run `status_sensors` and check:
+After calibration, run `status` (and `sensor_requirements` for per-state requirements) and check:
 
 | Sensor | Expected at rest |
 |--------|-----------------|

@@ -3,9 +3,11 @@ title: v1.0.0 Release Gate (decided 2026-05-25)
 type: query
 tags: [release, v1.0.0, gate, planning, trajectory, telemetry, flight-validation]
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-07-02
 related_files: [src/guidance_control.cpp, src/TripleT_Flight_Firmware.cpp, src/config.h, esp32_telemetry_transmitter/, esp32_ground_station_receiver/]
 ---
+
+*Correction (2026-07-02): this snapshot's telemetry "state today" is stale — the Teensy telemetry module (`src/telemetry.h/.cpp`) and both ESP32 firmwares DO exist in the tree and are complete implementations, wired behind `ENABLE_TELEMETRY` (default 0). The remaining telemetry gaps are only the web-console `TELEM` parser and the end-to-end bench test. Additionally, "2-of-3 apogee voting" in this snapshot describes the dormant `ApogeeDetector` class; the live `detectApogee()` is OR/first-match across four methods. See [[queries/system-workflow-audit-2026-07]].*
 
 The scope decision for v1.0.0 made on **2026-05-25** after the docs-consolidation review (PR #13). Phase 6.3 (power / thermal / pre-flight / edge-case) is deferred to **v1.1**; v1.0.0 ships when **trajectory + telemetry + flight validation** are done.
 

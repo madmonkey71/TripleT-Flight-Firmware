@@ -111,6 +111,21 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
         if (i % 500 == 0) wdt.feed(); // Feed watchdog during long calibration
     }
 
+    // See note in ICM_20948_calibrate_mag_interactive(): sustained polling can
+    // intermittently leave dataReady() permanently false afterwards. Detect
+    // and recover rather than leaving the flight computer silently blind.
+    bool sensorResponsive = false;
+    for (int attempt = 0; attempt < 20; attempt++) {
+        if (myICM.dataReady()) { sensorResponsive = true; break; }
+        delay(15);
+    }
+    if (!sensorResponsive) {
+        Serial.println(F("WARNING: ICM-20948 stopped responding after calibration polling. Reinitializing..."));
+        ICM_20948_init();
+        Serial.println(g_icm20948_ready ? F("ICM-20948 recovered after reinitialization.")
+                                         : F("ICM-20948 reinitialization FAILED. Sensor may be unavailable."));
+    }
+
     if (samples_collected > 0) {
         gyroBias[0] = temp_gyro_sum[0] / samples_collected;
         gyroBias[1] = temp_gyro_sum[1] / samples_collected;
@@ -542,6 +557,22 @@ void ICM_20948_calibrate_mag_interactive() {
         }
 
         delay(10);
+    }
+
+    // The sustained polling above has been observed (intermittently, likely
+    // an I2C-level glitch) to leave dataReady() permanently false afterwards,
+    // silently killing all IMU data until a manual power cycle. Detect that
+    // and force a reinit rather than leaving the flight computer blind.
+    bool sensorResponsive = false;
+    for (int attempt = 0; attempt < 20; attempt++) {
+        if (myICM.dataReady()) { sensorResponsive = true; break; }
+        delay(15);
+    }
+    if (!sensorResponsive) {
+        Serial.println(F("WARNING: ICM-20948 stopped responding after calibration polling. Reinitializing..."));
+        ICM_20948_init();
+        Serial.println(g_icm20948_ready ? F("ICM-20948 recovered after reinitialization.")
+                                         : F("ICM-20948 reinitialization FAILED. Sensor may be unavailable."));
     }
 
     // Require a sane spread on every axis; otherwise the board was not

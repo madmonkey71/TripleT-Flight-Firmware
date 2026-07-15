@@ -26,6 +26,7 @@ extern unsigned long g_stateEntryTime;
 extern Adafruit_NeoPixel g_pixels;
 extern float g_launchAltitude;
 extern float g_maxAltitudeReached;
+extern float g_currentAltitude;
 extern bool g_baroCalibrated;
 extern MS5611 g_ms5611Sensor;
 // kx134_accel and icm_accel are defined in their respective _functions.cpp files and externed in their .h files.

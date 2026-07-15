@@ -27,7 +27,11 @@
 // Configure parachute presence. At least MAIN must be present.
 #define DROGUE_PRESENT true // Set to true if drogue deployment is needed
 #define MAIN_PRESENT true   // Set to true if main deployment is needed
-#define PYRO_CHANNEL_1 2    // GPIO pin for drogue deployment
+// HARDWARE NOTE: PYRO_CHANNEL_1 was previously defined as pin 2, which
+// collided with NEOPIXEL_PIN (also 2) — NeoPixel data writes would have
+// toggled the drogue pyro output. Moved to pin 4 (previously unused).
+// Verify the drogue channel is physically wired to pin 4 before flight.
+#define PYRO_CHANNEL_1 4    // GPIO pin for drogue deployment (moved off pin 2)
 #define PYRO_CHANNEL_2 3    // GPIO pin for main deployment
 
 // --- Automatically derive deployment type and check for errors ---
@@ -174,7 +178,10 @@
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \
   3 // Maximum number of consecutive sensor failures before error state
-#define WATCHDOG_TIMEOUT_MS 1000 // Watchdog timer timeout in milliseconds
+// Hardware watchdog reset timeout. This value is what setup() actually
+// programs into WDT_T4 (it was previously 1000 here while setup() hard-coded
+// 5 s — the two now agree). Must be a whole number of seconds >= 1.
+#define WATCHDOG_TIMEOUT_MS 5000 // Watchdog timer reset timeout in milliseconds
 #define BAROMETER_ERROR_THRESHOLD                                              \
   10.0 // Barometer error threshold (m) between readings
 #define ACCEL_ERROR_THRESHOLD                                                  \
@@ -183,7 +190,7 @@
 
 // --- Storage & Logging Configuration ---
 // SD Card
-#define SD_CARD_MIN_FREE_SPACE 5 * 1024 * 1024 // 50MB minimum free space
+#define SD_CARD_MIN_FREE_SPACE 5 * 1024 * 1024 // 5MB minimum free space
 #define SD_CACHE_SIZE 8                        // Cache factor for SD operations
 #define LOG_PREALLOC_SIZE 5000000              // Pre-allocate 5MB for log file
 #define DISABLE_SDCARD_LOGGING                                                 \
@@ -374,35 +381,33 @@
   20.0f // Max deflection for roll control surfaces (if applicable, e.g.
         // ailerons or differential deflection)
 
-// Stability Monitoring: Angular Rates
-// If any angular rate exceeds its threshold for
-// STABILITY_VIOLATION_DURATION_MS, a stability failsafe may be triggered.
-#define STABILITY_MAX_PITCH_RATE_DPS                                           \
-  180.0f // Max pitch rate in degrees per second
-#define STABILITY_MAX_ROLL_RATE_DPS                                            \
-  360.0f                                  // Max roll rate in degrees per second
-#define STABILITY_MAX_YAW_RATE_DPS 180.0f // Max yaw rate in degrees per second
+// Stability Monitoring (legacy guidance_check_stability path, used in
+// BOOST/COAST). These previously carried their own values that disagreed with
+// the Phase 6.2 GUIDANCE_STABILITY_* set (roll/yaw rate limits were swapped
+// and saturation was 90% vs 95%). They now alias the Phase 6.2 constants so
+// both stability systems enforce a single, consistent set of limits.
+#define STABILITY_MAX_PITCH_RATE_DPS GUIDANCE_STABILITY_PITCH_RATE_LIMIT_DPS
+#define STABILITY_MAX_ROLL_RATE_DPS GUIDANCE_STABILITY_ROLL_RATE_LIMIT_DPS
+#define STABILITY_MAX_YAW_RATE_DPS GUIDANCE_STABILITY_YAW_RATE_LIMIT_DPS
 
 // Stability Monitoring: Attitude Error (when guidance is active and trying to
 // hold/achieve a target) If the difference between target attitude and actual
 // attitude exceeds this for STABILITY_VIOLATION_DURATION_MS, a stability
 // failsafe may be triggered.
 #define STABILITY_MAX_ATTITUDE_ERROR_PITCH_DEG                                 \
-  20.0f // Max pitch error in degrees
-#define STABILITY_MAX_ATTITUDE_ERROR_ROLL_DEG 30.0f // Max roll error in degrees
-#define STABILITY_MAX_ATTITUDE_ERROR_YAW_DEG 20.0f  // Max yaw error in degrees
+  GUIDANCE_STABILITY_PITCH_ERROR_LIMIT_DEG
+#define STABILITY_MAX_ATTITUDE_ERROR_ROLL_DEG                                  \
+  GUIDANCE_STABILITY_ROLL_ERROR_LIMIT_DEG
+#define STABILITY_MAX_ATTITUDE_ERROR_YAW_DEG                                   \
+  GUIDANCE_STABILITY_YAW_ERROR_LIMIT_DEG
 
 // Stability Monitoring: Control Effort (Actuator Saturation)
-// If actuators are commanded to this percentage of their MAX_FIN_DEFLECTION for
-// STABILITY_VIOLATION_DURATION_MS, a stability failsafe may be triggered. This
-// indicates the system is struggling to maintain control.
 #define STABILITY_ACTUATOR_SATURATION_LEVEL_PERCENT                            \
-  90.0f // Actuator output relative to max deflection (e.g., 90% of 15 degrees)
+  GUIDANCE_STABILITY_SATURATION_LIMIT_PERCENT
 
 // Common duration for stability violations
-// How long a parameter must be out of bounds to be considered a stability
-// violation.
-#define STABILITY_VIOLATION_DURATION_MS 500 // Milliseconds
+#define STABILITY_VIOLATION_DURATION_MS                                        \
+  GUIDANCE_STABILITY_VIOLATION_DURATION_MS
 
 // --- Trajectory Following Configuration ---
 #define MAX_TRAJECTORY_WAYPOINTS 50 // Max number of waypoints in a trajectory

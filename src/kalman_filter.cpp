@@ -129,8 +129,17 @@ void kalman_update_mag(float mag_x, float mag_y, float mag_z) {
     // Kalman Gain for Yaw
     float K_yaw = P_diag[2] / (P_diag[2] + R_mag);
 
-    // Update Yaw estimate
-    kf_yaw = kf_yaw + K_yaw * (measured_yaw - kf_yaw);
+    // Update Yaw estimate. The innovation must be wrap-normalized to [-PI, PI]
+    // first: near the +/-PI boundary the raw difference can approach +/-2*PI,
+    // which previously produced a large spurious yaw transient.
+    float yaw_innovation = measured_yaw - kf_yaw;
+    if (yaw_innovation > M_PI) yaw_innovation -= 2.0f * M_PI;
+    if (yaw_innovation < -M_PI) yaw_innovation += 2.0f * M_PI;
+    kf_yaw = kf_yaw + K_yaw * yaw_innovation;
+
+    // Keep the state itself wrapped as well
+    if (kf_yaw > M_PI) kf_yaw -= 2.0f * M_PI;
+    if (kf_yaw < -M_PI) kf_yaw += 2.0f * M_PI;
 
     // Update Yaw error covariance
     P_diag[2] = (1 - K_yaw) * P_diag[2];

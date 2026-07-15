@@ -3,19 +3,19 @@ title: Kalman Filter — AHRS Orientation Estimation
 type: concept
 tags: [kalman, ahrs, orientation, sensor-fusion]
 created: 2026-04-15
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, .archived/docs/QUATERNION_MIGRATION_PLAN.md]
 ---
 
-Custom Kalman filter that fuses gyroscope, accelerometer, and magnetometer data to estimate orientation. Outputs both a quaternion and Euler angles. Replaced the deprecated Madgwick complementary filter.
+Custom Kalman filter that fuses gyroscope, accelerometer, and magnetometer data to estimate orientation. Outputs both a quaternion and Euler angles (the quaternion is converted from Euler at log time). Replaced the deprecated Madgwick complementary filter. Runs at ~10 Hz (the IMU poll cadence). This filter is **attitude-only** — barometer and GPS are not fused, and no altitude/velocity estimator runs in the live build.
 
 **Current representation**: Euler angles (with quaternion also output for logging). Attitude estimates degrade near ±90° pitch (gimbal lock). Avoid sustained pitch excursions above ±80° until the quaternion migration (see below) ships.
 
 ## State Vector
 
-6-element state: `[roll, pitch, yaw, gyro_bias_x, gyro_bias_y, gyro_bias_z]`
+3 decoupled scalar states: `[roll, pitch, yaw]`, each with its own scalar covariance (diagonal-only `P_diag[3]`).
 
-The bias terms allow the filter to estimate and correct systematic gyro drift over time.
+There are **no gyro-bias states**: gyro bias is handled upstream as a fixed calibration constant captured by the `calibrate_gyro` command and subtracted from the raw gyro before the predict step — the filter does not estimate drift online.
 
 ## API
 
@@ -27,40 +27,43 @@ void kalman_init(float roll_rad, float pitch_rad, float yaw_rad);
 void kalman_predict(float gx, float gy, float gz, float dt_sec);
 
 // Accelerometer correction — call when accel data available
-void kalman_update_accel(float ax, float ay, float az);  // m/s²
+void kalman_update_accel(float ax, float ay, float az);  // live code passes g; atan2 ratios make units cancel
 
 // Magnetometer correction — call when mag data available
+// (tilt-compensated heading; yaw innovation is wrap-normalized at ±π)
 void kalman_update_mag(float mx, float my, float mz);
 
 // Read current estimate
 void kalman_get_orientation(float& roll, float& pitch, float& yaw);  // radians
 ```
 
-## Covariance Matrices
+## Covariance & Noise Parameters
 
-- **P** — State covariance (uncertainty), updated each step
-- **Q** — Process noise (model uncertainty, tunable)
-- **R** — Measurement noise (sensor uncertainty, tunable)
+- **P** — Per-axis scalar covariance (`P_diag[3]`, initial 1.0), updated each step
+- **Q** — Process noise, **hard-coded** `Q_angle = 0.001` in `kalman_filter.cpp`
+- **R** — Measurement noise, **hard-coded** `R_accel = 0.03`, `R_mag = 0.03`
 
-Tuning Q and R is the key calibration step. High Q trusts measurement more; high R trusts model prediction more.
+There are no config hooks yet — tuning Q and R means editing `kalman_filter.cpp` and rebuilding. High Q trusts measurement more; high R trusts model prediction more.
 
 ## Data Flow
 
 ```
-ICM-20948 gyro → kalman_predict()  →┐
-ICM-20948 accel → kalman_update_accel() →┤→ [roll, pitch, yaw, biases]
+ICM-20948 gyro (bias-corrected) → kalman_predict()  →┐
+ICM/KX134 accel → kalman_update_accel() →┤→ [roll, pitch, yaw]
 ICM-20948 mag → kalman_update_mag()  →┘         ↓
                                         guidance_control.cpp
                                         LogData.q0/q1/q2/q3
                                         LogData.euler_roll/pitch/yaw
 ```
 
+(The accel source switches to the KX134 when the ICM magnitude exceeds 16 g.)
+
 ## Output in LogData
 
 ```cpp
 float q0, q1, q2, q3;              // Orientation quaternion (w,x,y,z)
 float euler_roll, euler_pitch, euler_yaw;  // Radians
-float gyro_bias_x, gyro_bias_y, gyro_bias_z;  // Estimated biases
+float gyro_bias_x, gyro_bias_y, gyro_bias_z;  // Calibration constants from calibrate_gyro (not filter states)
 ```
 
 ## Planned: Quaternion Migration

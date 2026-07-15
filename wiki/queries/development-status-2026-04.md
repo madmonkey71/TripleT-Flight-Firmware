@@ -3,9 +3,11 @@ title: Development Status — 2026-04
 type: query
 tags: [status, gaps, current-state]
 created: 2026-04-22
-updated: 2026-05-25
+updated: 2026-07-02
 related_files: [src/config.h, .archived/docs/DEVELOPMENT_STATUS.md, .archived/UPDATED_GAP_ANALYSIS_2025.md]
 ---
+
+*Correction (2026-07-02): this snapshot's telemetry gap description is stale — the Teensy telemetry module (`src/telemetry.h/.cpp`) and both ESP32 firmwares DO exist in the tree and are complete implementations, wired behind `ENABLE_TELEMETRY` (default 0). The remaining telemetry gaps are only the web-console `TELEM` parser and the end-to-end bench test. Additionally, "2-of-3 apogee voting" in this snapshot describes the dormant `ApogeeDetector` class; the live `detectApogee()` is OR/first-match across four methods. See [[queries/system-workflow-audit-2026-07]].*
 
 Point-in-time snapshot of what's merged, what's live, and what remains before v1.0.0. Grounded in `git log` as of **2026-04-22** and the shipping `FIRMWARE_VERSION = "v0.10.0"`.
 

@@ -131,6 +131,10 @@ void gps_init() {
 
   // Configure in a single block
   bool configSuccess = true;
+  // Rocket flight profile: without this, the u-blox default (portable) model
+  // clamps its tracking filters at low dynamics and can reject or lag the
+  // solution during boost. AIRBORNE4g supports <4g accel and high climb rates.
+  configSuccess &= myGNSS.setDynamicModel(DYN_MODEL_AIRBORNE4g);
   configSuccess &= myGNSS.setAutoPVT(true);
   configSuccess &= myGNSS.setNavigationFrequency(5);
   configSuccess &=

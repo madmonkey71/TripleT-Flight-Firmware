@@ -492,11 +492,17 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
         actuator_output_z_g *= gain_factor;
     }
 
-    // Apply servo smoothing to final outputs
+    // Apply servo smoothing to final outputs.
+    // The rate limiter needs the PREVIOUS smoothed command as "current" —
+    // passing raw_outputs for both arguments (as this code previously did)
+    // made desired == current, so the rate limiter was a no-op on every call.
     float raw_outputs[3] = {actuator_output_x_g, actuator_output_y_g, actuator_output_z_g};
+    float previous_outputs[3] = {g_servo_smoother.getLastOutput(0),
+                                 g_servo_smoother.getLastOutput(1),
+                                 g_servo_smoother.getLastOutput(2)};
     float smoothed_outputs[3];
     uint32_t dt_ms = (deltat > 0.0f) ? (uint32_t)(deltat * 1000.0f) : 10; // Convert to ms
-    g_servo_smoother.smoothBatch(raw_outputs, raw_outputs, dt_ms, smoothed_outputs);
+    g_servo_smoother.smoothBatch(raw_outputs, previous_outputs, dt_ms, smoothed_outputs);
 
     // Update outputs with smoothed values
     actuator_output_x_g = smoothed_outputs[0];

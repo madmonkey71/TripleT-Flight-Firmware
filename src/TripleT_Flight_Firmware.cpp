@@ -118,14 +118,11 @@ volatile bool enableGPSDebug = false;
 volatile bool enableSensorDebug = false;
 volatile bool enableICMRawDebug = false;
 
-// Add variables needed by state_management.cpp
-FlightState currentFlightState = STARTUP;  // Alias for g_currentFlightState
-float launchAltitude = 0.0f;               // Alias for g_launchAltitude  
-float maxAltitudeReached = 0.0f;           // Alias for g_maxAltitudeReached
-float currentAltitude = 0.0f;              // Alias for g_currentAltitude
-
-// Add variable needed by ms5611_functions.cpp
-bool baroCalibrated = false;               // Alias for g_baroCalibrated
+// NOTE: the former "alias" globals (currentFlightState, launchAltitude,
+// maxAltitudeReached, currentAltitude, baroCalibrated) have been removed.
+// They were separate variables that were never synchronised with the live
+// g_-prefixed state, which silently broke EEPROM persistence and power-loss
+// recovery. All modules now use the g_ globals directly.
 
 // Define sensor objects
 SparkFun_KX134 g_kx134Accel;  // Add KX134 accelerometer object definition
@@ -176,7 +173,7 @@ static unsigned long g_logSequenceNumber = 0; // static global
 
 // Additional global variables for data logging
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS (usually a const, g_ is optional)
-char g_logFileName[32] = ""; // To store the current log file name
+char g_logFileName[64] = ""; // Current log file name (matches the 64-byte name buffer in createNewLogFile; was 32, which truncated timestamped names)
 
 // Guidance Control Update Interval
 const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
@@ -623,10 +620,12 @@ void setup() {
   Serial.println(F("Telemetry: Serial5 enabled @115200 baud"));
 #endif
 
-  // Initialize Hardware Watchdog (2.0s timeout)
+  // Initialize Hardware Watchdog. Reset timeout comes from config.h
+  // (WATCHDOG_TIMEOUT_MS, currently 5000 ms). The 2 s trigger is a
+  // pre-warning window; with no callback registered it is inert.
   WDT_timings_t config;
-  config.trigger = 2; // 2 seconds
-  config.timeout = 5; // 5 seconds (reset if not fed)
+  config.trigger = 2;                          // seconds (pre-warning, unused)
+  config.timeout = WATCHDOG_TIMEOUT_MS / 1000; // seconds until hardware reset
   wdt.begin(config);
 
   Serial.print(F("Board: "));
@@ -778,6 +777,7 @@ void handleInitialStateManagement() {
       g_currentFlightState = CALIBRATION;
       g_stateEntryTime = millis();
     }
+    g_last_error_code = NO_ERROR; // Clear the latched error along with the state
     Serial.println(F("ERROR state cleared - starting grace period for health checks"));
     saveStateToEEPROM();
   } else if (!systemHealthy && g_currentFlightState != ERROR) {

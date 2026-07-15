@@ -3,7 +3,7 @@ title: Developer Workflow — Build, Test, Upload, Debug
 type: concept
 tags: [build, testing, workflow, platformio]
 created: 2026-04-22
-updated: 2026-04-22
+updated: 2026-07-02
 related_files: [platformio.ini, .github/workflows/test.yml, test/]
 ---
 
@@ -64,8 +64,8 @@ See [[concepts/testing-strategy]] for the 3-tier mock strategy (synthetic / reco
 | Test fails locally | `pio test -e native -f <name> -vv`; read assertion message |
 | Builds locally, fails on Teensy | Check `-DUNIT_TEST_NATIVE` / `-DNATIVE_TEST_BUILD` guards; did production path really get exercised? |
 | Runtime hang on hardware | Watchdog should reset; add `enableSystemDebug` and look at serial around the event |
-| Sensor returns NaN/inf | Run `status_sensors`; confirm I2C bus with `scan_i2c` |
-| Flight state machine misbehaves | Enable `enableStateDebug`, reproduce; add a unit test before fixing |
+| Sensor returns NaN/inf | Run `status`; confirm I2C bus with `scan_i2c` |
+| Flight state machine misbehaves | Enable `debug_system` (`enableSystemDebug`), reproduce; add a unit test before fixing |
 
 ## Adding a Feature
 
@@ -94,7 +94,7 @@ Performance budget: full CI < ~5 min; tests < 10 s; firmware build < 30 s.
 
 1. Define in `src/config.h`: `#define NEW_PARAMETER 42`.
 2. Reference it from the code path that needs it.
-3. Surface it via `status_sensors` (or a new debug command) so you can sanity-check it on hardware.
+3. Surface it via `status` (or a new debug command) so you can sanity-check it on hardware.
 4. Document it on [[entities/configuration-system]] if it is user-facing.
 
 ### Add a logged data field

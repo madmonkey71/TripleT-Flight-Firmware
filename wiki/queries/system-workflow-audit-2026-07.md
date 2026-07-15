@@ -613,9 +613,19 @@ Roughly 90 concrete wiki claims were checked against source. Tally: **~45 accura
 
 ---
 
-## 13. Defects observed during this audit (no fixes applied — read-only)
+## 13. Defects observed during this audit
 
-Ranked by flight impact:
+> **Status update (2026-07-02, follow-up PR):** all 14 defects below have since
+> been fixed — see the follow-up changes on this branch. Notables: EEPROM
+> persistence now operates on the live `g_` globals and additionally persists
+> the baro calibration offset; `PYRO_CHANNEL_1` moved to **pin 4**;
+> `WATCHDOG_TIMEOUT_MS` (5000 ms) is now actually programmed into WDT_T4; the
+> legacy `STABILITY_*` constants alias the Phase-6.2 set; a `disarm` command
+> and the `ARMED_TIMEOUT_MS` auto-disarm are wired in; `calibrate_mag` is a
+> real routine; the mapping JSONs carry all 63 columns. The wiki pages flagged
+> in §12 were corrected in the same PR.
+
+Ranked by flight impact (as found during the audit, pre-fix):
 
 1. **EEPROM persistence/recovery decoupled from live state** (alias-variable bug, §11) — mid-flight power-loss recovery is non-functional; EEPROM always holds STARTUP/zeros. `src/state_management.cpp:14-17` + `src/TripleT_Flight_Firmware.cpp:122-125`.
 2. **Pin 2 double-assigned** to `PYRO_CHANNEL_1` and `NEOPIXEL_PIN` — NeoPixel data writes and drogue-fire drive the same GPIO. `config.h:30,90`.

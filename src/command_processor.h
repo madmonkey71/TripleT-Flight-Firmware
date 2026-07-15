@@ -7,10 +7,9 @@
 #include "debug_flags.h"   // Include debug flags structure
 #include "flight_context.h" // Include flight context structure
 
-// Forward declarations for global variables used directly by processCommand or other functions.
-extern FlightState currentFlightState; // Passed directly to processCommand
-extern FlightState previousFlightState; // Passed directly to processCommand
-extern unsigned long stateEntryTime;    // Passed directly to processCommand
+// State is passed to processCommand by reference (g_currentFlightState etc.);
+// the stale un-prefixed extern declarations that used to live here were removed
+// together with the never-synchronised alias globals.
 
 // extern bool sdCardAvailable; // Moved to SystemStatusContext
 // extern bool flashAvailable; // Moved to SystemStatusContext

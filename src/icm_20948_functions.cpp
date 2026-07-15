@@ -479,8 +479,103 @@ bool icm_20948_get_mag(float* mag) {
 //     yaw = atan2(siny_cosp, cosy_cosp);
 // }
 
+// Interactive hard/soft-iron magnetometer calibration.
+// Previously an empty stub (the calibrate_mag command silently did nothing).
+// Collects raw magnetometer samples for 30 seconds while the operator rotates
+// the board through all orientations (figure-eight), then computes:
+//   - hard-iron bias  = midpoint of each axis' min/max envelope
+//   - soft-iron scale = diagonal matrix normalising each axis' radius to the
+//     average radius (off-diagonals left at 0 — a full ellipsoid fit is out of
+//     scope for an on-board routine)
+// Results are applied to magBias/magScale immediately; use the save_mag_cal
+// command afterwards to persist them to EEPROM.
 void ICM_20948_calibrate_mag_interactive() {
-    // Implementation of ICM_20948_calibrate_mag_interactive function
+    if (myICM.status != ICM_20948_Stat_Ok) {
+        Serial.println(F("Mag calibration aborted: ICM-20948 not ready."));
+        return;
+    }
+
+    const uint32_t CAL_DURATION_MS = 30000;
+    Serial.println(F("=== MAGNETOMETER CALIBRATION ==="));
+    Serial.println(F("Rotate the board slowly through ALL orientations"));
+    Serial.println(F("(figure-eight motion) for 30 seconds."));
+    Serial.println(F("Send 'x' to abort."));
+
+    float minV[3] = {1e6f, 1e6f, 1e6f};
+    float maxV[3] = {-1e6f, -1e6f, -1e6f};
+    uint32_t samples = 0;
+    uint32_t startTime = millis();
+    uint32_t lastStatusTime = startTime;
+
+    while (millis() - startTime < CAL_DURATION_MS) {
+        wdt.feed();
+
+        if (Serial.available()) {
+            char c = Serial.read();
+            if (c == 'x' || c == 'X') {
+                Serial.println(F("Mag calibration aborted by user. No changes applied."));
+                return;
+            }
+        }
+
+        if (myICM.dataReady()) {
+            myICM.getAGMT();
+            float raw[3] = {myICM.magX(), myICM.magY(), myICM.magZ()};
+            for (int i = 0; i < 3; i++) {
+                if (raw[i] < minV[i]) minV[i] = raw[i];
+                if (raw[i] > maxV[i]) maxV[i] = raw[i];
+            }
+            samples++;
+        }
+
+        if (millis() - lastStatusTime >= 5000) {
+            lastStatusTime = millis();
+            Serial.print(F("Calibrating... "));
+            Serial.print((millis() - startTime) / 1000);
+            Serial.print(F("s elapsed, "));
+            Serial.print(samples);
+            Serial.println(F(" samples"));
+        }
+
+        delay(10);
+    }
+
+    // Require a sane spread on every axis; otherwise the board was not
+    // rotated enough and the fit would be garbage.
+    const float MIN_AXIS_RANGE = 5.0f; // uT
+    if (samples < 100 ||
+        (maxV[0] - minV[0]) < MIN_AXIS_RANGE ||
+        (maxV[1] - minV[1]) < MIN_AXIS_RANGE ||
+        (maxV[2] - minV[2]) < MIN_AXIS_RANGE) {
+        Serial.println(F("Mag calibration FAILED: insufficient rotation coverage."));
+        Serial.println(F("Existing calibration left unchanged."));
+        return;
+    }
+
+    float range[3];
+    float avgRange = 0.0f;
+    for (int i = 0; i < 3; i++) {
+        magBias[i] = (maxV[i] + minV[i]) / 2.0f;
+        range[i] = (maxV[i] - minV[i]) / 2.0f;
+        avgRange += range[i];
+    }
+    avgRange /= 3.0f;
+
+    // Diagonal soft-iron correction; clear any previous off-diagonal terms.
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            magScale[r][c] = (r == c) ? (avgRange / range[r]) : 0.0f;
+
+    Serial.println(F("Mag calibration complete:"));
+    Serial.print(F("  Bias:  "));
+    Serial.print(magBias[0]); Serial.print(F(", "));
+    Serial.print(magBias[1]); Serial.print(F(", "));
+    Serial.println(magBias[2]);
+    Serial.print(F("  Scale: "));
+    Serial.print(magScale[0][0], 4); Serial.print(F(", "));
+    Serial.print(magScale[1][1], 4); Serial.print(F(", "));
+    Serial.println(magScale[2][2], 4);
+    Serial.println(F("Use 'save_mag_cal' to persist to EEPROM."));
 }
 
 bool icm_20948_save_calibration() {

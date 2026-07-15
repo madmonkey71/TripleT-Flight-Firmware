@@ -11,7 +11,6 @@ extern float pressure;
 extern float temperature;
 extern float baro_altitude_offset;  // Calibration offset between GPS and barometric altitude
 extern bool baro_calibration_done;  // Internal calibration flag (ms5611 module)
-extern bool baroCalibrated;  // Flag to track if calibration has been performed
 extern bool ms5611_initialized_ok; // Flag to track if the sensor was initialized successfully
 
 // Function declarations

@@ -3,7 +3,7 @@ title: Flight Computer Hardware Alternatives
 type: concept
 tags: [hardware, mcu, migration, alternatives, teensy, stm32, esp32]
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-07-02
 related_files: [src/config.h, src/hal/teensy_hal.h, src/hal/hal_interfaces.h, platformio.ini, .archived/docs/STM32_MIGRATION_ANALYSIS.md]
 ---
 
@@ -20,9 +20,9 @@ The [[concepts/hal-abstraction]] layer already isolates every hardware touchpoin
 | Core | Cortex-M7 @ 600 MHz, hardware FPU | Kalman filter + PID guidance run with wide timing margin at 20-100 ms sensor cadence |
 | RAM / Flash | 1 MB / 8 MB (firmware ~145 KB) | No memory pressure; room to grow (trajectory buffers, telemetry) |
 | Storage | Native SDIO, `FIFO_SDIO` | Fast, low-CPU-overhead SD logging ([[concepts/data-logging]]) |
-| Watchdog | `WDT_T4`, 1000 ms | Used for crash recovery via [[entities/state-management]] |
+| Watchdog | `WDT_T4`, 5000 ms (`WATCHDOG_TIMEOUT_MS`) | Used for crash recovery via [[entities/state-management]] |
 | Ecosystem | Arduino + PlatformIO, SparkFun libs used as-is | Zero driver-porting cost for ICM-20948/KX134/MS5611/u-blox |
-| Wireless | None on-board | Requires the separate [[entities/esp32-telemetry|ESP32 bridge]] (still stub) |
+| Wireless | None on-board | Requires the separate [[entities/esp32-telemetry|ESP32 bridge]] (implemented, behind `ENABLE_TELEMETRY`) |
 
 This is a strong baseline for a single-board, deterministic, Arduino-native flight computer. Any alternative has to beat it on a *specific* axis (cost, wireless integration, procurement, future headroom) without giving back real-time margin, driver compatibility, or SD throughput.
 

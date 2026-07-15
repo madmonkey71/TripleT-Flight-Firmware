@@ -39,7 +39,7 @@ bool ms5611_initialized_ok = false;
 extern WDT_T4<WDT1> wdt;
 
 // Declare the global variable from main
-extern bool baroCalibrated;
+extern bool g_baroCalibrated;
 #include "error_codes.h" // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
 
@@ -169,7 +169,7 @@ bool ms5611_calibrate_with_gps(uint32_t timeout_ms) {
             Serial.println(F("m"));
             
             baro_calibration_done = true;
-            baroCalibrated = true;  // Also update the main program's flag
+            g_baroCalibrated = true;  // Also update the main program's flag
             
             return true;
         } else {

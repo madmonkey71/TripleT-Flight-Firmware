@@ -3,9 +3,11 @@ title: Development Roadmap (v0.6.0 → v1.0.0)
 type: query
 tags: [roadmap, phases, planning, versions]
 created: 2026-04-22
-updated: 2026-05-25
+updated: 2026-07-02
 related_files: [.archived/IMPLEMENTATION_PLAN_2026.md, .archived/EXECUTIVE_SUMMARY_2026.md, src/config.h]
 ---
+
+*Correction (2026-07-02): any telemetry status in this snapshot is stale — the Teensy telemetry module (`src/telemetry.h/.cpp`) and both ESP32 firmwares DO exist in the tree and are complete implementations, wired behind `ENABLE_TELEMETRY` (default 0). The remaining telemetry gaps are only the web-console `TELEM` parser and the end-to-end bench test. Additionally, "2-of-3 apogee voting" in this snapshot describes the dormant `ApogeeDetector` class; the live `detectApogee()` is OR/first-match across four methods. See [[queries/system-workflow-audit-2026-07]].*
 
 Snapshot of the 2026 roadmap taking TripleT from a refactoring baseline at v0.6.0-dev to a v1.0.0 production release. Phase structure is per `.archived/IMPLEMENTATION_PLAN_2026.md`; status fields reflect what is merged as of **2026-05-25** (verified against `git log`).
 

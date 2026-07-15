@@ -113,11 +113,6 @@ extern float temperature; // Definition likely in sensor_functions.cpp
 
 // Global variable definitions moved to avoid duplicates (already defined above)
 
-// Add debug flag definitions
-volatile bool enableGPSDebug = false;
-volatile bool enableSensorDebug = false;
-volatile bool enableICMRawDebug = false;
-
 // NOTE: the former "alias" globals (currentFlightState, launchAltitude,
 // maxAltitudeReached, currentAltitude, baroCalibrated) have been removed.
 // They were separate variables that were never synchronised with the live

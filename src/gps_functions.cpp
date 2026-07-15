@@ -2,6 +2,7 @@
 #include "gps_functions.h"
 #include "config.h"
 #include "gps_config.h"
+#include "debug_flags.h"
 #include <Arduino.h>
 #include <SPI.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
@@ -31,8 +32,11 @@ byte GPS_second = 0;
 bool GPS_time_valid = false;
 bool g_gps_initialized_ok = false;
 
-// Add reference to debug flag
-extern volatile bool enableGPSDebug;
+// Add reference to debug flags. Note: this must be the same g_debugFlags
+// struct the console's debug_gps command toggles - a previous standalone
+// bool of the same name was never actually written by that command, so
+// GPS debug output silently never printed regardless of the flag state.
+extern DebugFlags g_debugFlags;
 
 #include "error_codes.h"              // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
@@ -89,7 +93,7 @@ void gps_init() {
 #if GPS_USE_SPI
   Serial.println(F("GPS init (SPI)..."));
   SPI.begin();
-  setGPSDebugging(enableGPSDebug);
+  setGPSDebugging(g_debugFlags.enableGPSDebug);
   // Use shorter maxWait (1000ms) to avoid exceeding watchdog timeout
   gpsInitOk = myGNSS.begin(SPI, GPS_SPI_CS_PIN, GPS_SPI_SPEED, 1000);
 #else
@@ -97,7 +101,7 @@ void gps_init() {
   // Note: Wire.begin() is already called in main setup(), but safe to call
   // again
   Wire.begin();
-  setGPSDebugging(enableGPSDebug);
+  setGPSDebugging(g_debugFlags.enableGPSDebug);
   gpsInitOk = myGNSS.begin(Wire, 0x42, 1000);
 #endif
 
@@ -151,7 +155,7 @@ void gps_init() {
   Serial.println(configSuccess ? F("OK") : F("failed"));
 
   // Ensure debugging is still in the proper state after initialization
-  setGPSDebugging(enableGPSDebug);
+  setGPSDebugging(g_debugFlags.enableGPSDebug);
 }
 
 bool gps_read() {
@@ -199,7 +203,7 @@ bool gps_read() {
     }
 
     // Debug print if enabled
-    if (enableGPSDebug) {
+    if (g_debugFlags.enableGPSDebug) {
       gps_print();
     }
     return true;

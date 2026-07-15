@@ -6,9 +6,6 @@ SparkFun_KX134 kxAccel;
 outputData kx134AccelData;
 float kx134_accel[3] = {0, 0, 0};  // Initialize array to zeros
 
-// Add reference to debug flag
-extern bool enableSensorDebug;
-
 #include "error_codes.h" // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
 

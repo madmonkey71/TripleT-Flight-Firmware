@@ -77,8 +77,10 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
 
     float temp_gyro_sum[3] = {0.0f, 0.0f, 0.0f};
 
-    // Ensure sensor is initialized
-    if (myICM.status != ICM_20948_Stat_Ok) {
+    // Ensure sensor is initialized. Note: myICM.status is unsuitable here - it's
+    // overwritten by every dataReady() poll in the main loop and mostly reflects
+    // "no new sample yet" rather than sensor health.
+    if (!g_icm20948_ready) {
         if (enableSensorDebug) {
             Serial.println(F("ICM-20948 not initialized. Cannot calibrate gyro bias."));
         }
@@ -490,7 +492,9 @@ bool icm_20948_get_mag(float* mag) {
 // Results are applied to magBias/magScale immediately; use the save_mag_cal
 // command afterwards to persist them to EEPROM.
 void ICM_20948_calibrate_mag_interactive() {
-    if (myICM.status != ICM_20948_Stat_Ok) {
+    // See note in ICM_20948_calibrate_gyro_bias(): myICM.status is not a health
+    // flag, it's overwritten by every dataReady() poll in the main loop.
+    if (!g_icm20948_ready) {
         Serial.println(F("Mag calibration aborted: ICM-20948 not ready."));
         return;
     }

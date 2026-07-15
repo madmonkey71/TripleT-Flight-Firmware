@@ -6,12 +6,15 @@
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
 #include "ICM_20948.h"
 #include "data_structures.h"
+#include "debug_flags.h"
 
 extern ErrorCode_t g_last_error_code; // For setting error codes
 
-// Add extern declarations for the debug flags
-extern bool enableSensorDebug;
-extern bool enableICMRawDebug; // New flag to control ICM raw data output
+// Add reference to debug flags. Note: this must be the same g_debugFlags
+// struct the console's debug_icm_raw/sd commands toggle - previous
+// standalone bools of the same names were never actually written by
+// those commands, so these debug prints silently never fired.
+extern DebugFlags g_debugFlags;
 extern bool g_icm20948_ready; // To set the global ready flag
 
 // Watchdog reference - must feed during long init/calibration sequences
@@ -71,7 +74,7 @@ float magScale[3][3] = { // Soft iron correction matrix from calibrate3.py outpu
 
 // Function to perform static gyro bias calibration
 void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
-    if (enableSensorDebug) {
+    if (g_debugFlags.enableSensorDebug) {
         Serial.println(F("Starting ICM-20948 Gyro Bias Calibration. Keep the device very still..."));
     }
 
@@ -81,7 +84,7 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
     // overwritten by every dataReady() poll in the main loop and mostly reflects
     // "no new sample yet" rather than sensor health.
     if (!g_icm20948_ready) {
-        if (enableSensorDebug) {
+        if (g_debugFlags.enableSensorDebug) {
             Serial.println(F("ICM-20948 not initialized. Cannot calibrate gyro bias."));
         }
         return;
@@ -131,14 +134,14 @@ void ICM_20948_calibrate_gyro_bias(int num_samples = 2000, int delay_ms = 1) {
         gyroBias[1] = temp_gyro_sum[1] / samples_collected;
         gyroBias[2] = temp_gyro_sum[2] / samples_collected;
 
-        if (enableSensorDebug) {
+        if (g_debugFlags.enableSensorDebug) {
             Serial.println(F("Gyro Bias Calibration Complete."));
             Serial.print(F("  Bias X (rad/s): ")); Serial.println(gyroBias[0], 6);
             Serial.print(F("  Bias Y (rad/s): ")); Serial.println(gyroBias[1], 6);
             Serial.print(F("  Bias Z (rad/s): ")); Serial.println(gyroBias[2], 6);
         }
     } else {
-        if (enableSensorDebug) {
+        if (g_debugFlags.enableSensorDebug) {
             Serial.println(F("Gyro Bias Calibration Failed: No samples collected."));
         }
         // Keep existing/default (zero) bias if calibration fails
@@ -355,7 +358,7 @@ void ICM_20948_read() {
     }
     
     // Print detailed raw sensor data and ICM debug info every second for debugging
-    if (enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
+    if (g_debugFlags.enableICMRawDebug && millis() - lastDetailedDebugTime > 1000) {
       lastDetailedDebugTime = millis();
       
       Serial.println("--- ICM-20948 Raw Data ---");
@@ -389,7 +392,7 @@ void ICM_20948_read() {
       icm_data_available = true;
   } else {
     // Only print error message once every 5 seconds to avoid flooding serial
-    if (enableSensorDebug && millis() - lastErrorPrintTime > 5000) {
+    if (g_debugFlags.enableSensorDebug && millis() - lastErrorPrintTime > 5000) {
       lastErrorPrintTime = millis();
       Serial.println("ICM-20948: No new data available");
     }
@@ -399,7 +402,7 @@ void ICM_20948_read() {
 
 // Initialize ICM-20948 IMU
 void ICM_20948_calibrate() {
-    if (enableSensorDebug) {
+    if (g_debugFlags.enableSensorDebug) {
         Serial.println(F("Starting ICM-20948 Full Calibration Sequence..."));
     }
     // For now, it only calls the gyro bias calibration.
@@ -408,7 +411,7 @@ void ICM_20948_calibrate() {
 
     // TODO: Add magnetometer calibration call here if a non-interactive one is developed.
 
-    if (enableSensorDebug) {
+    if (g_debugFlags.enableSensorDebug) {
         Serial.println(F("ICM-20948 Full Calibration Sequence Finished."));
     }
 }
@@ -416,7 +419,7 @@ void ICM_20948_calibrate() {
 // Print ICM-20948 data to serial
 void ICM_20948_print() {
   // Only print if sensor debug is enabled
-  if (!enableSensorDebug) return;
+  if (!g_debugFlags.enableSensorDebug) return;
   
   Serial.println("ICM-20948 Data:");
   

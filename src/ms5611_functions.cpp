@@ -43,10 +43,6 @@ extern bool g_baroCalibrated;
 #include "error_codes.h" // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
 
-// Add reference to debug flag
-extern bool enableSensorDebug;
-extern bool enableGPSDebug;
-
 int ms5611_read() {
     int result = ms5611Sensor.read();
     if (result == MS5611_READ_OK) {

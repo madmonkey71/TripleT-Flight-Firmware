@@ -227,6 +227,7 @@ void ProcessFlightState() {
                 
                 lastErrorClearTime = millis(); // Set grace period for future health checks
                 g_stateEntryTime = millis();
+                g_last_error_code = NO_ERROR; // Clear the latched error now that health is restored
                 Serial.println(F("ERROR state automatically cleared - starting grace period for health checks"));
                 saveStateToEEPROM();
                 setFlightStateLED(g_currentFlightState);
@@ -260,6 +261,7 @@ void ProcessFlightState() {
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();
         currentAglAlt = currentAbsoluteBaroAlt - g_launchAltitude;
+        g_currentAltitude = currentAbsoluteBaroAlt; // keep the EEPROM snapshot's altitude field meaningful
     }
 
     if (g_currentFlightState != g_previousFlightState) {
@@ -516,7 +518,6 @@ void ProcessFlightState() {
                         float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / sea_level_Pa, 0.190295));
                         baro_altitude_offset = (GPS_altitude / 1000.0f) - raw_altitude;
                         baro_calibration_done = true;
-                        baroCalibrated = true;
                         g_baroCalibrated = true;
 
                         Serial.print(F("CALIBRATION: Auto-calibration successful! GPS Alt="));
@@ -540,7 +541,6 @@ void ProcessFlightState() {
                     Serial.println(F("CALIBRATION: Using raw barometric altitude (offset = 0). Altitude may be less accurate."));
                     baro_altitude_offset = 0.0f;
                     baro_calibration_done = true;
-                    baroCalibrated = true;
                     g_baroCalibrated = true;
                 }
 
@@ -570,6 +570,12 @@ void ProcessFlightState() {
                 g_currentFlightState = BOOST;
                 // reset_max_stability_metrics(); // Already done in newStateSignal for ARMED
                 // guidance_reset_stability_status(); // Already done in newStateSignal for ARMED
+            } else if (millis() - g_stateEntryTime > ARMED_TIMEOUT_MS) {
+                // Safety auto-disarm: ARMED_TIMEOUT_MS was defined in config.h
+                // but never wired in — the vehicle previously stayed armed
+                // indefinitely. Revert to PAD_IDLE; the operator can re-arm.
+                Serial.println(F("ARMED timeout expired with no launch detected - auto-disarming to PAD_IDLE."));
+                g_currentFlightState = PAD_IDLE;
             }
             break;
         case BOOST:
@@ -1029,9 +1035,15 @@ bool detectApogee() {
     bool apogeeDetected = false;
 
     // Method 1: Barometric Detection (Primary)
+    // Compare AGL to AGL: g_maxAltitudeReached is tracked in metres above
+    // ground level, so the absolute altitude must have the launch elevation
+    // subtracted before comparison. (Comparing the absolute altitude directly
+    // — as this method previously did — meant the condition was almost never
+    // true at launch sites above sea level, silently disabling the primary
+    // apogee detector.)
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentBaroAlt = ms5611_get_altitude();
-        if (currentBaroAlt < g_maxAltitudeReached) {
+        float currentBaroAglAlt = ms5611_get_altitude() - g_launchAltitude;
+        if (currentBaroAglAlt < g_maxAltitudeReached - APOGEE_BARO_DESCENT_THRESHOLD) {
             s_baro_descending_count++;
         } else {
             s_baro_descending_count = 0;

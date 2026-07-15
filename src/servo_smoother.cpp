@@ -6,30 +6,42 @@
 static const float PI_CONST = 3.14159265359f;
 static const float TWO_PI_CONST = 2.0f * PI_CONST;
 
+// The smoother operates on NORMALIZED actuator commands in [-1, +1], where
+// 1.0 of command maps to 90 degrees of servo travel (see the norm*90+90
+// mapping in the main loop). The config constants are expressed in the servo
+// degree domain, so they are converted to the normalized domain here. The
+// previous implementation applied the degree-domain values directly to the
+// ±1 commands, which made the 0.5 "degree" deadband swallow half the command
+// range and the rate limits meaningless.
+static const float SERVO_DEG_PER_UNIT = 90.0f; // 1.0 normalized == 90 deg travel
+
 ServoSmoother::ServoSmoother() : active_filter(FULL_FILTERING) {
   memset(last_output, 0, sizeof(last_output));
   memset(lowpass.prev_output, 0, sizeof(lowpass.prev_output));
   lowpass.cutoff_hz = 2.0f;
   lowpass.alpha = 0.0f;
 
-  // Default rate limits (10 deg/100ms)
-  rate_limit.max_rate_per_ms[0] = 0.1f;  // pitch
-  rate_limit.max_rate_per_ms[1] = 0.1f;  // roll
-  rate_limit.max_rate_per_ms[2] = 0.15f; // yaw (higher)
+  // Default rate limits (10 deg/100ms, normalized)
+  rate_limit.max_rate_per_ms[0] = 0.1f / SERVO_DEG_PER_UNIT;  // pitch
+  rate_limit.max_rate_per_ms[1] = 0.1f / SERVO_DEG_PER_UNIT;  // roll
+  rate_limit.max_rate_per_ms[2] = 0.15f / SERVO_DEG_PER_UNIT; // yaw (higher)
 
-  // Default deadband
-  deadband.deadband_deg = 0.5f;
+  // Default deadband (0.5 deg, normalized)
+  deadband.deadband_deg = 0.5f / SERVO_DEG_PER_UNIT;
 }
 
 void ServoSmoother::init(FilterType filter_type) {
   active_filter = filter_type;
 
-  // Load parameters from config.h
-  rate_limit.max_rate_per_ms[0] = SERVO_RATE_LIMIT_DPS / 100.0f;
-  rate_limit.max_rate_per_ms[1] = SERVO_RATE_LIMIT_DPS / 100.0f;
-  rate_limit.max_rate_per_ms[2] = (SERVO_RATE_LIMIT_DPS * 1.5f) / 100.0f; // Yaw faster
+  // Load parameters from config.h, converting servo degrees -> normalized units
+  rate_limit.max_rate_per_ms[0] =
+      (SERVO_RATE_LIMIT_DPS / 100.0f) / SERVO_DEG_PER_UNIT;
+  rate_limit.max_rate_per_ms[1] =
+      (SERVO_RATE_LIMIT_DPS / 100.0f) / SERVO_DEG_PER_UNIT;
+  rate_limit.max_rate_per_ms[2] =
+      ((SERVO_RATE_LIMIT_DPS * 1.5f) / 100.0f) / SERVO_DEG_PER_UNIT; // Yaw faster
 
-  deadband.deadband_deg = SERVO_DEADBAND_DEG;
+  deadband.deadband_deg = SERVO_DEADBAND_DEG / SERVO_DEG_PER_UNIT;
   lowpass.cutoff_hz = SERVO_LOWPASS_CUTOFF_HZ;
 
   Serial.print(F("[ServoSmoother] Initialized with filter type: "));
@@ -89,7 +101,7 @@ void ServoSmoother::printParameters() const {
   Serial.print(F("Filter Type: "));
   Serial.println((int)active_filter);
 
-  Serial.println(F("Rate Limits (deg/ms):"));
+  Serial.println(F("Rate Limits (normalized/ms):"));
   Serial.print(F("  Pitch: "));
   Serial.println(rate_limit.max_rate_per_ms[0], 4);
   Serial.print(F("  Roll:  "));
@@ -97,9 +109,8 @@ void ServoSmoother::printParameters() const {
   Serial.print(F("  Yaw:   "));
   Serial.println(rate_limit.max_rate_per_ms[2], 4);
 
-  Serial.print(F("Deadband: "));
-  Serial.print(deadband.deadband_deg, 2);
-  Serial.println(F(" degrees"));
+  Serial.print(F("Deadband (normalized): "));
+  Serial.println(deadband.deadband_deg, 4);
 
   Serial.print(F("Low-Pass Cutoff: "));
   Serial.print(lowpass.cutoff_hz, 1);

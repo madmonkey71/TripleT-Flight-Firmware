@@ -95,6 +95,11 @@ void StabilityMonitor::update(const float current_quat[4],
 
   // Update overall stability state
   update_violation_state(current_time_ms);
+
+  // Publish the overall verdict. This field was previously never assigned
+  // (it stayed false from the constructor memset), which made the failsafe's
+  // gain-recovery branch unreachable — once engaged, gains never restored.
+  current_metrics.is_stable = (current_metrics.violation_bitmask == 0);
 }
 
 StabilityMonitor::StabilityMetrics StabilityMonitor::getMetrics() const {

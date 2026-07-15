@@ -264,8 +264,10 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.println(F("  set_orientation_filter [madgwick|kalman]"));
   Serial.println(F("  get_orientation_filter"));
   Serial.println(F("  arm"));
+  Serial.println(F("  disarm"));
   Serial.println(F("  clear_errors"));
   Serial.println(F("  clear_to_calibration"));
+  Serial.println(F("  skip_calibration      (skip GPS cal, use raw baro altitude)"));
   Serial.println(F("  sensor_requirements"));
   Serial.println(F("  scan_i2c"));
 
@@ -428,6 +430,18 @@ void processCommand(const char* command,
             Serial.println(getStateName(currentFlightState_ref));
         }
     }
+    else if (strcasecmp(command, "disarm") == 0) {
+        if (currentFlightState_ref == ARMED) {
+            previousFlightState_ref = currentFlightState_ref;
+            currentFlightState_ref = PAD_IDLE;
+            stateEntryTime_ref = millis();
+            saveStateToEEPROM();
+            Serial.println(F("System DISARMED. Returned to PAD_IDLE."));
+        } else {
+            Serial.print(F("Cannot disarm. System is not in ARMED state. Current state: "));
+            Serial.println(getStateName(currentFlightState_ref));
+        }
+    }
     else if (strcasecmp(command, "clear_errors") == 0) {
         if (currentFlightState_ref == ERROR) {
             Serial.println(F("Attempting to clear error state..."));
@@ -440,6 +454,7 @@ void processCommand(const char* command,
                 previousFlightState_ref = currentFlightState_ref;
                 currentFlightState_ref = PAD_IDLE;
                 stateEntryTime_ref = millis();
+                g_last_error_code = NO_ERROR; // Clear the latched error along with the state
                 saveStateToEEPROM(); // Assumes saveStateToEEPROM uses the global currentFlightState or is passed the ref
                 Serial.println(F("Error state cleared. System reset to PAD_IDLE. Check sensors."));
             } else {
@@ -447,7 +462,7 @@ void processCommand(const char* command,
                 Serial.println(F(""));
                 Serial.println(F("Troubleshooting steps:"));
                 Serial.println(F("1. Check if barometer needs calibration: use 'calibrate' or 'h' command"));
-                Serial.println(F("2. Check sensor status: use 'status_sensors' or 'b' command"));
+                Serial.println(F("2. Check sensor status: use 'status' or 'b' command"));
                 Serial.println(F("3. Verify IMU initialization: at least one of ICM20948 or KX134 must be ready"));
                 Serial.println(F("4. If barometer is the issue, try transitioning to CALIBRATION state first"));
                 Serial.println(F(""));
@@ -472,6 +487,7 @@ void processCommand(const char* command,
                 previousFlightState_ref = currentFlightState_ref;
                 currentFlightState_ref = CALIBRATION;
                 stateEntryTime_ref = millis();
+                g_last_error_code = NO_ERROR; // Clear the latched error along with the state
                 saveStateToEEPROM();
                 Serial.println(F("Error state cleared. System reset to CALIBRATION state."));
                 Serial.println(F("Use 'calibrate' or 'h' command to calibrate barometer with GPS."));
@@ -564,6 +580,30 @@ void processCommand(const char* command,
     }
     else if (strcasecmp(command, "scan_i2c") == 0) {
         scan_i2c();
+    }
+    else if (strcasecmp(command, "skip_calibration") == 0) {
+        if (currentFlightState_ref == CALIBRATION || currentFlightState_ref == ERROR) {
+            if (statusCtx.ms5611_initialized_ok) {
+                Serial.println(F("Skipping GPS-based calibration."));
+                Serial.println(F("Using raw barometric altitude (offset = 0)."));
+                Serial.println(F("WARNING: Altitude readings may be less accurate without GPS calibration."));
+                extern float baro_altitude_offset;
+                extern bool baro_calibration_done;
+                baro_altitude_offset = 0.0f;
+                baro_calibration_done = true;
+                baroCalibrated_ref = true;
+                previousFlightState_ref = currentFlightState_ref;
+                currentFlightState_ref = PAD_IDLE;
+                stateEntryTime_ref = millis();
+                saveStateToEEPROM();
+                Serial.println(F("Calibration skipped. System transitioned to PAD_IDLE."));
+            } else {
+                Serial.println(F("ERROR: Cannot skip calibration - barometer (MS5611) not initialized."));
+            }
+        } else {
+            Serial.print(F("Skip calibration only available in CALIBRATION or ERROR state. Current: "));
+            Serial.println(getStateName(currentFlightState_ref));
+        }
     }
     else if (strcasecmp(command, "sensor_requirements") == 0) {
         Serial.println(F("=== Sensor Requirements by Flight State ==="));

@@ -7,7 +7,7 @@
 #include "state_management.h" // For saveStateToEEPROM()
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
 #if ENABLE_GUIDANCE == 1
-#include "guidance_control.h" // For guidance_set_target_orientation_euler()
+#include "guidance_control.h" // For guidance functions and g_guidance_active
 #endif
 #include "icm_20948_functions.h" // For convertQuaternionToEuler and icm_q0 etc.
 #include "gps_functions.h" // For getGPSAltitude() and getFixType()
@@ -26,6 +26,7 @@ extern unsigned long g_stateEntryTime;
 extern Adafruit_NeoPixel g_pixels;
 extern float g_launchAltitude;
 extern float g_maxAltitudeReached;
+extern float g_currentAltitude;
 extern bool g_baroCalibrated;
 extern MS5611 g_ms5611Sensor;
 // kx134_accel and icm_accel are defined in their respective _functions.cpp files and externed in their .h files.
@@ -227,6 +228,7 @@ void ProcessFlightState() {
                 
                 lastErrorClearTime = millis(); // Set grace period for future health checks
                 g_stateEntryTime = millis();
+                g_last_error_code = NO_ERROR; // Clear the latched error now that health is restored
                 Serial.println(F("ERROR state automatically cleared - starting grace period for health checks"));
                 saveStateToEEPROM();
                 setFlightStateLED(g_currentFlightState);
@@ -260,6 +262,7 @@ void ProcessFlightState() {
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();
         currentAglAlt = currentAbsoluteBaroAlt - g_launchAltitude;
+        g_currentAltitude = currentAbsoluteBaroAlt; // keep the EEPROM snapshot's altitude field meaningful
     }
 
     if (g_currentFlightState != g_previousFlightState) {
@@ -497,11 +500,65 @@ void ProcessFlightState() {
                     Serial.println(F("CALIBRATION: Barometer calibrated, transitioning to PAD_IDLE."));
                 }
             } else {
-                // Periodic message while waiting in CALIBRATION state
+                // Auto-calibrate when GPS fix becomes available (non-blocking)
                 static unsigned long lastCalibWaitMsgTime = 0;
-                if (g_debugFlags.enableSystemDebug && (millis() - lastCalibWaitMsgTime > 5000)) { // Print every 5s
-                    Serial.println(F("CALIBRATION: Waiting for barometer calibration (use 'calibrate' command)..."));
+                static bool autoCalibAttempted = false;
+
+                unsigned long timeInCalibration = millis() - g_stateEntryTime;
+
+                // Try auto-calibration if GPS has a good fix
+                if (!autoCalibAttempted && GPS_fixType >= 3 && pDOP < 300 && ms5611_initialized_ok) {
+                    autoCalibAttempted = true;
+                    Serial.println(F("CALIBRATION: GPS fix acquired, attempting auto-calibration..."));
+
+                    // Read fresh pressure
+                    int result = ms5611_read();
+                    if (result == MS5611_READ_OK && pressure >= 700.0f && pressure <= 1200.0f && GPS_altitude != 0) {
+                        float current_pressure_Pa = pressure * 100.0;
+                        float sea_level_Pa = STANDARD_SEA_LEVEL_PRESSURE * 100.0;
+                        float raw_altitude = 44330.0 * (1.0 - pow(current_pressure_Pa / sea_level_Pa, 0.190295));
+                        baro_altitude_offset = (GPS_altitude / 1000.0f) - raw_altitude;
+                        baro_calibration_done = true;
+                        g_baroCalibrated = true;
+
+                        Serial.print(F("CALIBRATION: Auto-calibration successful! GPS Alt="));
+                        Serial.print(GPS_altitude / 1000.0f);
+                        Serial.print(F("m, Baro Raw="));
+                        Serial.print(raw_altitude);
+                        Serial.print(F("m, Offset="));
+                        Serial.print(baro_altitude_offset);
+                        Serial.println(F("m"));
+                    } else {
+                        autoCalibAttempted = false; // Retry on next loop if reading failed
+                        if (g_debugFlags.enableSystemDebug) {
+                            Serial.println(F("CALIBRATION: Auto-calibration reading failed, will retry..."));
+                        }
+                    }
+                }
+
+                // Timeout fallback: calibrate without GPS after CALIBRATION_AUTO_TIMEOUT_MS
+                if (!g_baroCalibrated && timeInCalibration > CALIBRATION_AUTO_TIMEOUT_MS) {
+                    Serial.println(F("CALIBRATION: Timeout reached, performing fallback calibration without GPS."));
+                    Serial.println(F("CALIBRATION: Using raw barometric altitude (offset = 0). Altitude may be less accurate."));
+                    baro_altitude_offset = 0.0f;
+                    baro_calibration_done = true;
+                    g_baroCalibrated = true;
+                }
+
+                // Periodic status message
+                if (!g_baroCalibrated && (millis() - lastCalibWaitMsgTime > 5000)) {
                     lastCalibWaitMsgTime = millis();
+                    unsigned long remaining = 0;
+                    if (timeInCalibration < CALIBRATION_AUTO_TIMEOUT_MS) {
+                        remaining = (CALIBRATION_AUTO_TIMEOUT_MS - timeInCalibration) / 1000;
+                    }
+                    Serial.print(F("CALIBRATION: Waiting for GPS fix (type="));
+                    Serial.print(GPS_fixType);
+                    Serial.print(F(", pDOP="));
+                    Serial.print(pDOP / 100.0, 2);
+                    Serial.print(F("). Auto-fallback in "));
+                    Serial.print(remaining);
+                    Serial.println(F("s. Use 'calibrate' for manual or 'skip_calibration' to skip."));
                 }
             }
             break;
@@ -514,6 +571,12 @@ void ProcessFlightState() {
                 g_currentFlightState = BOOST;
                 // reset_max_stability_metrics(); // Already done in newStateSignal for ARMED
                 // guidance_reset_stability_status(); // Already done in newStateSignal for ARMED
+            } else if (millis() - g_stateEntryTime > ARMED_TIMEOUT_MS) {
+                // Safety auto-disarm: ARMED_TIMEOUT_MS was defined in config.h
+                // but never wired in — the vehicle previously stayed armed
+                // indefinitely. Revert to PAD_IDLE; the operator can re-arm.
+                Serial.println(F("ARMED timeout expired with no launch detected - auto-disarming to PAD_IDLE."));
+                g_currentFlightState = PAD_IDLE;
             }
             break;
         case BOOST:
@@ -529,11 +592,21 @@ void ProcessFlightState() {
                                          millis());
 
                 if (guidance_is_stability_compromised()) {
-                    Serial.println(F("CRITICAL: Guidance stability compromised during BOOST!"));
-                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
-                    current_stability_flags |= 0b001; // Mark general stability failure
-                    g_currentFlightState = ERROR;
-                    break; // Exit switch case, newStateSignal block will handle logging/saving
+                    Serial.println(F("WARNING: Guidance stability compromised during BOOST - disabling guidance"));
+                    guidance_log_stability_diagnostics(); // Log which check failed
+                    g_guidance_active = false; // Disable guidance mid-flight
+                    guidance_center_servos(); // Set all fins to neutral position
+                    guidance_reset_stability_status(); // Clear flags for potential re-enable later
+                    // Change LED to orange (degraded mode) if NeoPixel is available
+                    extern Adafruit_NeoPixel g_pixels;
+                    g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); // Orange = degraded mode
+                    g_pixels.show();
+                    Serial.println(F("=== GUIDANCE SYSTEM DISABLED ==="));
+                    Serial.println(F("Reason: Stability compromised"));
+                    Serial.println(F("Action: Fins centered, passive flight mode"));
+                    Serial.println(F("Impact: Apogee detection and parachute deployment unaffected"));
+                    Serial.println(F("================================"));
+                    // Continue flight - do NOT transition to ERROR
                 }
             }
             #endif
@@ -576,11 +649,21 @@ void ProcessFlightState() {
                                          millis());
 
                 if (guidance_is_stability_compromised()) {
-                    Serial.println(F("CRITICAL: Guidance stability compromised during COAST!"));
-                    g_last_error_code = GUIDANCE_STABILITY_FAIL;
-                    current_stability_flags |= 0b001; // Mark general stability failure
-                    g_currentFlightState = ERROR;
-                    break; // Exit switch case
+                    Serial.println(F("WARNING: Guidance stability compromised during COAST - disabling guidance"));
+                    guidance_log_stability_diagnostics(); // Log which check failed
+                    g_guidance_active = false; // Disable guidance mid-flight
+                    guidance_center_servos(); // Set all fins to neutral position
+                    guidance_reset_stability_status(); // Clear flags for potential re-enable later
+                    // Change LED to orange (degraded mode) if NeoPixel is available
+                    extern Adafruit_NeoPixel g_pixels;
+                    g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); // Orange = degraded mode
+                    g_pixels.show();
+                    Serial.println(F("=== GUIDANCE SYSTEM DISABLED ==="));
+                    Serial.println(F("Reason: Stability compromised"));
+                    Serial.println(F("Action: Fins centered, passive flight mode"));
+                    Serial.println(F("Impact: Apogee detection and parachute deployment unaffected"));
+                    Serial.println(F("================================"));
+                    // Continue flight - do NOT transition to ERROR
                 }
             }
             #endif
@@ -919,9 +1002,17 @@ void ProcessFlightState() {
 void detectBoostEnd() {
     if (g_currentFlightState != BOOST) return;
 
+    static int coastConfirmCount = 0;
+
     if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
-        boostEndTime = millis();
-        g_currentFlightState = COAST;
+        coastConfirmCount++;
+        if (coastConfirmCount >= COAST_CONFIRMATION_COUNT) {
+            boostEndTime = millis();
+            g_currentFlightState = COAST;
+            coastConfirmCount = 0;
+        }
+    } else {
+        coastConfirmCount = 0;
     }
 }
 
@@ -945,9 +1036,15 @@ bool detectApogee() {
     bool apogeeDetected = false;
 
     // Method 1: Barometric Detection (Primary)
+    // Compare AGL to AGL: g_maxAltitudeReached is tracked in metres above
+    // ground level, so the absolute altitude must have the launch elevation
+    // subtracted before comparison. (Comparing the absolute altitude directly
+    // — as this method previously did — meant the condition was almost never
+    // true at launch sites above sea level, silently disabling the primary
+    // apogee detector.)
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentBaroAlt = ms5611_get_altitude();
-        if (currentBaroAlt < g_maxAltitudeReached) {
+        float currentBaroAglAlt = ms5611_get_altitude() - g_launchAltitude;
+        if (currentBaroAglAlt < g_maxAltitudeReached - APOGEE_BARO_DESCENT_THRESHOLD) {
             s_baro_descending_count++;
         } else {
             s_baro_descending_count = 0;

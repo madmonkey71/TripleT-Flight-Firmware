@@ -47,6 +47,11 @@ uint8_t guidance_get_current_trajectory_target_wp_index();
 uint8_t guidance_get_trajectory_num_waypoints();
 
 
+// --- Guidance Runtime State ---
+// Global flag: guidance system enabled/disabled at runtime
+// Defined in TripleT_Flight_Firmware.cpp, used by flight_logic.cpp and guidance_failsafe.cpp
+extern bool g_guidance_active;
+
 // --- General Guidance Function Declarations ---
 
 /**
@@ -90,12 +95,18 @@ void guidance_update(float current_roll_rad, float current_pitch_rad, float curr
 /**
  * @brief Retrieves the calculated actuator outputs.
  * Outputs are typically normalized (e.g., -1.0 to 1.0).
- * 
+ *
  * @param-out output_x Command for X-axis actuator (e.g., pitch servo).
  * @param-out output_y Command for Y-axis actuator (e.g., roll servo).
  * @param-out output_z Command for Z-axis actuator (e.g., yaw reaction wheel/thrust).
  */
 void guidance_get_actuator_outputs(float& output_x, float& output_y, float& output_z);
+
+/**
+ * @brief Centers all servos to their neutral/middle positions.
+ * Called when guidance system is disabled to ensure fins don't remain deflected.
+ */
+void guidance_center_servos();
 
 /**
  * @brief Retrieves the current target Euler angles.
@@ -147,5 +158,61 @@ bool guidance_is_stability_compromised();
  */
 void guidance_reset_stability_status();
 
+/**
+ * @brief Logs current stability metrics for diagnostics.
+ * Useful for debugging which stability check is failing.
+ */
+void guidance_log_stability_diagnostics();
+
+// --- Phase 6.2: Stability Monitoring & Failsafe Functions ---
+
+/**
+ * @brief Check stability and apply failsafe actions
+ * Part of Phase 6.2 Advanced Guidance Control
+ *
+ * @param current_time_ms Current system time in milliseconds
+ * @return true if failsafe was triggered, false otherwise
+ */
+bool guidance_failsafe_check(uint32_t current_time_ms);
+
+/**
+ * @brief Reset failsafe state
+ * Call when entering new flight state
+ */
+void guidance_failsafe_reset();
+
+/**
+ * @brief Get current failsafe gain reduction factor
+ * Multiply PID gains by this factor
+ *
+ * @return Factor from 0.0 to 1.0
+ */
+float guidance_failsafe_get_gain_factor();
+
+/**
+ * @brief Check if in passive mode
+ *
+ * @return true if servos centered and control disabled
+ */
+bool guidance_failsafe_is_passive_mode();
+
+/**
+ * @brief Check if failsafe is currently active
+ *
+ * @return true if any failsafe mechanism engaged
+ */
+bool guidance_failsafe_is_active();
+
+/**
+ * @brief Get current failsafe escalation level
+ *
+ * @return 0=normal, 1=gain reduction, 2=passive, 3=error
+ */
+uint8_t guidance_failsafe_get_level();
+
+/**
+ * @brief Print failsafe status to serial
+ */
+void guidance_failsafe_print_status();
 
 #endif // GUIDANCE_CONTROL_H

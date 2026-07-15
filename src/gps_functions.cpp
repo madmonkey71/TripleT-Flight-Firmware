@@ -1,11 +1,11 @@
 // GPS Functions implementation for TripleT_Flight_Firmware
-#include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+#include "gps_functions.h"
 #include "config.h"
 #include "gps_config.h"
-#include "gps_functions.h"
+#include <Arduino.h>
+#include <SPI.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
+#include <Wire.h>
 
 // Define the global variables declared as extern in the header
 SFE_UBLOX_GNSS myGNSS; // Use default constructor
@@ -34,7 +34,7 @@ bool g_gps_initialized_ok = false;
 // Add reference to debug flag
 extern volatile bool enableGPSDebug;
 
-#include "error_codes.h" // For ErrorCode_t
+#include "error_codes.h"              // For ErrorCode_t
 extern ErrorCode_t g_last_error_code; // For setting error codes
 
 // Watchdog reference - must feed during long init sequences
@@ -70,7 +70,7 @@ void setGPSDebugging(bool enable) {
 
 void gps_init() {
   Serial.println(F("Initializing GPS..."));
-  
+
   // Initialize GPS time variables with default values
   GPS_year = 2000;
   GPS_month = 1;
@@ -79,7 +79,7 @@ void gps_init() {
   GPS_minute = 0;
   GPS_second = 0;
   GPS_time_valid = false;
-  
+
   // Initialize GPS connection
   bool gpsInitOk = false;
 
@@ -94,7 +94,8 @@ void gps_init() {
   gpsInitOk = myGNSS.begin(SPI, GPS_SPI_CS_PIN, GPS_SPI_SPEED, 1000);
 #else
   Serial.println(F("GPS init (I2C)..."));
-  // Note: Wire.begin() is already called in main setup(), but safe to call again
+  // Note: Wire.begin() is already called in main setup(), but safe to call
+  // again
   Wire.begin();
   setGPSDebugging(enableGPSDebug);
   gpsInitOk = myGNSS.begin(Wire, 0x42, 1000);
@@ -104,7 +105,8 @@ void gps_init() {
   wdt.feed();
 
   if (!gpsInitOk) {
-    Serial.println(F("ERROR: GPS module (myGNSS.begin()) failed to initialize!"));
+    Serial.println(
+        F("ERROR: GPS module (myGNSS.begin()) failed to initialize!"));
     Serial.println(F("   → Skipping GPS configuration"));
     g_gps_initialized_ok = false;
     g_last_error_code = SENSOR_INIT_FAIL_GPS;
@@ -129,12 +131,20 @@ void gps_init() {
 
   // Configure in a single block
   bool configSuccess = true;
+  // Rocket flight profile: without this, the u-blox default (portable) model
+  // clamps its tracking filters at low dynamics and can reject or lag the
+  // solution during boost. AIRBORNE4g supports <4g accel and high climb rates.
+  configSuccess &= myGNSS.setDynamicModel(DYN_MODEL_AIRBORNE4g);
   configSuccess &= myGNSS.setAutoPVT(true);
   configSuccess &= myGNSS.setNavigationFrequency(5);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, gpsComPort, 1);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, gpsComPort, 5);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, gpsComPort, 1);
-  configSuccess &= myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, gpsComPort, 1);
+  configSuccess &=
+      myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_PVT, gpsComPort, 1);
+  configSuccess &=
+      myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_SAT, gpsComPort, 5);
+  configSuccess &=
+      myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_STATUS, gpsComPort, 1);
+  configSuccess &=
+      myGNSS.enableMessage(UBX_CLASS_NAV, UBX_NAV_DOP, gpsComPort, 1);
 
   wdt.feed();
 
@@ -143,15 +153,6 @@ void gps_init() {
   // Ensure debugging is still in the proper state after initialization
   setGPSDebugging(enableGPSDebug);
 }
-
-// bool checkGPSConnection() { // REMOVED as unused
-//   // Ensure debug settings are consistent
-//   setGPSDebugging(enableGPSDebug);
-//
-//   // Just verify we can get data from the GPS
-//   byte rate = myGNSS.getNavigationFrequency();
-//   return (rate > 0);
-// }
 
 bool gps_read() {
   // Skip if GPS module failed to initialize - avoid polling dead SPI/I2C bus
@@ -179,6 +180,13 @@ bool gps_read() {
     GPS_fixType = rawFixType;
     SIV = (rawSIV <= 100) ? rawSIV : 0; // Reject unrealistic satellite counts
 
+    // Populate additional GPS variables for logging and guidance
+    GPS_altitudeMSL =
+        myGNSS.getAltitudeMSL();       // Altitude Above Mean Sea Level in mm
+    GPS_heading = myGNSS.getHeading(); // Heading in degrees * 1e-5
+    pDOP = myGNSS.getPDOP(); // Positional Dilution of Precision (pDOP * 100)
+    RTK = myGNSS.getCarrierSolutionType(); // 0=None, 1=Float, 2=Fixed
+
     // Update GPS time variables if we have a valid fix
     if (GPS_fixType > 0) {
       GPS_year = myGNSS.getYear();
@@ -189,7 +197,7 @@ bool gps_read() {
       GPS_second = myGNSS.getSecond();
       GPS_time_valid = true;
     }
-    
+
     // Debug print if enabled
     if (enableGPSDebug) {
       gps_print();
@@ -205,7 +213,7 @@ void gps_print() {
   Serial.print(GPS_fixType);
   Serial.print(" | Satellites: ");
   Serial.println(SIV);
-  
+
   Serial.print("  Lat: ");
   Serial.print(GPS_latitude / 10000000.0, 7);
   Serial.print(" | Lon: ");
@@ -213,39 +221,46 @@ void gps_print() {
   Serial.print(" | Alt: ");
   Serial.print(GPS_altitude / 1000.0);
   Serial.println(" m");
-  
+
   Serial.print("  Speed: ");
   Serial.print(GPS_speed / 1000.0);
   Serial.println(" m/s");
-  
+
   if (GPS_time_valid) {
     Serial.print("  Time: ");
     Serial.print(GPS_year);
     Serial.print("-");
-    if (GPS_month < 10) Serial.print("0");
+    if (GPS_month < 10)
+      Serial.print("0");
     Serial.print(GPS_month);
     Serial.print("-");
-    if (GPS_day < 10) Serial.print("0");
+    if (GPS_day < 10)
+      Serial.print("0");
     Serial.print(GPS_day);
     Serial.print(" ");
-    if (GPS_hour < 10) Serial.print("0");
+    if (GPS_hour < 10)
+      Serial.print("0");
     Serial.print(GPS_hour);
     Serial.print(":");
-    if (GPS_minute < 10) Serial.print("0");
+    if (GPS_minute < 10)
+      Serial.print("0");
     Serial.print(GPS_minute);
     Serial.print(":");
-    if (GPS_second < 10) Serial.print("0");
+    if (GPS_second < 10)
+      Serial.print("0");
     Serial.println(GPS_second);
   } else {
     Serial.println("  Time: Not yet valid");
   }
-  
+
   Serial.println();
 }
 
 // Function to get GPS date/time safely (uses defaults if no valid time)
-void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute, byte& second) {
-  // Return the current GPS time values (defaults to Jan 1, 2000 if no valid fix)
+void getGPSDateTime(int &year, byte &month, byte &day, byte &hour, byte &minute,
+                    byte &second) {
+  // Return the current GPS time values (defaults to Jan 1, 2000 if no valid
+  // fix)
   year = GPS_year;
   month = GPS_month;
   day = GPS_day;
@@ -255,13 +270,10 @@ void getGPSDateTime(int& year, byte& month, byte& day, byte& hour, byte& minute,
 }
 
 // Safely get the GPS fix type
-uint8_t getFixType() {
-    return GPS_fixType;
-}
+uint8_t getFixType() { return GPS_fixType; }
 
 // Safely get the GPS altitude in meters
 float getGPSAltitude() {
-    // The u-blox modules report altitude in millimeters. Convert to meters.
-    return (float)GPS_altitude / 1000.0f;
+  // The u-blox modules report altitude in millimeters. Convert to meters.
+  return (float)GPS_altitude / 1000.0f;
 }
-

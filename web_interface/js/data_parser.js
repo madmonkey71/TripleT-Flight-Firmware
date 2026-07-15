@@ -18,9 +18,9 @@ const FALLBACK_CONFIG = {
         "ICM_MagX", "ICM_MagY", "ICM_MagZ", "ICM_Temp", "Q0", "Q1", "Q2", "Q3", 
         "EulerRoll_rad", "EulerPitch_rad", "EulerYaw_rad", "GyroBiasX_rps", "GyroBiasY_rps", 
         "GyroBiasZ_rps", "TgtRoll", "TgtPitch", "TgtYaw", "PIDIntRoll", "PIDIntPitch", 
-        "PIDIntYaw", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", "BattVoltage", 
-        "LastErrorCode", "StabFlags", "MaxPitchRate", "MaxRollRate", "MaxYawRate", 
-        "MaxPitchErr", "MaxRollErr", "MaxYawErr", "TgtWPIdx", "DistToWP", "BearToWP", 
+        "PIDIntYaw", "ActuatorOutRoll", "ActuatorOutPitch", "ActuatorOutYaw", "BattVoltage",
+        "LastErrorCode", "GuidanceActive", "StabFlags", "MaxPitchRate", "MaxRollRate", "MaxYawRate",
+        "MaxPitchErr", "MaxRollErr", "MaxYawErr", "TgtWPIdx", "DistToWP", "BearToWP",
         "AltErrWP"
     ],
     flightStateMap: {

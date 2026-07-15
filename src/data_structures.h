@@ -70,6 +70,7 @@ typedef struct {
   float actuator_output_yaw;
   float battery_voltage;    // Battery voltage (V)
   uint8_t last_error_code;  // Last recorded error code (ErrorCode_t)
+  bool guidance_active;     // True if guidance is actively controlling, false if disabled
 
   // Guidance Stability Metrics
   uint8_t stability_flags; // Bitfield for stability violations: e.g., 1=Rate, 2=Attitude, 4=Saturation
@@ -128,8 +129,13 @@ struct FlightStateData {
   float maxAltitude;        // Maximum altitude reached
   float currentAltitude;    // Current altitude
   float mainDeployAltitudeAgl; // New field
+  float baroAltitudeOffset; // GPS-referenced barometer calibration offset (m)
+  uint8_t baroCalibrated;   // 1 if barometer was calibrated when this record was saved
   unsigned long timestamp;  // Timestamp of last save
   uint16_t signature;       // Validation signature
 };
+// NOTE: changing this layout shifts the signature offset, which intentionally
+// invalidates records written by older firmware (they fail the signature check
+// and boot proceeds fresh from STARTUP).
 
 #endif // DATA_STRUCTURES_H 

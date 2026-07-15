@@ -66,6 +66,7 @@ WDT_T4<WDT1> wdt;
 #include "config.h"          // For pin definitions and other config
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
+#include "telemetry.h"       // For ENABLE_TELEMETRY packing & framing
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
 // Define variables declared as extern in utility_functions.h
@@ -101,6 +102,7 @@ float g_kalmanYaw = 0.0f;
 float g_kalmanRollRate = 0.0f;  // Angular rate from gyro (rad/s)
 float g_kalmanPitchRate = 0.0f; // Angular rate from gyro (rad/s)
 float g_kalmanYawRate = 0.0f;   // Angular rate from gyro (rad/s)
+bool g_guidance_active = true;  // Global flag: guidance system enabled/disabled at runtime
 #endif
 bool g_usingKX134ForKalman = false; // Initialize to false, default to ICM for Kalman
 
@@ -116,14 +118,11 @@ volatile bool enableGPSDebug = false;
 volatile bool enableSensorDebug = false;
 volatile bool enableICMRawDebug = false;
 
-// Add variables needed by state_management.cpp
-FlightState currentFlightState = STARTUP;  // Alias for g_currentFlightState
-float launchAltitude = 0.0f;               // Alias for g_launchAltitude  
-float maxAltitudeReached = 0.0f;           // Alias for g_maxAltitudeReached
-float currentAltitude = 0.0f;              // Alias for g_currentAltitude
-
-// Add variable needed by ms5611_functions.cpp
-bool baroCalibrated = false;               // Alias for g_baroCalibrated
+// NOTE: the former "alias" globals (currentFlightState, launchAltitude,
+// maxAltitudeReached, currentAltitude, baroCalibrated) have been removed.
+// They were separate variables that were never synchronised with the live
+// g_-prefixed state, which silently broke EEPROM persistence and power-loss
+// recovery. All modules now use the g_ globals directly.
 
 // Define sensor objects
 SparkFun_KX134 g_kx134Accel;  // Add KX134 accelerometer object definition
@@ -174,7 +173,7 @@ static unsigned long g_logSequenceNumber = 0; // static global
 
 // Additional global variables for data logging
 const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS (usually a const, g_ is optional)
-char g_logFileName[32] = ""; // To store the current log file name
+char g_logFileName[64] = ""; // Current log file name (matches the 64-byte name buffer in createNewLogFile; was 32, which truncated timestamped names)
 
 // Guidance Control Update Interval
 const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
@@ -402,6 +401,7 @@ void WriteLogData(bool forceLog) {
                              logEntry.pid_yaw_integral);
 
   guidance_get_actuator_outputs(logEntry.actuator_output_roll, logEntry.actuator_output_pitch, logEntry.actuator_output_yaw);
+  logEntry.guidance_active = g_guidance_active; // Log whether guidance system is actively controlling
 #else
   // Guidance disabled - zero out guidance-related log fields
   logEntry.target_roll = 0.0f;
@@ -413,6 +413,7 @@ void WriteLogData(bool forceLog) {
   logEntry.actuator_output_roll = 0.0f;
   logEntry.actuator_output_pitch = 0.0f;
   logEntry.actuator_output_yaw = 0.0f;
+  logEntry.guidance_active = false;
 #endif
 
   // Output to serial if enabled
@@ -461,6 +462,19 @@ void WriteLogData(bool forceLog) {
     }
   }
   
+  // --- Telemetry (gated by ENABLE_TELEMETRY in config.h) ---
+  // Send the same LogData snapshot we're about to log over Serial5 as a
+  // packed binary frame. See src/telemetry.h and wiki/entities/esp32-telemetry.md.
+#if ENABLE_TELEMETRY
+  {
+    TelemetryPacket tpkt;
+    telemetry_pack(logEntry, tpkt);
+    uint8_t frame[TELEMETRY_FRAME_SIZE];
+    telemetry_frame(tpkt, frame);
+    Serial5.write(frame, sizeof(frame));
+  }
+#endif
+
   // At this point, g_LogDataFile should be open. Attempt to write the log entry.
   String logString = logDataToString(logEntry);
   if (!g_LogDataFile.println(logString)) {
@@ -599,10 +613,19 @@ void setup() {
   Serial.print(F("Version: "));
   Serial.println(TRIPLET_FLIGHT_VERSION);
 
-  // Initialize Hardware Watchdog (2.0s timeout)
+#if ENABLE_TELEMETRY
+  // Initialise the UART link to the onboard ESP32 telemetry transmitter.
+  // Wire framing + packed binary protocol defined in src/telemetry.h.
+  Serial5.begin(TELEMETRY_BAUD);
+  Serial.println(F("Telemetry: Serial5 enabled @115200 baud"));
+#endif
+
+  // Initialize Hardware Watchdog. Reset timeout comes from config.h
+  // (WATCHDOG_TIMEOUT_MS, currently 5000 ms). The 2 s trigger is a
+  // pre-warning window; with no callback registered it is inert.
   WDT_timings_t config;
-  config.trigger = 2; // 2 seconds
-  config.timeout = 5; // 5 seconds (reset if not fed)
+  config.trigger = 2;                          // seconds (pre-warning, unused)
+  config.timeout = WATCHDOG_TIMEOUT_MS / 1000; // seconds until hardware reset
   wdt.begin(config);
 
   Serial.print(F("Board: "));
@@ -754,6 +777,7 @@ void handleInitialStateManagement() {
       g_currentFlightState = CALIBRATION;
       g_stateEntryTime = millis();
     }
+    g_last_error_code = NO_ERROR; // Clear the latched error along with the state
     Serial.println(F("ERROR state cleared - starting grace period for health checks"));
     saveStateToEEPROM();
   } else if (!systemHealthy && g_currentFlightState != ERROR) {
@@ -961,8 +985,8 @@ void loop() {
 
   // --- Guidance Control Update ---
   #if ENABLE_GUIDANCE == 1
-  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT)
-  if ((g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
+  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT) and guidance is active
+  if (g_guidance_active && (g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
       static unsigned long g_lastGuidanceUpdateTime = 0;
       if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
           float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;

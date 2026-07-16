@@ -3,7 +3,7 @@ title: Data Logging & Telemetry
 type: concept
 tags: [logging, sd-card, web-interface, csv, telemetry]
 created: 2026-04-15
-updated: 2026-07-02
+updated: 2026-07-16
 related_files: [src/data_structures.h, src/log_format_definition.cpp, src/TripleT_Flight_Firmware.cpp, web_interface/]
 ---
 
@@ -52,7 +52,7 @@ Browser-based real-time dashboard in `web_interface/index.html` using the **Web 
 - GPS map display
 - Flight state indicator
 
-Data field mapping: `flight_console_data_mapping.json` (repo root, with a copy in `web_interface/js/` and a matching fallback in `data_parser.js`) — all three now carry the full 63 columns including `GuidanceActive`.
+Data field mapping: `web_interface/js/flight_console_data_mapping.json`, with a matching hardcoded fallback in `data_parser.js` (used when running over `file://` and `fetch` is blocked) — both carry the full 63 columns including `GuidanceActive`. A stale duplicate used to live at the repo root; it was never fetched by any code path and was deleted.
 
 Test harness for parser: `web_interface/test_message_filtering.html`
 

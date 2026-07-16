@@ -3,7 +3,7 @@ title: Developer Workflow — Build, Test, Upload, Debug
 type: concept
 tags: [build, testing, workflow, platformio]
 created: 2026-04-22
-updated: 2026-07-02
+updated: 2026-07-16
 related_files: [platformio.ini, .github/workflows/test.yml, test/]
 ---
 
@@ -102,7 +102,7 @@ Performance budget: full CI < ~5 min; tests < 10 s; firmware build < 30 s.
 1. Extend the `LogData` struct in `src/data_structures.h`.
 2. Add the column to the CSV header in `src/log_format_definition.cpp`.
 3. Populate the field from the main loop (see `src/TripleT_Flight_Firmware.cpp`).
-4. Update the web-interface parser (`web_interface/flight_console_data_mapping.json`) — column counts must match. See [[entities/web-interface]].
+4. Update the web-interface parser (`web_interface/js/flight_console_data_mapping.json`, and its hardcoded fallback in `web_interface/js/data_parser.js`) — column counts must match. See [[entities/web-interface]].
 5. Verify via `log_test` serial command.
 
 ### Add a serial command

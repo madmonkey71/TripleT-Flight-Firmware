@@ -5,6 +5,7 @@ Calculates complete flight profile from launch to landing
 """
 
 import math
+import sys
 
 # Motor data - Aerotech H125W
 THRUST_CURVE = [
@@ -95,6 +96,7 @@ def simulate_flight():
     results.append(("-" * 80, "", "", "", "", ""))
 
     timestep = 0
+    csv_rows = []
 
     while True:
         # Current state
@@ -124,6 +126,8 @@ def simulate_flight():
 
         acceleration = net_force / mass
         accel_g = acceleration / G
+
+        csv_rows.append((round(t, 3), round(altitude, 3), round(velocity, 3), round(abs(accel_g + 1.0), 4), phase))
 
         # Track peak acceleration
         if abs(accel_g) > abs(peak_accel):
@@ -175,6 +179,22 @@ def simulate_flight():
         if t > 300:  # 5 minutes max
             print("Simulation timeout")
             break
+
+    # Optional machine-readable export: `python3 flight_simulation_h125w.py --csv [file]`.
+    # One row per DT step: time, altitude AGL, vertical velocity, accelerometer reading (|specific
+    # force| in g = |net accel_g + 1|) and phase. This is the input a hardware-in-the-loop (HIL)
+    # rig needs to replay the flight into the sensor layer; see wiki/queries/flight-logic-audit-2026-09.md
+    # (the firmware has no sensor-injection mode yet, so the replay used today is the native
+    # test/test_real_h125w_replay suite, which ports this physics).
+    if "--csv" in sys.argv:
+        i = sys.argv.index("--csv")
+        path = sys.argv[i + 1] if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-") else "h125w_flight.csv"
+        with open(path, "w") as f:
+            f.write("t_s,alt_agl_m,vel_mps,accel_reading_g,phase\n")
+            for row in csv_rows:
+                f.write(",".join(str(v) for v in row) + "\n")
+        print(f"wrote {len(csv_rows)} rows to {path}")
+        return
 
     # Print results
     print("\n" + "=" * 100)

@@ -63,8 +63,8 @@ Verification caveat for this branch: the authoring sandbox blocked the PlatformI
 - **Finding.** `DROGUE_DESCENT` fired the main on `baro AGL < g_main_deploy_altitude_m_agl` read from one cached value — a single glitchy sample deployed it, and with the barometer stale/disconnected (`isConnected()` gate) there was no path to `MAIN_DEPLOY` at all, so the vehicle sat in `DROGUE_DESCENT` forever. `MAIN_PRESENT` builds had no landing check or timeout in that state.
 - **Fix.**
   - Debounce: `MAIN_DEPLOY_CONFIRMATION_COUNT` consecutive **fresh** samples below the deploy altitude (`FreshCounter`).
-  - Baro unavailable (stale/uncalibrated): deploy after an *estimated descent time* `(max AGL − main altitude) / MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS × MAIN_DEPLOY_FALLBACK_MARGIN`, floored at `MAIN_DEPLOY_FALLBACK_MIN_MS` and capped by `MAIN_DEPLOY_FALLBACK_TIME_MS` (fixed cap when the apogee is unknown). The margin is < 1 on purpose: an early main is survivable, a late one is not (decision D-5).
-  - Baro alive but wrong (stuck high): hard limit `MAIN_DEPLOY_MAX_DROGUE_TIME_MS` since drogue descent began.
+  - Baro unavailable (stale/uncalibrated): deploy after an *estimated descent time* `(max AGL − main altitude) / MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS × MAIN_DEPLOY_FALLBACK_MARGIN`, floored at `MAIN_DEPLOY_FALLBACK_MIN_MS`; with an unknown apogee the fixed `MAIN_DEPLOY_FALLBACK_TIME_MS` applies. The margin is < 1 and the assumed rate above the real one on purpose: an early main is survivable, a late one is not (decision D-5). Defaults are sized from `flight_simulation_h125w.py` (drogue ≈ 8.5 m/s, apogee ≈ 1936 m AGL): estimate ≈ 147 s ⇒ main at ≈ 690 m AGL if the barometer dies — early but clear of the ground. **Tune per airframe.**
+  - Baro alive but wrong (stuck high): hard limit `MAIN_DEPLOY_MAX_DROGUE_TIME_MS` (240 s) since drogue descent began. It must lie between the nominal apogee→main-altitude time (216 s for the H125W flight) and the time to landing (≈ 260 s) — airframe-specific.
   - `detectLanding()` now also runs in `DROGUE_DESCENT`; both descent states are forced to `LANDED` after `DESCENT_STATE_TIMEOUT_MS`.
 - **Tests.** `test_real_main_deploy` (9): thousands of passes on one low cached sample never deploy; a short glitch resets the count; N fresh low samples deploy and reach MAIN_DESCENT; dead barometer → estimated-time fallback (not before, fires after); unknown apogee → fixed fallback; stuck-high baro → hard limit; touchdown in DROGUE_DESCENT → LANDED; both descent states time out. Mutation-checked (debounce, fallback and hard-limit each removed ⇒ failures).
 
@@ -134,3 +134,19 @@ Verification caveat for this branch: the authoring sandbox blocked the PlatformI
 - **Fix.** `setup_sequence.h` — `runSetupSteps()` feeds the watchdog before the first step and after **every** step; `setup()` runs recovery, SD init, GPS, barometer, ICM, KX134, filters and log creation as steps in the original order, so the 5 s window only ever has to cover a single step (one blocking library call cannot be fed inside; that residual risk is what the timeout is for). The watchdog is still started early, so bring-up hangs are still recovered, and `WATCHDOG_TIMEOUT_MS` is unchanged. `loop()`'s single `wdt.feed()` per pass is untouched, so the in-flight watchdog is not weakened.
 - **Tests.** `test_real_setup_sequence` (6): feed placement (F S F S … F); a modelled >10 s bring-up (SD 3 s, log 4 s, …) never expires a fake 5 s watchdog and the largest gap equals the slowest single step; the same bring-up without step feeds *does* expire it; a failing step doesn't stop bring-up; source checks on the real `setup()` (SD init and log creation go through the fed sequence, `wdt.begin` precedes it) and `loop()` (exactly one `wdt.feed()`, first in the pass, no `runSetupSteps`, timeout still 5000). Mutation-checked.
 - **Bench.** Needs a hardware confirmation with a slow / removed / corrupt SD card and a `TEST_FREEZE`-style watchdog reset — see the bench checklist in the PR.
+
+## End-to-end replay of the simulated H125W flight
+
+`test/test_real_h125w_replay` ports the physics of `flight_simulation_h125w.py` (Aerotech H125W: 17.7 g peak, burnout 2.8 s @ 195 m/s, apogee 1936 m AGL @ 19.8 s, drogue ≈ 8.5 m/s, main at 100 m AGL, landing ≈ 272 s) and feeds the resulting barometric altitude (±0.15 m noise) and accelerometer reading at 10 Hz through the **real** flight logic, pyro service, persistence and guidance policy. Measured on the branch:
+
+| Event | Simulator | Firmware |
+|-------|-----------|----------|
+| Liftoff | t = 0 | BOOST at 0.4 s |
+| Burnout | 2.8 s | COAST at 2.8 s (the gradual tail-off is *not* taken for burnout) |
+| Apogee | 19.8 s | detected 19.2 s (the free-fall path fires ≈ 0.6 s before the apex at ≈ 5 m/s upward — benign), drogue fires 19.3 s |
+| Main deploy | 100 m AGL | 99 m AGL |
+| Landing | 271.8 s | LANDED 274.4 s, then RECOVERY |
+
+A second test kills the barometer 6 s after apogee: the main still deploys (estimated-time fallback) at a safe altitude and the vehicle lands with no `ERROR`.
+
+**Hardware-in-the-loop.** `flight_simulation_h125w.py` cannot drive an HIL rig as it was: it prints a table. It now has `--csv [file]` (time, altitude, velocity, accelerometer reading, phase per 0.1 s), which is the replay input a rig needs. The firmware has **no sensor-injection mode** (the drivers read I²C/SPI directly), so a true HIL replay needs a new build option (e.g. `SENSOR_REPLAY`) that substitutes the sensor reads with the CSV; that is out of scope for this branch. Software-in-the-loop (above) is what is available today.

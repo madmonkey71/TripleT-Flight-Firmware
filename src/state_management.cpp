@@ -236,7 +236,7 @@ static void applyRecoveryDecision(const RecoveryDecision& d, const FlightStateDa
 
   if (d.resume) {
     flightLogicReset(); // detectors must start clean; nothing carries over from a previous run
-    g_launchAltitude = rec.launchAltitude;
+    flightSetLaunchAltitude(rec.launchAltitude);
     g_maxAltitudeReached = rec.maxAltitude;
     g_main_deploy_altitude_m_agl = rec.mainDeployAltitudeAgl;
     baro_altitude_offset = rec.baroAltitudeOffset;

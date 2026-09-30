@@ -14,6 +14,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <MS5611.h>
 #include "debug_flags.h" // For g_debugFlags
+#include "sensor_samples.h" // Fresh-sample sequence numbers / timestamps
 #include "kx134_functions.h"
 #include "icm_20948_functions.h"
 
@@ -94,6 +95,8 @@ struct FlightRuntime {
     // Pyro fire-window flags (see DROGUE_DEPLOY / MAIN_DEPLOY)
     bool          drogueHasFired = false;
     bool          mainHasFired = false;
+    // g_launchAltitude is only a trustworthy ground reference once PAD_IDLE was entered (or a flight resumed)
+    bool          launchAltValid = false;
     // In-flight sensor degradation (audit #2)
     bool          degraded = false;
     unsigned long lastDegradeLogMs = 0;
@@ -167,6 +170,35 @@ bool flight_error_allowed(FlightState s) {
 }
 
 bool flightIsDegraded() { return g_rt.degraded; }
+
+// True if the barometer has produced a fresh sample recently.
+static bool baroDataFresh() {
+    return g_baroSample.seq > 0 && (millis() - g_baroSample.lastMs) <= BARO_STALE_TIMEOUT_MS;
+}
+
+void flightSetLaunchAltitude(float alt_m) {
+    g_launchAltitude = alt_m;
+    g_rt.launchAltValid = true;
+}
+
+// audit #3: leaving ERROR (auto-recovery, clear_errors, clear_to_calibration,
+// skip_calibration) sends the vehicle to PAD_IDLE/CALIBRATION, which resets the launch
+// altitude and max altitude and re-enables arming. That is only acceptable if the
+// vehicle is PROVABLY on the ground and NEVER flew:
+//   * the persisted flight-in-progress flag is clear (set at BOOST, survives resets),
+//   * the state is not an airborne one, and
+//   * if the barometer is calibrated, has a ground reference and is delivering fresh
+//     samples, the vehicle is within GROUND_AGL_TOLERANCE_M of the launch altitude
+//     (this catches an un-armed launch while parked in ERROR).
+bool flight_is_provably_on_ground() {
+    if (g_flightInProgress) return false;
+    if (flight_is_airborne_state(g_currentFlightState)) return false;
+    if (g_baroCalibrated && g_rt.launchAltValid && baroDataFresh()) {
+        const float agl = ms5611_get_altitude() - g_launchAltitude;
+        if (fabsf(agl) > GROUND_AGL_TOLERANCE_M) return false;
+    }
+    return true;
+}
 
 static void flightDegrade(ErrorCode_t code, const char* reason) {
     const bool firstTime = !g_rt.degraded;
@@ -312,8 +344,9 @@ void ProcessFlightState() {
         if (millis() - g_rt.lastAutoRecoveryCheckTime > autoRecoveryCheckInterval) {
             g_rt.lastAutoRecoveryCheckTime = millis();
             
-            // Check if we can recover to PAD_IDLE state
-            if (isSensorSuiteHealthy(PAD_IDLE)) {
+            // Check if we can recover to PAD_IDLE state. audit #3: only when the vehicle is
+            // provably on the ground and never flew - never re-arm a vehicle that may be airborne.
+            if (isSensorSuiteHealthy(PAD_IDLE) && flight_is_provably_on_ground()) {
                 Serial.println(F("--- AUTOMATIC ERROR RECOVERY ---"));
                 Serial.println(F("System health has been restored. Automatically clearing ERROR state."));
                 
@@ -344,6 +377,11 @@ void ProcessFlightState() {
             }
         }
         
+        if (isSensorSuiteHealthy(PAD_IDLE) && !flight_is_provably_on_ground() &&
+            g_debugFlags.enableSystemDebug && millis() - g_rt.lastErrorDebugTime > 5000) {
+            Serial.println(F("ERROR auto-recovery REFUSED: flight in progress or vehicle not provably on the ground. Use 'reset_flight' once landed."));
+        }
+
         // Add periodic debugging for ERROR state (only if we didn't auto-recover)
         if (g_debugFlags.enableSystemDebug) {
             if (millis() - g_rt.lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
@@ -444,7 +482,7 @@ void ProcessFlightState() {
                 // Actual periodic waiting message and transition logic is in the main switch block below.
                 break;
             case PAD_IDLE:
-                g_launchAltitude = g_ms5611Sensor.isConnected() && g_baroCalibrated ? ms5611_get_altitude() : 0.0f;
+                flightSetLaunchAltitude(g_ms5611Sensor.isConnected() && g_baroCalibrated ? ms5611_get_altitude() : 0.0f);
                 g_maxAltitudeReached = 0.0f;
                 boostEndTime = 0;
                 landingDetectedFlag = false;

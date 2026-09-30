@@ -15,6 +15,8 @@ bool detectApogee();
 void resetApogeeDetectionCounters(); // Reset apogee detection counters when entering COAST state
 bool flight_is_airborne_state(FlightState s); // BOOST .. MAIN_DESCENT
 bool flight_error_allowed(FlightState s);     // ERROR may only be entered from pre-flight states (audit #2)
+bool flight_is_provably_on_ground();          // never flew AND (if the baro can tell) near the launch altitude (audit #3)
+void flightSetLaunchAltitude(float alt_m);    // set g_launchAltitude and mark it valid as a ground reference
 bool flightIsDegraded();                      // a sensor-health failure is being ridden out in flight
 void flightLogicReset();             // Reset all flight-logic bookkeeping (new flight / resume / unit tests)
 bool detectLanding();

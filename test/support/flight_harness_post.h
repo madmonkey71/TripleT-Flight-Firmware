@@ -83,6 +83,7 @@ inline void harness_on_pad(float launch_alt = 100.0f) {
   baro_calibration_done = true;
   harness_set_baro_alt(launch_alt);
   harness_set_accel_g(1.0f);
+  harness_new_baro_sample();
   g_currentFlightState = PAD_IDLE;
   harness_pass();          // state-entry actions (launch altitude capture, pins LOW)
 }

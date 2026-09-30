@@ -93,7 +93,7 @@ void handleInitialStateManagement() {
       saveStateToEEPROM(); // Save state
       WriteLogData(true);  // Log error immediately
     }
-  } else if (g_currentFlightState == ERROR && systemHealthy) {
+  } else if (g_currentFlightState == ERROR && systemHealthy && flight_is_provably_on_ground()) {
     // Check if barometer is already calibrated to skip CALIBRATION state
     if (g_baroCalibrated) {
       Serial.println(F("ERROR state recovered, all systems healthy and barometer calibrated, transitioning to PAD_IDLE."));

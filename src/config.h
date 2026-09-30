@@ -196,6 +196,8 @@
 // the vehicle is on the ground: never flown, and (if the barometer is calibrated) within
 // this many metres of the launch altitude.
 #define GROUND_AGL_TOLERANCE_M 30.0f
+// A barometer with no fresh sample for this long is treated as failed/unavailable.
+#define BARO_STALE_TIMEOUT_MS 500
 
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \

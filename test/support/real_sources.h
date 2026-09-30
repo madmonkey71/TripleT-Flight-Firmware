@@ -6,4 +6,5 @@
 #include "../../src/state_management.cpp"
 #include "../../src/startup_state.cpp"
 #include "../../src/flight_logic.cpp"
+#include "../../src/flight_commands.cpp"
 #include "flight_harness_post.h"

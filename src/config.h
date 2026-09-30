@@ -144,16 +144,22 @@
 #define LANDING_WINDOW_SAMPLES 10
 // --- Main deployment safeguards (audit #5) ---
 #define MAIN_DEPLOY_CONFIRMATION_COUNT 3  // Consecutive FRESH baro samples below the deploy altitude
-// If the barometer stops delivering fresh samples during drogue descent, deploy main after an
-// estimated descent time, capped by MAIN_DEPLOY_FALLBACK_TIME_MS. The estimate is
-// (last max AGL - main altitude) / assumed drogue rate * margin, floored at MAIN_DEPLOY_FALLBACK_MIN_MS.
-// Deploying a little early is survivable; deploying after ground impact is not, hence the margin < 1.
-#define MAIN_DEPLOY_FALLBACK_TIME_MS 30000
-#define MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS 25.0f
+// If the barometer stops delivering fresh samples during drogue descent, main is deployed after an
+// ESTIMATED descent time: (last max AGL - main altitude) / assumed drogue rate * margin, floored at
+// MAIN_DEPLOY_FALLBACK_MIN_MS. If the apogee is unknown (baro dead all flight) the fixed
+// MAIN_DEPLOY_FALLBACK_TIME_MS is used instead. Deploying a little early is survivable; deploying after
+// ground impact is not, hence margin < 1 and an assumed rate above the real one.
+// TUNE PER AIRFRAME. Defaults suit the H125W flight in flight_simulation_h125w.py (drogue ~8.5 m/s,
+// apogee ~1900 m AGL, ~216 s from apogee to 100 m AGL, ~272 s total): the estimate is then ~147 s,
+// i.e. main at roughly 690 m AGL if the barometer fails - early, but well clear of the ground.
+#define MAIN_DEPLOY_FALLBACK_TIME_MS 60000
+#define MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS 10.0f
 #define MAIN_DEPLOY_FALLBACK_MARGIN 0.8f
 #define MAIN_DEPLOY_FALLBACK_MIN_MS 3000
-// Even with a barometer that keeps delivering (possibly wrong) data, main is deployed once this
-// long has passed since drogue descent began.
+// Even with a barometer that keeps delivering (possibly wrong) data, main is deployed once this long
+// has passed since drogue descent began. It must lie BETWEEN the nominal time from apogee to the main
+// altitude (216 s for the H125W flight) and the time to landing (~260 s), or it either fires early on a
+// slow-but-healthy descent (harmless: main early) or can never help. TUNE PER AIRFRAME.
 #define MAIN_DEPLOY_MAX_DROGUE_TIME_MS 240000UL
 // A descent state that never sees touchdown is forced to LANDED after this long.
 #define DESCENT_STATE_TIMEOUT_MS 600000UL

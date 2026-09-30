@@ -76,8 +76,9 @@ static void run_without_baro_samples(unsigned long ms) {
 }
 
 void test_dead_barometer_falls_back_to_an_estimated_descent_time() {
-  under_drogue(600.0f, 500.0f);    // apogee 500 m AGL: (500-100)/25 m/s*0.8 = 12.8 s
-  run_without_baro_samples(12000);
+  under_drogue(600.0f, 500.0f);    // apogee 500 m AGL: (500-100)/MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS * margin
+  const unsigned long est = (unsigned long)((500.0f - 100.0f) / MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS * 1000.0f * MAIN_DEPLOY_FALLBACK_MARGIN);
+  run_without_baro_samples(est - 1000);
   TEST_ASSERT_FALSE_MESSAGE(main_fired(), "must not fire before the estimated descent time");
   run_without_baro_samples(1500);
   TEST_ASSERT_TRUE(main_fired());

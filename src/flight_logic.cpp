@@ -961,12 +961,11 @@ void ProcessFlightState() {
                     if (g_rt.mainGate.count >= MAIN_DEPLOY_CONFIRMATION_COUNT) { deployMain = true; why = "baro altitude"; }
                 } else {
                     // Barometer unavailable/stale: fall back on an estimated descent time.
-                    unsigned long deadline = MAIN_DEPLOY_FALLBACK_TIME_MS;
+                    unsigned long deadline = MAIN_DEPLOY_FALLBACK_TIME_MS;   // apogee unknown
                     if (g_maxAltitudeReached > g_main_deploy_altitude_m_agl) {
                         const float est_ms = (g_maxAltitudeReached - g_main_deploy_altitude_m_agl) /
                                              MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS * 1000.0f * MAIN_DEPLOY_FALLBACK_MARGIN;
-                        unsigned long est = est_ms > (float)MAIN_DEPLOY_FALLBACK_MIN_MS ? (unsigned long)est_ms : (unsigned long)MAIN_DEPLOY_FALLBACK_MIN_MS;
-                        if (est < deadline) deadline = est;
+                        deadline = est_ms > (float)MAIN_DEPLOY_FALLBACK_MIN_MS ? (unsigned long)est_ms : (unsigned long)MAIN_DEPLOY_FALLBACK_MIN_MS;
                     }
                     if (!g_rt.mainFallbackLogged) {
                         g_rt.mainFallbackLogged = true;

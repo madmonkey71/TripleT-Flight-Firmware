@@ -36,8 +36,13 @@ src/
 ├── config.h                      # All compile-time parameters (SINGLE TRUTH)
 ├── data_structures.h             # LogData, FlightState enum, Trajectory types
 ├── debug_flags.h                 # Granular debug output control
-├── flight_logic.cpp/.h           # State machine transitions, apogee/landing detect
-├── state_management.cpp/.h       # EEPROM persistence of flight state
+├── flight_logic.cpp/.h           # State machine transitions, apogee/landing detect, guidance servo policy
+├── state_management.cpp/.h       # EEPROM persistence + two-phase boot recovery
+├── startup_state.cpp/.h          # First-state resolution after boot (completes pending recovery)
+├── pyro_control.cpp/.h           # Pyro pin ownership: request/service, fired flags
+├── flight_commands.cpp/.h        # clear_errors / reset_flight / skip_calibration / TEST_FREEZE (guarded)
+├── sensor_samples.cpp/.h         # Fresh-sample sequence numbers, FreshCounter, BaroTrack
+├── setup_sequence.h              # Watchdog-fed setup step runner
 ├── guidance_control.cpp/.h       # PID guidance, trajectory following
 ├── guidance_failsafe.cpp         # Stability-triggered failsafe escalation
 ├── stability_monitor.cpp/.h      # Real-time angular rate / attitude monitoring
@@ -91,7 +96,7 @@ esp32_telemetry_transmitter/      # ESP32 telemetry transmitter
 
 ## Flight State Machine
 
-14 states managed in `src/flight_logic.cpp` and persisted to EEPROM via `src/state_management.cpp`:
+14 states managed in `src/flight_logic.cpp` and persisted to EEPROM via `src/state_management.cpp` (boot resolution in `src/startup_state.cpp`; pyro pins owned by `src/pyro_control.cpp`). In flight, sensor faults degrade instead of entering `ERROR`. Diagram updated for beta-0.58 ([[queries/flight-logic-audit-2026-09]]):
 
 ```mermaid
 stateDiagram-v2
@@ -100,19 +105,20 @@ stateDiagram-v2
     CALIBRATION --> PAD_IDLE : baro calibrated (GPS-referenced, 120s timeout fallback)
     PAD_IDLE --> ARMED : arm command
     ARMED --> PAD_IDLE : disarm command / 5-min timeout
-    ARMED --> BOOST : accel > 2g
-    BOOST --> COAST : accel < 0.5g (3 consecutive)
-    COAST --> APOGEE : first match of baro / accel / GPS descent, or 20s backup timer
+    ARMED --> BOOST : accel > 2g (5 fresh samples)
+    BOOST --> COAST : burnout (3 fresh samples) or 12s BOOST timeout
+    COAST --> APOGEE : first match of gated baro / free-fall accel / GPS, or 20s backup timer
     APOGEE --> DROGUE_DEPLOY : if DROGUE_PRESENT
     APOGEE --> MAIN_DEPLOY : if single deploy
     DROGUE_DEPLOY --> DROGUE_DESCENT
-    DROGUE_DESCENT --> MAIN_DEPLOY : altitude < 100m AGL
+    DROGUE_DESCENT --> MAIN_DEPLOY : 3 fresh baro samples < 100m AGL, or baro-failure fallbacks
     MAIN_DEPLOY --> MAIN_DESCENT
-    MAIN_DESCENT --> LANDED : stable accel 0.9–1.1g for 2s
+    MAIN_DESCENT --> LANDED : stationary (baro steady, ~1g, IMU quiet) for 2s
     LANDED --> RECOVERY
-    RECOVERY --> [*]
-    BOOST --> ERROR : critical failure
-    ERROR --> PAD_IDLE : auto-recovery (checked every 2s)
+    RECOVERY --> PAD_IDLE : reset_flight (token, at rest)
+    PAD_IDLE --> ERROR : pre-flight failure only
+    ARMED --> ERROR : pre-flight failure only
+    ERROR --> PAD_IDLE : auto-recovery / clear_errors, only if provably on the ground and never flown
 ```
 
 ## Data Pipeline
@@ -158,6 +164,7 @@ Full plan: [[queries/roadmap-2026]]. Current gaps: [[queries/development-status-
 - Wireless telemetry is wired in code but not yet bench-tested or flown — `ENABLE_TELEMETRY` in `src/config.h` plus both ESP32 firmwares are ready; needs a hardware round-trip before being trusted ([[entities/esp32-telemetry]]).
 - Trajectory SD-card loading incomplete; only hard-coded test trajectory today.
 - Fixed-timestep loop not enforced; Kalman `dt` varies slightly with loop load.
+- beta-0.58 flight-logic fixes are bench-gated: the authoring environment could not run `pio test` / `pio run` (see [[queries/flight-logic-audit-2026-09]]); the fixes have not flown. `MAIN_DEPLOY_*` fallback constants and `BOOST_TIMEOUT_MS` are airframe-specific and must be tuned.
 
 ## Related
 

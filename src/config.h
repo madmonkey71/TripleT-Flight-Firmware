@@ -6,7 +6,7 @@
 // ============================================================================
 // FIRMWARE VERSION - Update on each release
 // ============================================================================
-#define FIRMWARE_VERSION "v0.10.0" // Safety Features complete
+#define FIRMWARE_VERSION "v0.58.0-beta" // beta-0.58: flight-logic safety audit fixes (bench-test before flight)
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41

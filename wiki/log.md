@@ -162,6 +162,8 @@ Append-only chronological record of all wiki operations.
 **Not changed in this pass**:
 - No source code edits. The trajectory + telemetry implementation work is the next step (see [[queries/v1-release-gate-2026-05]] for the action list).
 
-## [2026-09-30] audit | flight-logic audit beta-0.58 (in progress)
-- New page `queries/flight-logic-audit-2026-09.md` (finding → fix → test per item, added item by item).
-- Item 1 landed: two-phase boot recovery, pyro-fired mask, `pyro_init_safe()`; native real-code harness (`test/stubs`, `test/support`).
+## [2026-09-30] audit | flight-logic audit beta-0.58
+- New page `queries/flight-logic-audit-2026-09.md`: findings #1-#14 (finding → fix → test), decisions, H125W replay, HIL note.
+- Rewrote `concepts/apogee-detection.md`, `entities/state-management.md`; updated `concepts/flight-state-transitions.md`, `concepts/kalman-filter.md`, `concepts/architecture-decisions.md` (ADR-003/004 notes), `concepts/testing-strategy.md`, `concepts/developer-workflow.md`, `entities/flight-logic.md`, `entities/command-processor.md`, `entities/configuration-system.md`, `queries/roadmap-2026.md`, `overview.md`.
+- Code: two-phase boot recovery, fresh-sample confirmation, ERROR policy, `reset_flight`, pyro service, Kalman gating, guidance policy, setup watchdog steps; version `v0.58.0-beta`. Native real-code test harness (`test/stubs`, `test/support`, `test_real_*`).
+- Verification caveat: PlatformIO registry blocked in the authoring sandbox; host g++ + Unity and arm-none-eabi-g++ compile checks used instead.

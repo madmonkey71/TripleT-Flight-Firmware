@@ -34,8 +34,7 @@
 #include <Watchdog_t4.h>
 WDT_T4<WDT1> wdt;
 
-// Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.51
+// Version string comes from config.h (FIRMWARE_VERSION); the old numeric TRIPLET_FLIGHT_VERSION (0.51) was stale.
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
@@ -667,7 +666,7 @@ void setup() {
 
   Serial.println(F("TripleT Flight Firmware Starting..."));
   Serial.print(F("Version: "));
-  Serial.println(TRIPLET_FLIGHT_VERSION);
+  Serial.println(FIRMWARE_VERSION);
 
 #if ENABLE_TELEMETRY
   // Initialise the UART link to the onboard ESP32 telemetry transmitter.

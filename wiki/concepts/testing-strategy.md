@@ -3,8 +3,8 @@ title: Testing Strategy
 type: concept
 tags: [testing, unity, native, ci, mocks]
 created: 2026-04-15
-updated: 2026-04-22
-related_files: [test/, platformio.ini, .github/workflows/test.yml]
+updated: 2026-09-30
+related_files: [test/, test/stubs/, test/support/, platformio.ini, .github/workflows/test.yml]
 ---
 
 Three-tier testing strategy: desktop unit tests (no hardware), integration tests (real hardware), and flight validation.
@@ -13,7 +13,7 @@ Three-tier testing strategy: desktop unit tests (no hardware), integration tests
 
 - **Framework**: Unity via PlatformIO `native` environment
 - **Location**: `test/test_<name>/test_<name>.cpp` (PlatformIO auto-discovery layout)
-- **Hardware**: None required — uses ArduinoFake (compile flag `-D UNIT_TEST_NATIVE`)
+- **Hardware**: None required — compile flags `-D UNIT_TEST_NATIVE -std=gnu++17 -I test/stubs`. Since beta-0.58 the `native` env no longer uses ArduinoFake (its only role was supplying `<Arduino.h>` types, it collided with the stub layer and fails to build on newer Apple clang); `test/stubs/Arduino.h` provides them
 - **Run**: `pio test -e native -vv`
 - **CI**: Runs on every push via `.github/workflows/test.yml`
 
@@ -33,11 +33,20 @@ Three-tier testing strategy: desktop unit tests (no hardware), integration tests
 | `test_math_functions/` | Vector/quaternion math, utility helpers |
 | `test_servo_smoother/` | Rate limiting, clamping |
 
+### Real-code suites (beta-0.58)
+
+The older `test_flight_logic` and `test_apogee_detection` suites test *copies* of the logic (`testable_detectApogee`, mocks) and could not catch the defects in [[queries/flight-logic-audit-2026-09]]. The `test_real_*` suites `#include` the **shipped** `src/*.cpp` files into one translation unit and fake only the hardware/IO boundary:
+
+- `test/stubs/` — host Arduino core: injectable `millis()`, recorded pin modes/levels/rising edges, captured `Serial`, a RAM `EEPROM` with write accounting; header stubs for NeoPixel, MS5611, ICM, KX134, u-blox, Wire.
+- `test/support/flight_harness.h` — firmware globals + recording stubs (sensor values, sensor health, guidance, logging); `flight_harness_post.h` — `harness_reset()`, fresh-sample delivery at 10 Hz, baro ramps, `harness_pass()` (same call order as `loop()`); `real_sources.h` — includes the real sources.
+- Suites: `test_real_recovery`, `test_real_commands`, `test_real_persistence`, `test_real_apogee`, `test_real_boost`, `test_real_main_deploy`, `test_real_landing`, `test_real_pyro`, `test_real_guidance`, `test_real_kalman`, `test_real_setup_sequence`, `test_real_test_commands_off/on`, `test_real_flight_logic`, and `test_real_h125w_replay` (end-to-end replay of the `flight_simulation_h125w.py` flight).
+- Convention: every fix ships with a test that fails if the fix is reverted (mutation-checked by hand). A few checks read the real `setup()`/`loop()`/`command_processor.cpp` text where the code cannot be compiled natively (source-order lint).
+
 ### Mock Stack
 
 ```
-Unity test → Mock HAL (MockTimer, MockSerial, etc.) → src/ logic
-          → ArduinoFake (Arduino.h stubs for native)
+Unity test → test/stubs (Arduino core, pins, EEPROM, Serial) + test/support harness → REAL src/ logic
+          (legacy suites: Mock HAL / mock_sensors.h → copies of the logic)
 ```
 
 ## Tier 2: Integration Tests (Hardware)
@@ -67,7 +76,7 @@ Unity test → Mock HAL (MockTimer, MockSerial, etc.) → src/ logic
 
 `.github/workflows/test.yml` defines two jobs that run on every push and PR:
 
-- **`test`** — `pio test -e native -vv`; runs Unity suites against ArduinoFake mocks.
+- **`test`** — `pio test -e native -vv`; runs the Unity suites (the real-code suites against `test/stubs`).
 - **`build`** — `pio run -e teensy41`; verifies the production build still links and fits the flash budget.
 
 Branch protection on `master` / `develop` requires both green before merge. Performance budget: full CI < 5 min; unit tests < 10 s; firmware build < 30 s.

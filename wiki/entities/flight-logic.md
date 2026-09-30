@@ -3,8 +3,8 @@ title: flight_logic — State Machine & Event Detection
 type: entity
 tags: [flight-logic, state-machine, apogee, landing, boost]
 created: 2026-04-15
-updated: 2026-07-02
-related_files: [src/flight_logic.cpp, src/flight_logic.h, src/state_management.cpp]
+updated: 2026-09-30
+related_files: [src/flight_logic.cpp, src/flight_logic.h, src/state_management.cpp, src/startup_state.cpp, src/pyro_control.cpp, src/flight_commands.cpp, src/sensor_samples.h]
 ---
 
 Core flight state machine logic. Drives all state transitions and detects key flight events. See [[overview]] for full state diagram.
@@ -13,11 +13,15 @@ Core flight state machine logic. Drives all state transitions and detects key fl
 
 | Function | Description |
 |----------|-------------|
-| `ProcessFlightState()` | Main dispatcher — calls per-state logic each loop iteration |
-| `detectApogee() → bool` | OR / first-match of 4 methods (baro AGL descent, accel Z, GPS, 20 s backup timer); see [[concepts/apogee-detection]] |
-| `detectLanding() → bool` | 10-sample avg altitude within 1 m of launch + accel 0.9–1.1 G held 2 s |
-| `detectBoostEnd()` | Checks for 3 consecutive readings below 0.5G (COAST_CONFIRMATION_COUNT) |
-| `resetApogeeDetectionCounters()` | Reset all counters on COAST entry |
+| `ProcessFlightState()` | Main dispatcher — calls per-state logic each loop iteration; returns immediately while a boot recovery is pending |
+| `detectApogee() → bool` | OR / first-match of 4 methods (baro, free-fall accel, GPS, 20 s backup timer), each fresh-sample-confirmed, gated and cross-checked; see [[concepts/apogee-detection]] |
+| `detectLanding() → bool` | Stationarity on fresh baro samples (span < 1 m over 10 samples) + ~1 g + IMU quiet, consecutive, 2 s; works at any elevation |
+| `detectBoostEnd()` | 3 fresh samples below 0.5 g, or below 35 % of the peak boost level and settled (drag-robust) |
+| `flightGuidanceStep()` | Guidance servo policy: runs only in COAST; centres the fins once afterwards; primes `dt` on entry |
+| `flight_is_airborne_state()`, `flight_error_allowed()`, `flight_is_provably_on_ground()`, `flight_is_stationary_on_ground()` | ERROR policy / ground-proof predicates ([[queries/flight-logic-audit-2026-09]] #2, #3, #7) |
+| `resetApogeeDetectionCounters()`, `flightLogicReset()` | Reset detector state (COAST entry / PAD_IDLE entry / resume / tests) |
+
+Pyro outputs are **not** driven here: the deploy states request a fire from `pyro_control.cpp`, whose `pyro_service()` (every loop pass) owns the pins. Boot-time state resolution lives in `startup_state.cpp`; the state-changing serial commands in `flight_commands.cpp`.
 
 Note: `IsStable()` is declared in `flight_logic.h` but has no definition and no callers — vestigial.
 
@@ -27,13 +31,15 @@ Note: `IsStable()` is declared in `flight_logic.h` but has no definition and no 
 |-----------|--------------|
 | PAD_IDLE → ARMED | `arm` serial command (gated by `isSensorSuiteHealthy(ARMED)`) |
 | ARMED → PAD_IDLE | `disarm` command, or `ARMED_TIMEOUT_MS` = 300,000ms auto-disarm |
-| ARMED → BOOST | `BOOST_ACCEL_THRESHOLD` = 2.0G |
-| BOOST → COAST | `COAST_ACCEL_THRESHOLD` = 0.5G × `COAST_CONFIRMATION_COUNT` = 3 readings |
-| COAST → APOGEE | any single method: baro AGL drop > `APOGEE_BARO_DESCENT_THRESHOLD` (1.0 m) × 5, accel Z < 0 × 5, GPS 5 m drop × 3, or `BACKUP_APOGEE_TIME_MS` = 20,000ms after burnout |
-| DROGUE_DESCENT → MAIN_DEPLOY | altitude < launch AGL + `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M` = 100m |
-| MAIN_DESCENT → LANDED | accel 0.9–1.1G for `LANDING_CONFIRMATION_TIME_MS` = 2000ms |
+| ARMED → BOOST | `BOOST_ACCEL_THRESHOLD` = 2.0G for `LAUNCH_CONFIRMATION_COUNT` = 5 fresh samples |
+| BOOST → COAST | burnout (absolute 0.5 G or relative-and-settled) × `COAST_CONFIRMATION_COUNT` = 3 fresh samples, or `BOOST_TIMEOUT_MS` = 12,000ms |
+| COAST → APOGEE | any single gated + cross-checked method (see [[concepts/apogee-detection]]), or `BACKUP_APOGEE_TIME_MS` = 20,000ms after burnout (ungated) |
+| DROGUE_DESCENT → MAIN_DEPLOY | `MAIN_DEPLOY_CONFIRMATION_COUNT` = 3 fresh samples below launch AGL + `MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M` = 100m; fallbacks if the baro fails (estimated descent time; `MAIN_DEPLOY_MAX_DROGUE_TIME_MS`) |
+| DROGUE/MAIN_DESCENT → LANDED | stationarity (see `detectLanding()`), or `DESCENT_STATE_TIMEOUT_MS` |
 | LANDED → RECOVERY | `LANDED_TIMEOUT_MS` = 10,000ms |
-| ERROR → PAD_IDLE / CALIBRATION | auto-recovery health check every 2 s (`ERROR_RECOVERY_ATTEMPT_MS` is defined but unused), or `clear_errors` / `clear_to_calibration` |
+| RECOVERY / LANDED / ERROR / PAD_IDLE → PAD_IDLE | `reset_flight <token>` (at rest) |
+| pre-flight → ERROR | failed health check (never in flight: it degrades instead) |
+| ERROR → PAD_IDLE / CALIBRATION | auto-recovery every 2 s or `clear_errors` / `clear_to_calibration` — only when provably on the ground and never flown |
 
 ## Global State
 
@@ -43,4 +49,4 @@ extern float g_main_deploy_altitude_m_agl;  // Dynamic deploy altitude (default 
 
 ## State Persistence
 
-Every state change calls `state_management.cpp` to write to EEPROM (throttled to 60 s except at APOGEE / DROGUE_DEPLOY / MAIN_DEPLOY / LANDED, which always save). On boot, state is read back and remapped to a safe resume state; for ARMED-or-later states the barometer calibration offset is restored as well. See [[entities/state-management]].
+Every state change writes the EEPROM record (unthrottled, put-if-changed; BOOST/COAST also refresh once a second). On boot an in-flight saved state is only resumed with live barometer evidence; otherwise the vehicle restarts in the pyro-inert `RECOVERY`. Pyro completion flags are persisted so a completed channel never re-fires. See [[entities/state-management]].

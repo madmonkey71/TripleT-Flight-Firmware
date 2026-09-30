@@ -9,6 +9,56 @@ related_files: [src/flight_logic.cpp, src/state_management.cpp, src/startup_stat
 
 Snapshot of the flight-safety / logic / numerical audit of `develop @ c1f0073` and how branch `beta-0.58` addresses it. One section per finding: **finding → fix → test**. Source code wins over this page; line numbers refer to `develop @ c1f0073`.
 
+## Status at a glance
+
+| # | Defect | Status | Commit / tests |
+|---|--------|--------|----------------|
+| 1 | Stale EEPROM fires pyros at boot | **Fixed** — two-phase recovery, resume only on live baro evidence (altitude + vertical rate), per-channel fired flags, `pyro_init_safe()` first in `setup()` | `862b567`, `test_real_recovery` |
+| 2 | ERROR mid-flight stops all deployment | **Fixed** — ERROR only from pre-flight states; in flight faults *degrade* | `aecf234`, `test_real_flight_logic` |
+| 3 | Auto-recovery sends an airborne vehicle to PAD_IDLE | **Fixed** — auto-recovery, `clear_errors`, `clear_to_calibration`, `skip_calibration`, boot ERROR need "provably on the ground and never flown" (persisted flag) | `67c4b7b`, `test_real_commands` |
+| 4 | Apogee confirmation counts don't confirm; accel method unsound | **Fixed** — fresh-sample counts (all 4 sensors + burnout), free-fall magnitude test, min-time / min-climb / transonic lockout, cross-checks. *Partial caveat:* GPS "fresh" = a new `getPVT()` (5 Hz nav); no per-solution timestamp | `4f208df`, `test_real_apogee` |
+| 5 | Main deploy on one baro sample, no fallback | **Fixed** — 3 fresh samples; estimated-time fallback if baro dead; hard limit if baro lies; landing/timeout exits from descent states. Defaults sized for the H125W (follow-up `b48e0cb`) | `15091cf`, `b48e0cb`, `test_real_main_deploy` |
+| 6 | EEPROM save throttle; BOOST/COAST reset skips drogue | **Fixed** — unthrottled put-if-changed, 1 Hz progress saves, COAST resume with backup timer from persisted age; full recovery table tested | `79c3a14`, `test_real_persistence` |
+| 7 | No path from RECOVERY/LANDED to PAD_IDLE | **Fixed** — token-confirmed `reset_flight`, ground states only, at-rest check, in `help` | `e243c46`, `test_real_commands` |
+| 8 | False BOOST, missed burnout | **Fixed** — 5-fresh-sample launch, `BOOST_TIMEOUT_MS`, drag-robust burnout (relative + settled). Follow-up after checking the H125W thrust curve: `c832d3e` | `479a822`, `c832d3e`, `test_real_boost` |
+| 9 | Kalman uses accel as gravity at all times | **Fixed** — gated 0.9-1.1 g and < 2 rad/s, `atan2(0,0)` guard, P grows when skipped. No quaternion rewrite | `0d8987b`, `test_real_kalman` |
+| 10 | Pyro pin left HIGH if state changes in the fire window | **Fixed** — `pyro_service()` every loop pass owns the pins | `41a22eb`, `test_real_pyro` |
+| 11 | Launch altitude / landing / static state | **Fixed** — averaged + re-zeroed at ARMED; stationarity landing on fresh samples with IMU third witness; per-flight state reset | `4a7ed4c`, `test_real_landing` |
+| 12 | Guidance steers under canopy; first dt = `millis()-0` | **Fixed** — COAST only, fins centred once after, dt primed & clamped | `4c3d522`, `test_real_guidance` |
+| 13 | `TEST_FREEZE` in flight builds | **Fixed** — behind `ENABLE_TEST_COMMANDS` (default 0), PAD_IDLE only | `94c9a86`, `test_real_test_commands_off/on` |
+| 14 | Setup watchdog vs SD init / log creation | **Fixed, but the brief's premise is partly incorrect:** there is **no 5 MB preallocation** (`LOG_PREALLOC_SIZE` is never used, no `preAllocate()` in `src/`). The unfed SD-init / log-create span was real: watchdog now fed around every setup step; timeout unchanged; `loop()` unchanged | `a3868cb`, `test_real_setup_sequence` |
+| — | Hardware-in-the-loop replay | **Not done:** the firmware has no sensor-injection mode, and `flight_simulation_h125w.py` only printed a table. It now exports `--csv`; a software-in-the-loop replay of the H125W flight runs natively instead | `4e06a11`, `test_real_h125w_replay` |
+
+## Decisions for the maintainer
+
+Where the brief left a design choice open the safer option was taken; each is listed so it can be overruled.
+
+- **D-1 (#1) Resume evidence and the safe state.** An in-flight saved state resumes only if the barometer is valid *and* AGL is 30-(max+300) m *and* |vertical rate| ≥ 2 m/s over an ~0.8 s observation (a stationary vehicle on the pad — even at a different-altitude site — is refused); otherwise the vehicle restarts in `RECOVERY` (pyro-inert). Cost: a vehicle that resets mid-flight with a dead barometer goes to `RECOVERY` and deploys nothing. A reset *during* a fire window re-fires that channel (a repeated pulse into a fired e-match is harmless; a missed drogue is not). Resume gives up after `RECOVERY_MAX_RESUMES` (3) resets.
+- **D-2 (#2) Degrade, don't stop.** In flight a failing health check / missing ICM logs (rate-limited), sets `last_error_code`, shows orange, disables guidance for the rest of the flight and changes nothing else. An out-of-range state value goes to `RECOVERY` (not `ERROR`) once a flight has begun.
+- **D-3 (#3) "Provably on the ground".** `flightInProgress` clear (set at BOOST, persisted, cleared only by `reset_flight`) AND not in an airborne state AND (if the baro is calibrated with a ground reference and fresh) within 30 m of the launch altitude. With no baro the flag alone decides.
+- **D-4 (#4) OR/first-match kept, with gates and cross-checks** instead of wiring in the 2-of-3 vote: each sensor method must pass its fresh-sample count, the common gates (2 s after burnout, 15 m climb) and an independent cross-check (baro vetoed by |a| > 1.5 g; accel vetoed by baro climbing > 10 m/s; GPS by either; absent/stale data never vetoes). Baro locked out 3 s after burnout with a restarting reference. GPS requires a 3D fix. The backup timer is ungated.
+- **D-5 (#5) Main-deploy fallback errs early.** Estimated time = (max AGL − 100 m) / 10 m/s × 0.8 (≈ 147 s for the H125W flight → main at ≈ 690 m AGL if the baro dies); fixed 60 s if the apogee is unknown; hard 240 s limit for a baro that keeps delivering wrong data (must lie between time-to-main-altitude 216 s and time-to-ground ≈ 260 s for this airframe). **All airframe-specific — tune.** `detectLanding()` now also runs in `DROGUE_DESCENT`.
+- **D-6 (#6) Backup timer after a reset fires early, not late:** restored age = persisted age + 3 s allowance. In BOOST/COAST the record is refreshed at 1 Hz (bench-check the flash stall).
+- **D-7 (#7) `reset_flight` uses stationarity, not the launch altitude** (a rocket can land on a hill), and a two-step 30 s token.
+- **D-8 (#8) Burnout uses the magnitude of specific force** (IMU mounting/axis sign unknown): absolute 0.5 g, or below 35 % of the smoothed peak *and settled*. BOOST timeout 12 s (must exceed your longest burn). Launch detection now costs 0.5 s (5 samples) of latency.
+- **D-9 (#9) Kalman gate** 0.9-1.1 g and < 2 rad/s.
+- **D-10 (#10)** `pyro_init_safe()` (boot only) aborts any window; PAD_IDLE entry no longer touches the pins (the service keeps idle channels LOW).
+- **D-11 (#11) Landing needs a working baro** (no baro ⇒ the descent timeout covers it) and, when the ICM is alive, its motion detector (`isStationary`) as a third witness against a *frozen* barometer at ~1 g under a canopy.
+- **D-12 (#12) Guidance runs only in `COAST`** (it never ran in BOOST); fins are centred once in every later state incl. `ERROR`.
+- **D-13 (#13)** `ENABLE_TEST_COMMANDS` default 0.
+- **D-14 (#14) Feed around steps rather than reorder or delay the watchdog.** A single blocking SdFat call cannot be fed inside; the 5 s timeout still bounds it.
+- **D-15 Test infrastructure:** ArduinoFake was removed from `[env:native]` (its only role was `<Arduino.h>` types; it collides with `test/stubs/Arduino.h` and does not build on newer Apple clang).
+- **D-16 The flight loop no longer pings the I2C bus** (`g_ms5611Sensor.isConnected()` ran on every pass). The barometer is "usable" iff calibrated and a fresh sample arrived within `BARO_STALE_TIMEOUT_MS`.
+- **D-17 Version** `v0.58.0-beta` (`config.h`); the stale numeric `TRIPLET_FLIGHT_VERSION 0.51` banner was replaced by it.
+
+## Observations outside this scope (not changed)
+
+- `9` / `prepareForShutdown()` loops forever (no watchdog feed ⇒ the vehicle resets after 5 s) and is accepted in any state, including flight.
+- `calibrate_gyro` (≈ 2+ s), `calibrate_mag` (30 s interactive) and `h`/`calibrate` (up to 30 s) block the main loop; `calibrate` is state-guarded, the others are not. In flight any of them stops deployment logic while running.
+- `set_orientation_filter kalman` re-initialises the filter in any state.
+- `handleFlightStateCommand()` covers only the commands named in the audit; `arm` is unchanged.
+- The `MS5611 g_ms5611Sensor` object in `TripleT_Flight_Firmware.cpp` is a *different* instance from `ms5611Sensor` in `ms5611_functions.cpp`; flight logic no longer uses it, `status` still does.
+
 ## How the fixes are tested
 
 The pre-existing `test/test_flight_logic` and `test/test_apogee_detection` suites test *copies* of the logic (`testable_detectApogee`, mocks) and could not catch any of these defects. New `test_real_*` suites compile the **shipped** `src/*.cpp` files natively:

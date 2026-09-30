@@ -36,6 +36,10 @@ extern bool baro_calibration_done;
 extern unsigned long boostEndTime; // flight_logic.cpp: millis() at motor burnout (backup apogee timer base)
 extern DebugFlags g_debugFlags;     // Declare g_debugFlags
 
+// The persisted record must not spill into the magnetometer calibration block that follows it in EEPROM.
+static_assert(EEPROM_STATE_ADDR + sizeof(FlightStateData) <= MAG_CAL_EEPROM_ADDR,
+              "FlightStateData grew into the magnetometer calibration EEPROM region");
+
 // States between liftoff and main descent (the vehicle is, or was, in the air).
 static bool isInFlightState(FlightState s) { return s >= BOOST && s <= MAIN_DESCENT; }
 

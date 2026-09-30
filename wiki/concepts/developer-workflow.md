@@ -16,7 +16,7 @@ Standard day-in-the-life for firmware work: edit → build → unit test → fla
 ```bash
 pio run                          # default (teensy41)
 pio run -e teensy41              # production
-pio run -e native                # desktop build (links against ArduinoFake)
+pio run -e native                # (no main() in the native env: use `pio test -e native` instead)
 pio run -t clean                 # nuke build artifacts
 ```
 

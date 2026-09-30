@@ -3,8 +3,8 @@ title: command_processor — Serial Command Interface
 type: entity
 tags: [commands, serial, interface, debugging]
 created: 2026-04-15
-updated: 2026-07-02
-related_files: [src/command_processor.cpp, src/command_processor.h, src/debug_flags.h]
+updated: 2026-09-30
+related_files: [src/command_processor.cpp, src/command_processor.h, src/flight_commands.cpp, src/flight_commands.h, src/debug_flags.h]
 ---
 
 Text-based serial command interface for controlling and diagnosing the flight computer. Operates at 115200 baud. Used from a serial terminal or from the [[entities/web-interface|web console]].
@@ -17,9 +17,10 @@ Text-based serial command interface for controlling and diagnosing the flight co
 |---------|-------------|-------------|
 | `arm` | Transition to `ARMED`, enabling launch detection | `PAD_IDLE` only; rejected with error 71 on unhealthy sensors |
 | `disarm` | Return from `ARMED` to `PAD_IDLE` | `ARMED` only. (A 5-minute `ARMED_TIMEOUT_MS` auto-disarm also returns to `PAD_IDLE` if no launch is detected.) |
-| `clear_errors` | Manual recovery from `ERROR` state | `ERROR` only |
-| `clear_to_calibration` | Recover from `ERROR` into `CALIBRATION` | `ERROR` only |
-| `skip_calibration` | Skip GPS-based baro calibration, use raw baro altitude (offset 0) | `CALIBRATION` or `ERROR` |
+| `clear_errors` | Manual recovery from `ERROR` state | `ERROR` only, **and** the vehicle must be provably on the ground and never have flown (`flight_is_provably_on_ground()`); otherwise `REFUSED` |
+| `clear_to_calibration` | Recover from `ERROR` into `CALIBRATION` | Same as `clear_errors` |
+| `skip_calibration` | Skip GPS-based baro calibration, use raw baro altitude (offset 0) | `CALIBRATION`, or `ERROR` with the same ground proof |
+| `reset_flight` | **Post-flight reset.** Clears the recorded flight (flight-in-progress flag, pyro-fired flags, resume count, max altitude) and returns to `PAD_IDLE` (or `CALIBRATION` / `ERROR` if not calibrated / unhealthy). Two steps: `reset_flight` prints a 4-digit token valid for `RESET_FLIGHT_TOKEN_TIMEOUT_MS` (30 s); `reset_flight <token>` executes it (single use) | `LANDED`, `RECOVERY`, `ERROR`, `PAD_IDLE` only (refused, no token issued, elsewhere) **and** the vehicle at rest: barometric vertical speed < `RESET_FLIGHT_MAX_VERTICAL_SPEED_MPS` and ~1 g. Does not compare with the launch altitude |
 
 ### Calibration
 
@@ -58,7 +59,11 @@ Runtime flags; no rebuild required. Digits `0`–`6` toggle debug output; digits
 | `8` | — | SD card status (action) |
 | `9` | — | Shutdown (action) |
 
-Additional named forms: `debug_battery`, `debug_all_off`, `summary`, `set_orientation_filter` / `get_orientation_filter`, and `TEST_FREEZE` (blocks 6 s to exercise the watchdog). Letter shortcuts `a`–`j` cover help/status/storage/display utilities (three flash commands are "Not Implemented" stubs). There are no `debug_state` / `debug_guidance` toggles. See [[entities/configuration-system]] for the full flag catalogue.
+Additional named forms: `debug_battery`, `debug_all_off`, `summary`, `set_orientation_filter` / `get_orientation_filter`, and — **only in a build with `ENABLE_TEST_COMMANDS=1`** (default 0; the command does not exist otherwise) — `TEST_FREEZE` (blocks 6 s to exercise the watchdog; refused outside `PAD_IDLE`). Letter shortcuts `a`–`j` cover help/status/storage/display utilities (three flash commands are "Not Implemented" stubs). There are no `debug_state` / `debug_guidance` toggles. See [[entities/configuration-system]] for the full flag catalogue.
+
+## Where the state-changing commands live
+
+`clear_errors`, `clear_to_calibration`, `skip_calibration`, `reset_flight` and `TEST_FREEZE` are handled by `handleFlightStateCommand()` in `src/flight_commands.cpp`, which `processCommand()` calls first for every multi-character command. It is separate from `command_processor.cpp` (which drags in SdFat) so the guards can be unit-tested against the real code — see `test/test_real_commands` and `test/test_real_test_commands_*` ([[queries/flight-logic-audit-2026-09]]).
 
 ## Architecture
 

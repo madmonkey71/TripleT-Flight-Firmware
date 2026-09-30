@@ -3,7 +3,7 @@ title: Development Roadmap (v0.6.0 → v1.0.0)
 type: query
 tags: [roadmap, phases, planning, versions]
 created: 2026-04-22
-updated: 2026-07-02
+updated: 2026-09-30
 related_files: [.archived/IMPLEMENTATION_PLAN_2026.md, .archived/EXECUTIVE_SUMMARY_2026.md, src/config.h]
 ---
 
@@ -26,7 +26,18 @@ Snapshot of the 2026 roadmap taking TripleT from a refactoring baseline at v0.6.
 
 ## Current version
 
-`#define FIRMWARE_VERSION "v0.10.0"` — source of truth in `src/config.h`.
+`#define FIRMWARE_VERSION` in `src/config.h` is the source of truth. Branch `beta-0.58` (draft PR into `develop`, not yet merged) carries **`v0.58.0-beta`**: the flight-logic safety audit of `develop@c1f0073` — 14 fixes plus a real-code native test harness. Status and details: [[queries/flight-logic-audit-2026-09]]. It is **bench-test-gated**: nothing on `beta-0.58` has flown, and `pio test` / `pio run` still have to be run on a machine with PlatformIO registry access (see the audit page).
+
+### beta-0.58 — flight-logic audit (2026-09, in review)
+
+| Area | Change |
+|------|--------|
+| Boot safety | Stale EEPROM can no longer fire a pyro: two-phase recovery, resume only on live baro evidence, per-channel fired flags, pyro pins LOW first in `setup()` |
+| ERROR policy | Never entered in flight (sensor faults degrade instead); leaving it needs "provably on the ground, never flown"; new `reset_flight` |
+| Detection | Fresh-sample confirmation everywhere; free-fall accel apogee test; burnout/transonic gates; drag-robust burnout, BOOST timeout; debounced main deploy with baro-failure fallbacks; stationarity-based landing |
+| Persistence | Unthrottled put-if-changed saves; BOOST/COAST refresh; COAST resume restores the backup timer |
+| Other | Kalman accel gating; single pyro service; guidance only in COAST; `TEST_FREEZE` compiled out; watchdog fed around setup steps |
+| Tests | `test/test_real_*` compile the shipped sources natively (`test/stubs`, `test/support`); H125W flight replay |
 
 ## Phase-by-Phase Detail
 
@@ -62,6 +73,7 @@ Merged: wiki is now the single source of truth (PR #13, commit `3198d91`). Archi
 
 **Deferred to v1.1 (documented limitation, not blocker):**
 
+- **Hardware-in-the-loop replay** — needs a sensor-injection build option; `flight_simulation_h125w.py --csv` already exports the input ([[queries/flight-logic-audit-2026-09]]).
 - **Quaternion filter** — Kalman currently propagates via Euler angles; plan in `.archived/docs/QUATERNION_MIGRATION_PLAN.md`. Gimbal-lock zone above ±80° pitch is documented and unlikely to be reached pre-deployment for a near-vertical rocket. See [[concepts/kalman-filter]].
 - **Phase 6.3 production readiness** — `PowerManager`, `PreflightChecker`, thermal management, edge-case handlers. Specified in `.archived/PRODUCTION_READINESS_PLAN.md`.
 

@@ -115,6 +115,7 @@ void test_drogue_descent_progresses_to_landed_on_touchdown_if_main_never_deploye
   g_main_deploy_altitude_m_agl = 0.0f;    // deploy altitude at ground level: the baro gate never opens
   harness_set_baro_alt(100.0f);
   harness_set_accel_g(1.0f);
+  isStationary = true;                    // IMU motion detector: at rest
   harness_run_ms(6000);
   TEST_ASSERT_EQUAL(LANDED, g_currentFlightState);
   TEST_ASSERT_FALSE(main_fired());        // touched down with no main: nothing left to fire

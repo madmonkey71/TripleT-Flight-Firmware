@@ -116,15 +116,12 @@ struct FlightRuntime {
     float         maxGpsAlt = 0.0f;
     bool          gpsAltValid = false;
     BaroTrack     baroTrack;                   // recent fresh baro samples (vertical rate etc.)
-    // Landing detector (moving average of altitude + confirmation timer)
-    static const int kLandingReadings = 10;
-    float         landingAlt[kLandingReadings] = {0};
-    int           landingIndex = 0;
-    float         landingTotal = 0.0f;
-    bool          landingFirstRun = true;
-    unsigned long landingFirstLandedTime = 0;
+    // Landing detector: consecutive FRESH stationary baro samples (audit #11)
+    FreshCounter  landingConfirm;
+    unsigned long landingStableSinceMs = 0;    // 0 = not currently stationary
 };
 static FlightRuntime g_rt;
+static void resetFlightDetectors(); // defined with the detectors below
 
 
 // Helper function to convert radians to degrees for logging max values
@@ -533,6 +530,11 @@ void ProcessFlightState() {
                 // Actual periodic waiting message and transition logic is in the main switch block below.
                 break;
             case PAD_IDLE:
+                // audit #11: a new flight starts from a clean slate - every detector counter, timer and
+                // averager from the previous flight is discarded - and the launch-altitude average restarts
+                // (the barometer offset may have changed during calibration).
+                resetFlightDetectors();
+                g_rt.baroTrack.reset();
                 flightSetLaunchAltitude(baroUsable ? ms5611_get_altitude() : 0.0f);
                 g_maxAltitudeReached = 0.0f;
                 boostEndTime = 0;
@@ -545,6 +547,15 @@ void ProcessFlightState() {
                 break;
             case ARMED:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("ARMED: System armed and ready for launch."));
+                // audit #11: re-zero the ground reference from the AVERAGE of the last pad samples (a single
+                // sample carries the barometer's noise straight into every AGL comparison of the flight).
+                if (baroUsable && g_rt.baroTrack.size() >= LAUNCH_ALT_MIN_SAMPLES) {
+                    float avg = 0.0f;
+                    if (g_rt.baroTrack.mean(LAUNCH_ALT_AVG_SAMPLES, avg)) {
+                        flightSetLaunchAltitude(avg);
+                        currentAglAlt = currentAbsoluteBaroAlt - g_launchAltitude;
+                    }
+                }
                 if (baroUsable) {
                     g_main_deploy_altitude_m_agl = currentAglAlt + MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M;
                     if (g_debugFlags.enableSystemDebug) {
@@ -638,6 +649,8 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("DROGUE_DEPLOY: Initiating drogue parachute deployment."));
                 break;
             case DROGUE_DESCENT:
+                g_rt.landingConfirm.reset();    // audit #11: landing detection starts from zero
+                g_rt.landingStableSinceMs = 0;
                 g_rt.mainGate.reset();          // audit #5: debounce restarts on entry
                 g_rt.mainFallbackLogged = false;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("DROGUE_DESCENT: Descending under drogue parachute."));
@@ -649,6 +662,8 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("MAIN_DEPLOY: Initiating main parachute deployment."));
                 break;
             case MAIN_DESCENT:
+                g_rt.landingConfirm.reset();    // audit #11
+                g_rt.landingStableSinceMs = 0;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("MAIN_DESCENT: Descending under main parachute."));
                 lastLandingCheckAltitudeAgl = currentAglAlt;
                 break;
@@ -768,7 +783,12 @@ void ProcessFlightState() {
             break;
         case PAD_IDLE:
             // PAD_IDLE is a stable state - no automatic transitions
-            // Transitions to ARMED happen via command processor
+            // Transitions to ARMED happen via command processor.
+            // audit #11: keep the ground reference at the rolling mean of the last fresh samples.
+            if (baroUsable) {
+                float avg = 0.0f;
+                if (g_rt.baroTrack.mean(LAUNCH_ALT_AVG_SAMPLES, avg)) flightSetLaunchAltitude(avg);
+            }
             break;
         case ARMED: {
             // audit #8: liftoff needs LAUNCH_CONFIRMATION_COUNT consecutive FRESH samples above the
@@ -1297,6 +1317,22 @@ void resetApogeeDetectionCounters() {
     g_rt.gpsAltValid = false;
 }
 
+// Detector / confirmation state that belongs to ONE flight. Reset whenever a new flight begins
+// (PAD_IDLE entry), on resume after a reset, and by flightLogicReset().
+static void resetFlightDetectors() {
+    g_rt.coastConfirm.reset();
+    g_rt.launchConfirm.reset();
+    g_rt.mainGate.reset();
+    g_rt.mainFallbackLogged = false;
+    g_rt.landingConfirm.reset();
+    g_rt.landingStableSinceMs = 0;
+    g_rt.boostEma = 0.0f;
+    g_rt.boostPeakG = 0.0f;
+    g_rt.boostEmaValid = false;
+    g_rt.degraded = false;
+    resetApogeeDetectionCounters();
+}
+
 // Reset every piece of flight-logic bookkeeping that must not leak from one
 // flight (or one unit test) into the next: detector counters, confirmation
 // timers, landing averager, pyro fire-window flags and health-monitor timers.
@@ -1428,42 +1464,50 @@ bool detectApogee() {
     return apogeeDetected;
 }
 
+// Landing = stationary (audit #11). The old test compared a moving average of altitude (whose buffer
+// started zero-filled) with the launch altitude +-1 m, so a vehicle landing anywhere but at the
+// pad elevation never "landed", its timer was not reset when the accelerometer condition failed
+// (so it wasn't consecutive) and its state leaked between flights. Now, on each FRESH barometric sample:
+//   * the newest LANDING_WINDOW_SAMPLES altitudes span < LANDING_ALTITUDE_STABLE_THRESHOLD (no vertical motion), AND
+//   * the specific force is ~1 g (LANDING_ACCEL_MIN_G..MAX_G),
+//   * the IMU's motion detector agrees (gyro quiet) when the ICM is alive,
+// and both must hold for LANDING_CONFIRMATION_COUNT consecutive samples AND LANDING_CONFIRMATION_TIME_MS.
+// Descending steadily under a canopy is also ~1 g, but the baro window then spans metres, so it fails.
+// With no working accelerometer the baro alone is used, with a 3x longer confirmation time.
 bool detectLanding() {
     if (g_currentFlightState != DROGUE_DESCENT && g_currentFlightState != MAIN_DESCENT) return false;
 
-    // Use a moving average of altitude to smooth out readings
-    const int numReadings = FlightRuntime::kLandingReadings;
-    float* altReadings = g_rt.landingAlt;
-    int& readIndex = g_rt.landingIndex;
-    float& total = g_rt.landingTotal;
-    if (g_rt.landingFirstRun) {
-        for (int i = 0; i < numReadings; i++) altReadings[i] = 0;
-        g_rt.landingFirstRun = false;
+    const bool baroUsable = g_baroCalibrated && baroDataFresh();
+    if (!baroUsable) {
+        g_rt.landingConfirm.reset();       // cannot prove stationarity without the barometer
+        g_rt.landingStableSinceMs = 0;
+        return false;
     }
 
-    total -= altReadings[readIndex];
-    altReadings[readIndex] = ms5611_get_altitude();
-    total += altReadings[readIndex];
-    readIndex = (readIndex + 1) % numReadings;
-    float avgAlt = total / numReadings;
+    float range = 0.0f;
+    const bool haveWindow = g_rt.baroTrack.range(LANDING_WINDOW_SAMPLES, range);
+    const bool baroStill = haveWindow && range < (float)LANDING_ALTITUDE_STABLE_THRESHOLD;
 
-    unsigned long& firstLandedTime = g_rt.landingFirstLandedTime;
-    
-    // Check for landing conditions
-    if (fabs(avgAlt - g_launchAltitude) < LANDING_ALTITUDE_STABLE_THRESHOLD) {
-        float accelMag = get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug);
-        if (accelMag >= LANDING_ACCEL_MIN_G && accelMag <= LANDING_ACCEL_MAX_G) {
-            if (firstLandedTime == 0) firstLandedTime = millis();
-            if (millis() - firstLandedTime >= LANDING_CONFIRMATION_TIME_MS) {
-                return true;
-            }
-        }
-    } else {
-        // Reset landing timer if altitude condition is not met
-        firstLandedTime = 0;
+    const AccelReading a = readAccel(true);
+    const bool accelOk = a.valid && a.mag >= LANDING_ACCEL_MIN_G && a.mag <= LANDING_ACCEL_MAX_G;
+    const bool accelBad = a.valid && !accelOk;      // a live accelerometer that disagrees vetoes
+    // Independent third witness: the ICM's own motion detector (gyro quiet, accel steady). It guards
+    // against a FROZEN barometer, which would otherwise look "stationary" at ~1 g under a parachute
+    // and declare landing mid-air (stranding the main). A dead/stale ICM does not veto.
+    const bool icmFresh = g_icm20948_ready && g_icmSample.seq > 0 &&
+                          (millis() - g_icmSample.lastMs) <= ACCEL_STALE_TIMEOUT_MS;
+    const bool imuQuiet = !icmFresh || isStationary;
+    const bool stationary = baroStill && !accelBad && imuQuiet;
+
+    // Evaluate once per fresh barometric sample so the count means N sensor periods.
+    if (g_rt.landingConfirm.feed(g_baroSample.seq, stationary)) {
+        if (!stationary) g_rt.landingStableSinceMs = 0;
+        else if (g_rt.landingStableSinceMs == 0) g_rt.landingStableSinceMs = millis() > 0 ? millis() : 1;
     }
 
-    return false;
+    const unsigned long needMs = a.valid ? LANDING_CONFIRMATION_TIME_MS : 3UL * LANDING_CONFIRMATION_TIME_MS;
+    return g_rt.landingConfirm.count >= LANDING_CONFIRMATION_COUNT &&
+           g_rt.landingStableSinceMs != 0 && (millis() - g_rt.landingStableSinceMs) >= needMs;
 }
 
 // Placeholder/test implementation for guidance target updates - REMOVED as unused

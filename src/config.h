@@ -128,7 +128,15 @@
     // Confirmation counts everywhere now advance only when the sensor has
     // produced a new sample (see sensor_samples.h), so 5 = 5 sensor periods.
 #define LANDING_CONFIRMATION_COUNT                                             \
-  10 // Number of consecutive readings required to confirm landing.
+  10 // Consecutive FRESH barometer samples of stationarity required to confirm landing.
+// Launch altitude / ground reference (audit #11): the mean of the last LAUNCH_ALT_AVG_SAMPLES
+// fresh barometer samples on the pad, re-zeroed when ARMED is entered (needs at least
+// LAUNCH_ALT_MIN_SAMPLES, otherwise the previous reference is kept).
+#define LAUNCH_ALT_AVG_SAMPLES 20
+#define LAUNCH_ALT_MIN_SAMPLES 5
+// Stationarity window for landing detection: the newest N fresh baro samples must span less
+// than LANDING_ALTITUDE_STABLE_THRESHOLD metres.
+#define LANDING_WINDOW_SAMPLES 10
 // --- Main deployment safeguards (audit #5) ---
 #define MAIN_DEPLOY_CONFIRMATION_COUNT 3  // Consecutive FRESH baro samples below the deploy altitude
 // If the barometer stops delivering fresh samples during drogue descent, deploy main after an
@@ -196,7 +204,7 @@
 #endif
 #ifndef LANDING_ALTITUDE_STABLE_THRESHOLD
 #define LANDING_ALTITUDE_STABLE_THRESHOLD                                      \
-  1.0 // Meters altitude change for landing stability
+  1.0 // Metres: max-min of the barometric altitude over the landing window (stationarity)
 #endif
 
 // --- State Machine Timeouts & Durations ---

@@ -94,6 +94,9 @@ struct FlightRuntime {
     // Pyro fire-window flags (see DROGUE_DEPLOY / MAIN_DEPLOY)
     bool          drogueHasFired = false;
     bool          mainHasFired = false;
+    // In-flight sensor degradation (audit #2)
+    bool          degraded = false;
+    unsigned long lastDegradeLogMs = 0;
     // Detector state
     int           coastConfirmCount = 0;
     // Landing detector (moving average of altitude + confirmation timer)
@@ -146,6 +149,65 @@ void setFlightStateLED(FlightState state) {
     g_pixels.show();
 }
 
+// ---------------------------------------------------------------------------
+// ERROR-state policy (audit #2)
+// ---------------------------------------------------------------------------
+// The ERROR state stops the state machine's deployment logic (apogee, backup timer,
+// main deploy). That is acceptable on the pad, where nothing must deploy, and
+// unacceptable in the air. So:
+//   * ERROR may only be entered from pre-flight states (and never once a flight is
+//     in progress);
+//   * a sensor-health failure in flight DEGRADES the vehicle instead: log it, show
+//     the degraded LED, disable guidance - and keep running every deployment path.
+bool flight_is_airborne_state(FlightState s) { return s >= BOOST && s <= MAIN_DESCENT; }
+
+bool flight_error_allowed(FlightState s) {
+    if (g_flightInProgress) return false;
+    return s == STARTUP || s == CALIBRATION || s == PAD_IDLE || s == ARMED;
+}
+
+bool flightIsDegraded() { return g_rt.degraded; }
+
+static void flightDegrade(ErrorCode_t code, const char* reason) {
+    const bool firstTime = !g_rt.degraded;
+    g_rt.degraded = true;
+    g_last_error_code = code; // visible in the log's last_error_code column
+    if (firstTime || millis() - g_rt.lastDegradeLogMs > 10000) {
+        g_rt.lastDegradeLogMs = millis();
+        Serial.println(F("=== FLIGHT DEGRADED (state machine keeps running) ==="));
+        Serial.print(F("State: "));
+        Serial.println(getStateName(g_currentFlightState));
+        Serial.print(F("Reason: "));
+        Serial.println(reason);
+        Serial.println(F("Action: guidance disabled; apogee / backup timer / main deploy unaffected"));
+        Serial.println(F("====================================================="));
+    }
+    #if ENABLE_GUIDANCE == 1
+    if (g_guidance_active) {
+        g_guidance_active = false;   // never re-enabled mid-flight
+        guidance_center_servos();    // fins to neutral
+    }
+    #endif
+    g_pixels.setPixelColor(0, g_pixels.Color(255, 165, 0)); // orange = degraded
+    g_pixels.show();
+    if (firstTime) WriteLogData(true);
+}
+
+// A state value outside the enum: the vehicle cannot know where it is. Before flight
+// that is an ERROR; once a flight has begun, ERROR would stop deployment logic, so
+// fall to the pyro-inert RECOVERY state instead.
+static void flightHandleUnknownState() {
+    Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));
+    Serial.println(static_cast<int>(g_currentFlightState));
+    if (g_flightInProgress) {
+        Serial.println(F("Flight in progress: transitioning to RECOVERY (never ERROR in flight)."));
+        g_currentFlightState = RECOVERY;
+    } else {
+        Serial.println(F("Transitioning to ERROR state for safety."));
+        g_currentFlightState = ERROR;
+    }
+}
+
 void ProcessFlightState() {
     // audit #1: an in-flight saved state is still awaiting barometer evidence. Do
     // nothing (in particular: no health-check ERROR, no pyro) until it is settled.
@@ -180,7 +242,15 @@ void ProcessFlightState() {
         
         if (millis() - g_rt.lastErrorCheckTime > errorCheckInterval && !withinGracePeriod) {
             g_rt.lastErrorCheckTime = millis();
-            if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, myGNSS
+            const bool suiteHealthy = isSensorSuiteHealthy(g_currentFlightState); // uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, myGNSS
+            if (!suiteHealthy && !flight_error_allowed(g_currentFlightState)) {
+                // audit #2: airborne - degrade, never leave the flight state machine.
+                if (!g_rt.degraded) {
+                    Serial.println(F("--- CRITICAL: Sensor Suite Health Check Failed IN FLIGHT ---"));
+                    isSensorSuiteHealthy(g_currentFlightState, true); // detailed report, once per episode
+                }
+                flightDegrade(STATE_TRANSITION_INVALID_HEALTH, "periodic sensor health check failed");
+            } else if (!suiteHealthy) {
                 // ALWAYS log detailed sensor status before transitioning to ERROR (regardless of debug flags)
                 Serial.println(F("--- CRITICAL: Sensor Suite Health Check Failed ---"));
                 Serial.print(F("Current State: "));
@@ -216,6 +286,7 @@ void ProcessFlightState() {
                 g_pixels.show(); // Explicitly show error LED
                 return; // Avoid further processing this cycle
             } else {
+                g_rt.degraded = false; // healthy again (guidance stays off once disabled)
                 // Add periodic health status when things are OK
                 if (millis() - g_rt.lastHealthOkTime > 10000) { // Every 10 seconds (reduced frequency)
                     g_rt.lastHealthOkTime = millis();
@@ -412,10 +483,9 @@ void ProcessFlightState() {
                 g_flightInProgress = true;
                 saveStateToEEPROMForced();
                 if (g_useKalmanFilter && !g_icm20948_ready) {
-                    g_last_error_code = SENSOR_INIT_FAIL_ICM20948; // Or a more specific "guidance sensor missing"
-                    g_currentFlightState = ERROR;
-                    if (g_debugFlags.enableSystemDebug) Serial.println(F("ERROR: ICM20948 not ready for BOOST (guidance depends on it)."));
-                    break; // Critical error, break from switch
+                    // audit #2: this used to send a launched vehicle to ERROR, which stops apogee,
+                    // backup-timer and main-deploy logic. Guidance needs the ICM; deployment does not.
+                    flightDegrade(SENSOR_INIT_FAIL_ICM20948, "ICM20948 not ready at liftoff (guidance disabled)");
                 }
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("BOOST: Liftoff detected!"));
                 g_maxAltitudeReached = currentAglAlt > 0 ? currentAglAlt : 0;
@@ -524,10 +594,7 @@ void ProcessFlightState() {
             }
                 break;
             default:
-                Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));
-                Serial.println(static_cast<int>(g_currentFlightState));
-                Serial.println(F("Transitioning to ERROR state for safety."));
-                g_currentFlightState = ERROR;
+                flightHandleUnknownState();
                 break;
         }
     }
@@ -1051,10 +1118,7 @@ void ProcessFlightState() {
             // Recovery happens via clear_errors command or handleInitialStateManagement
             break;
         default:
-            Serial.print(F("CRITICAL ERROR: Unknown flight state encountered: "));
-            Serial.println(static_cast<int>(g_currentFlightState));
-            Serial.println(F("Transitioning to ERROR state for safety."));
-            g_currentFlightState = ERROR;
+            flightHandleUnknownState();
             break;
     }
 }

@@ -207,6 +207,17 @@ void test_while_evidence_is_pending_the_vehicle_stays_inert_in_startup() {
   TEST_ASSERT_FALSE(any_pyro_ever_high());
 }
 
+// audit #2: an unhealthy sensor suite at boot must not turn a resumed flight into ERROR.
+void test_resumed_flight_with_unhealthy_sensors_stays_in_flight_state() {
+  g_test_sensors_healthy = false;
+  g_icm20948_ready = false;
+  g_kx134_initialized_ok = false;
+  boot_and_run(make_record(DROGUE_DESCENT, PYRO_FIRED_DROGUE), 400.0f, -20.0f, 12000);
+  TEST_ASSERT_NOT_EQUAL(ERROR, g_currentFlightState);
+  TEST_ASSERT_TRUE(g_pin_ever_high[PYRO_CHANNEL_2]);        // main still deploys at its altitude
+  TEST_ASSERT_EQUAL(MAIN_DESCENT, g_currentFlightState);
+}
+
 // ---- persistence of the safety flags -------------------------------------------
 void test_boost_entry_sets_and_persists_flight_in_progress() {
   harness_on_pad(100.0f);
@@ -288,6 +299,7 @@ int main(int, char**) {
   RUN_TEST(test_resume_increments_and_persists_resume_count);
   RUN_TEST(test_dead_barometer_at_boot_falls_back_to_recovery_after_timeout);
   RUN_TEST(test_while_evidence_is_pending_the_vehicle_stays_inert_in_startup);
+  RUN_TEST(test_resumed_flight_with_unhealthy_sensors_stays_in_flight_state);
   RUN_TEST(test_boost_entry_sets_and_persists_flight_in_progress);
   RUN_TEST(test_fired_flag_is_persisted_the_moment_a_fire_window_completes);
   RUN_TEST(test_pyro_init_safe_drives_both_pins_low_and_never_high);

@@ -64,9 +64,17 @@ inline void harness_pass() {
 // Deliver one fresh barometer sample (what ms5611_read() does on success).
 inline void harness_new_baro_sample() { sample_mark(g_baroSample, millis()); }
 
-// Advance `ms` of simulated time in 10 ms loop passes.
+// Advance `ms` of simulated time in 10 ms loop passes. Like the firmware, the
+// sensors deliver a FRESH sample every 100 ms (10 Hz) while the loop runs 10x
+// faster than that in this model (far faster still on hardware): values cached
+// between samples are re-read on every pass.
 inline void harness_run_ms(unsigned long ms) {
-  for (unsigned long t = 0; t < ms; t += 10) { test_advance_ms(10); harness_pass(); }
+  static unsigned long phase = 0;
+  for (unsigned long t = 0; t < ms; t += 10) {
+    test_advance_ms(10);
+    if ((++phase % 10) == 0) harness_new_baro_sample();
+    harness_pass();
+  }
 }
 
 // Put the vehicle on the pad, calibrated, at `launch_alt` metres, in PAD_IDLE.

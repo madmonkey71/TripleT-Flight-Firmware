@@ -13,6 +13,9 @@ enum FlightState : uint8_t;
 // Function declarations
 bool detectApogee();
 void resetApogeeDetectionCounters(); // Reset apogee detection counters when entering COAST state
+bool flight_is_airborne_state(FlightState s); // BOOST .. MAIN_DESCENT
+bool flight_error_allowed(FlightState s);     // ERROR may only be entered from pre-flight states (audit #2)
+bool flightIsDegraded();                      // a sensor-health failure is being ridden out in flight
 void flightLogicReset();             // Reset all flight-logic bookkeeping (new flight / resume / unit tests)
 bool detectLanding();
 void detectBoostEnd();

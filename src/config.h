@@ -190,6 +190,13 @@
 #define RECOVERY_EVIDENCE_MIN_SAMPLES 5       // ...and collect at least this many fresh samples
 #define RECOVERY_EVIDENCE_TIMEOUT_MS 3000     // No usable baro by then -> treat evidence as absent
 
+// --- ERROR state / ground proof (audit #2, #3) ---
+// ERROR may only be entered from pre-flight states. Leaving ERROR automatically (or via
+// clear_errors / clear_to_calibration / skip_calibration) additionally requires proof
+// the vehicle is on the ground: never flown, and (if the barometer is calibrated) within
+// this many metres of the launch altitude.
+#define GROUND_AGL_TOLERANCE_M 30.0f
+
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \
   3 // Maximum number of consecutive sensor failures before error state

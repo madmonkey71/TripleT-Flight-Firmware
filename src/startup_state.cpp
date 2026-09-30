@@ -10,6 +10,7 @@
 #include "utility_functions.h"
 #include "ms5611_functions.h"
 #include "sensor_samples.h"
+#include "flight_logic.h"
 
 // Globals defined in TripleT_Flight_Firmware.cpp / the sensor drivers.
 extern FlightState g_currentFlightState;
@@ -106,6 +107,9 @@ void handleInitialStateManagement() {
     g_last_error_code = NO_ERROR; // Clear the latched error along with the state
     Serial.println(F("ERROR state cleared - starting grace period for health checks"));
     saveStateToEEPROM();
+  } else if (!systemHealthy && g_currentFlightState != ERROR && !flight_error_allowed(g_currentFlightState)) {
+    // audit #2: a resumed in-flight state must keep running its deployment logic.
+    Serial.println(F("System unhealthy during initialization, but a flight is in progress: staying in the current state (degraded)."));
   } else if (!systemHealthy && g_currentFlightState != ERROR) {
     Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
     g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error

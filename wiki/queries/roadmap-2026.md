@@ -26,7 +26,7 @@ Snapshot of the 2026 roadmap taking TripleT from a refactoring baseline at v0.6.
 
 ## Current version
 
-`#define FIRMWARE_VERSION` in `src/config.h` is the source of truth. Branch `beta-0.58` (draft PR into `develop`, not yet merged) carries **`v0.58.0-beta`**: the flight-logic safety audit of `develop@c1f0073` — 14 fixes plus a real-code native test harness. Status and details: [[queries/flight-logic-audit-2026-09]]. It is **bench-test-gated**: nothing on `beta-0.58` has flown, and `pio test` / `pio run` still have to be run on a machine with PlatformIO registry access (see the audit page).
+`#define FIRMWARE_VERSION` in `src/config.h` is the source of truth. Branch `beta-0.58` (draft PR into `develop`, not yet merged) carries **`v0.58.0-beta`**: the flight-logic safety audit of `develop@c1f0073` — 14 fixes plus a real-code native test harness. Status and details: [[queries/flight-logic-audit-2026-09]]. It is **bench-test-gated**: nothing on `beta-0.58` has flown. CI (real `pio test -e native` and `pio run -e teensy41`) passed on the branch head; flash/RAM should still be compared against `develop` and the bench checklist run (see the audit page).
 
 ### beta-0.58 — flight-logic audit (2026-09, in review)
 

@@ -164,7 +164,7 @@ Full plan: [[queries/roadmap-2026]]. Current gaps: [[queries/development-status-
 - Wireless telemetry is wired in code but not yet bench-tested or flown — `ENABLE_TELEMETRY` in `src/config.h` plus both ESP32 firmwares are ready; needs a hardware round-trip before being trusted ([[entities/esp32-telemetry]]).
 - Trajectory SD-card loading incomplete; only hard-coded test trajectory today.
 - Fixed-timestep loop not enforced; Kalman `dt` varies slightly with loop load.
-- beta-0.58 flight-logic fixes are bench-gated: the authoring environment could not run `pio test` / `pio run` (see [[queries/flight-logic-audit-2026-09]]); the fixes have not flown. `MAIN_DEPLOY_*` fallback constants and `BOOST_TIMEOUT_MS` are airframe-specific and must be tuned.
+- beta-0.58 flight-logic fixes are bench-gated: the authoring environment could not run `pio` itself, but GitHub Actions CI (real `pio test -e native`, `pio run -e teensy41`) passed on the branch head (see [[queries/flight-logic-audit-2026-09]]); the fixes have not flown. `MAIN_DEPLOY_*` fallback constants and `BOOST_TIMEOUT_MS` are airframe-specific and must be tuned.
 
 ## Related
 

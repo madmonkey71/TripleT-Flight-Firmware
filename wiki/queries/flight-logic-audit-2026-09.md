@@ -67,7 +67,11 @@ The pre-existing `test/test_flight_logic` and `test/test_apogee_detection` suite
 - `test/support/flight_harness.h` — firmware globals + recording stubs for the hardware/IO boundary only (sensor values, sensor health, guidance, logging). Flight decisions, persistence and recovery are the real code.
 - `test/support/real_sources.h` — includes the real `.cpp` files into one translation unit.
 
-Verification caveat for this branch: the authoring sandbox blocked the PlatformIO registry, so `pio test -e native` / `pio run -e teensy41` were **not** run there; equivalent host `g++` + Unity runs and an `arm-none-eabi-g++` compile of every source were used. Re-run both `pio` commands before flight.
+Verification for this branch:
+
+- The authoring sandbox blocked the PlatformIO registry, so `pio` could not be run there; equivalent host `g++` + Unity runs (27 suites / 274 tests, 0 failures) and an `arm-none-eabi-g++` compile of every source were used instead.
+- GitHub Actions CI ("Unit Tests & Build", `.github/workflows/test.yml`) runs the **real** `pio test -e native -vv` and `pio run -e teensy41`. On head `ef69a72` (run 36666759947) both jobs passed: `test` reported `274 test cases: 274 succeeded`, `build` compiled the Teensy 4.1 firmware and uploaded the `firmware` artifact. The `beta-0.58` runs on the 5 most recent heads (`94c9a86`, `a3868cb`, `c832d3e`, `4e06a11`, `ef69a72`) were all green; the results for the earlier commits were not inspected.
+- Not verified: flash/RAM usage was not compared against `develop` (do that before flight, see [[concepts/developer-workflow]]), and **nothing has flown** — the bench-test checklist in the PR remains the gate.
 
 ## Findings
 

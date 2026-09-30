@@ -1250,6 +1250,30 @@ static AccelReading readAccel(bool preferKx134) {
     return icm.valid ? icm : kx;
 }
 
+// audit #7: evidence that the vehicle is at rest on the ground, used to authorise reset_flight.
+// Unlike flight_is_provably_on_ground() this does not compare against the launch altitude
+// (a vehicle can land tens of metres above/below the pad); it uses stationarity instead:
+// near-zero barometric vertical speed and ~1 g specific force. When neither sensor can
+// speak, only the landing states themselves (LANDED/RECOVERY) are trusted.
+bool flight_is_stationary_on_ground() {
+    if (flight_is_airborne_state(g_currentFlightState)) return false;
+    bool evidence = false;
+    if (g_baroCalibrated && baroDataFresh()) {
+        float vs = 0.0f;
+        if (g_rt.baroTrack.verticalSpeed(10, 8, 700, vs)) {
+            if (fabsf(vs) > RESET_FLIGHT_MAX_VERTICAL_SPEED_MPS) return false;
+            evidence = true;
+        }
+    }
+    const AccelReading a = readAccel(true);
+    if (a.valid) {
+        if (a.mag < LANDING_ACCEL_MIN_G || a.mag > LANDING_ACCEL_MAX_G) return false;
+        evidence = true;
+    }
+    if (evidence) return true;
+    return g_currentFlightState == LANDED || g_currentFlightState == RECOVERY;
+}
+
 void detectBoostEnd() {
     if (g_currentFlightState != BOOST) return;
 

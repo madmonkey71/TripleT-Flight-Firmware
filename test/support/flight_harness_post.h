@@ -45,6 +45,8 @@ inline void harness_reset() {
   flightLogicReset();
   stateManagementResetRuntime();
   handleInitialStateManagementReset();
+  s_resetToken = 0;            // flight_commands.cpp: no reset_flight token outstanding
+  s_resetTokenIssuedMs = 0;
 }
 
 // --- Sensor injection -------------------------------------------------------

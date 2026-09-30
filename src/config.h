@@ -234,6 +234,9 @@
 // the vehicle is on the ground: never flown, and (if the barometer is calibrated) within
 // this many metres of the launch altitude.
 #define GROUND_AGL_TOLERANCE_M 30.0f
+// reset_flight (audit #7): clears the persisted "flight in progress" state so a landed vehicle can be re-armed.
+#define RESET_FLIGHT_TOKEN_TIMEOUT_MS 30000    // The confirmation token expires after this long
+#define RESET_FLIGHT_MAX_VERTICAL_SPEED_MPS 1.0f // Baro vertical speed must be below this ("on the ground, not moving")
 // A barometer with no fresh sample for this long is treated as failed/unavailable.
 #define BARO_STALE_TIMEOUT_MS 500
 

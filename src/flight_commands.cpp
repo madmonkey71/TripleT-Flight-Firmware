@@ -2,13 +2,15 @@
 #include <Arduino.h>
 #include <string.h>
 #include <strings.h>
+#include <stdlib.h>
 #include "config.h"
 #include "error_codes.h"
 #include "state_management.h"
 #include "utility_functions.h"   // isSensorSuiteHealthy, getStateName
-#include "flight_logic.h"        // flight_is_provably_on_ground
+#include "flight_logic.h"        // flight_is_provably_on_ground, flight_is_stationary_on_ground
 
 extern ErrorCode_t g_last_error_code;
+extern float g_maxAltitudeReached;
 // From ms5611_functions.cpp
 extern float baro_altitude_offset;
 extern bool baro_calibration_done;
@@ -23,12 +25,89 @@ static void printGroundRefusal(const char* command) {
   Serial.println(F("After landing, use 'reset_flight' (LANDED/RECOVERY/ERROR/PAD_IDLE only)."));
 }
 
+// reset_flight two-step confirmation (audit #7)
+static unsigned s_resetToken = 0;              // 0 = none issued
+static unsigned long s_resetTokenIssuedMs = 0;
+
+// Clear the persisted flight so the vehicle can be re-armed. Only from the ground states.
+static bool resetFlightStateAllowed(FlightState s) {
+  return s == LANDED || s == RECOVERY || s == ERROR || s == PAD_IDLE;
+}
+
+static void handleResetFlight(const char* command,
+                              FlightState& currentFlightState_ref,
+                              FlightState& previousFlightState_ref,
+                              unsigned long& stateEntryTime_ref,
+                              bool& baroCalibrated_ref,
+                              bool ms5611_initialized_ok) {
+  // Guards first, so a token is never even issued in a state where the command cannot run.
+  if (!resetFlightStateAllowed(currentFlightState_ref)) {
+    Serial.print(F("REFUSED: reset_flight is only allowed in LANDED, RECOVERY, ERROR or PAD_IDLE. Current state: "));
+    Serial.println(getStateName(currentFlightState_ref));
+    return;
+  }
+  if (!flight_is_stationary_on_ground()) {
+    Serial.println(F("REFUSED: reset_flight requires the vehicle to be at rest on the ground (baro vertical speed ~0 and ~1 g)."));
+    return;
+  }
+
+  // Optional argument: the confirmation token.
+  const char* arg = command + strlen("reset_flight");
+  while (*arg == ' ') arg++;
+
+  const unsigned long now = millis();
+  const bool tokenLive = s_resetToken != 0 && (now - s_resetTokenIssuedMs) <= RESET_FLIGHT_TOKEN_TIMEOUT_MS;
+  if (*arg == '\0' || !tokenLive || (unsigned)atoi(arg) != s_resetToken) {
+    if (*arg != '\0') {
+      Serial.println(tokenLive ? F("REFUSED: wrong confirmation token.") : F("REFUSED: no live confirmation token (expired or never issued)."));
+    }
+    // (Re)issue a fresh token.
+    s_resetToken = 1000 + (unsigned)((now / 7 + 4321) % 9000);
+    s_resetTokenIssuedMs = now;
+    Serial.println(F("reset_flight will CLEAR the recorded flight (flight-in-progress flag, pyro-fired flags, max altitude)"));
+    Serial.println(F("and return the vehicle to PAD_IDLE. Make sure the vehicle is safe and recovered."));
+    Serial.print(F("To confirm within "));
+    Serial.print(RESET_FLIGHT_TOKEN_TIMEOUT_MS / 1000);
+    Serial.print(F(" s type:  reset_flight "));
+    Serial.println(s_resetToken);
+    return;
+  }
+  s_resetToken = 0; // single use
+
+  // ---- execute ----
+  const FlightState from = currentFlightState_ref;
+  stateManagementResetRuntime();      // flight-in-progress, pyro-fired mask, resume count
+  flightLogicReset();                 // detectors, timers, boostEndTime
+  g_maxAltitudeReached = 0.0f;
+  g_last_error_code = NO_ERROR;
+
+  FlightState target;
+  if (baroCalibrated_ref && isSensorSuiteHealthy(PAD_IDLE)) target = PAD_IDLE;
+  else if (ms5611_initialized_ok) target = CALIBRATION;
+  else target = ERROR; // legal now: the flight flag is clear
+  previousFlightState_ref = currentFlightState_ref;
+  currentFlightState_ref = target;
+  stateEntryTime_ref = millis();
+  saveStateToEEPROM();
+
+  Serial.print(F("Flight record cleared (was "));
+  Serial.print(getStateName(from));
+  Serial.print(F("). System is now in "));
+  Serial.println(getStateName(target));
+}
+
 bool handleFlightStateCommand(const char* command,
                               FlightState& currentFlightState_ref,
                               FlightState& previousFlightState_ref,
                               unsigned long& stateEntryTime_ref,
                               bool& baroCalibrated_ref,
                               bool ms5611_initialized_ok) {
+    if (strncasecmp(command, "reset_flight", 12) == 0 && (command[12] == '\0' || command[12] == ' ')) {
+        handleResetFlight(command, currentFlightState_ref, previousFlightState_ref, stateEntryTime_ref,
+                          baroCalibrated_ref, ms5611_initialized_ok);
+        return true;
+    }
+
     if (strcasecmp(command, "clear_errors") == 0) {
         if (currentFlightState_ref != ERROR) {
             Serial.print(F("System is not in ERROR state. Current state: "));

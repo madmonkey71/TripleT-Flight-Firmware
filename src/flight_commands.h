@@ -7,7 +7,8 @@
 // Kept out of command_processor.cpp (which drags in SdFat and friends) so their
 // guards can be unit tested against the real code.
 //
-// Handles (case-insensitive): clear_errors, clear_to_calibration, skip_calibration.
+// Handles (case-insensitive): clear_errors, clear_to_calibration, skip_calibration,
+// reset_flight [token] (audit #7: token-confirmed, ground states only, stationary).
 // Returns true if `command` was recognised (whether or not it was allowed).
 //
 // audit #3: leaving ERROR is only permitted when flight_is_provably_on_ground().

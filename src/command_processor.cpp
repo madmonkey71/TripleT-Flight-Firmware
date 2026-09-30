@@ -268,6 +268,8 @@ void printHelpMessage(const DebugFlags& debugFlags) { // Signature already updat
   Serial.println(F("  disarm"));
   Serial.println(F("  clear_errors"));
   Serial.println(F("  clear_to_calibration"));
+  Serial.println(F("  reset_flight          (post-flight: clear the recorded flight so the vehicle can be re-armed;"));
+  Serial.println(F("                         only in LANDED/RECOVERY/ERROR/PAD_IDLE and at rest; asks for a confirmation token)"));
   Serial.println(F("  skip_calibration      (skip GPS cal, use raw baro altitude)"));
   Serial.println(F("  sensor_requirements"));
   Serial.println(F("  scan_i2c"));

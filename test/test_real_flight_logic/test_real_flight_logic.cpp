@@ -20,7 +20,7 @@ void test_real_nominal_flight_walk() {
   TEST_ASSERT_EQUAL(ARMED, g_currentFlightState);
 
   harness_set_accel_g(4.0f);                 // liftoff
-  harness_run_ms(100);
+  harness_run_ms(LAUNCH_CONFIRMATION_COUNT * 100 + 100);   // needs N fresh samples (audit #8)
   TEST_ASSERT_EQUAL(BOOST, g_currentFlightState);
   harness_ramp_baro(160.0f, 1000);           // powered ascent
 

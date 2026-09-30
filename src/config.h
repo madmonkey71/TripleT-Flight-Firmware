@@ -107,6 +107,19 @@
 #define COAST_ACCEL_THRESHOLD                                                  \
   0.5f // Acceleration threshold (in g) to detect the end of the boost phase
        // (motor burnout).
+#define LAUNCH_CONFIRMATION_COUNT                                              \
+  5 // Consecutive FRESH accelerometer samples above BOOST_ACCEL_THRESHOLD to
+    // detect liftoff (audit #8). A pad bump shorter than this cannot launch.
+// BOOST timeout: if burnout is never detected the state machine is forced to COAST after this
+// long, with the burnout timestamp set, so the sensor gates and the backup apogee timer are
+// always reachable (audit #8). Set above your longest motor burn.
+#define BOOST_TIMEOUT_MS 12000
+// Burnout on high-drag vehicles: after burnout the specific force is drag deceleration, which
+// can stay above COAST_ACCEL_THRESHOLD, so the absolute test alone never fires. Burnout is
+// therefore also declared when the specific force magnitude falls below this fraction of the
+// peak (smoothed) boost level. Axis-independent on purpose: the IMU mounting is not assumed.
+#define BOOST_BURNOUT_PEAK_FRACTION 0.35f
+#define BOOST_ACCEL_EMA_ALPHA 0.3f                   // smoothing of the boost-level tracker (per fresh sample)
 #define COAST_CONFIRMATION_COUNT                                               \
   3 // Consecutive FRESH accelerometer samples below COAST_ACCEL_THRESHOLD to
     // confirm burnout (sensor samples, not main-loop passes - audit #4).

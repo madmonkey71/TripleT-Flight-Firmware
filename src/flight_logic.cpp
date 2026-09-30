@@ -99,6 +99,11 @@ struct FlightRuntime {
     // In-flight sensor degradation (audit #2)
     bool          degraded = false;
     unsigned long lastDegradeLogMs = 0;
+    // Launch / burnout detection (audit #8)
+    FreshCounter  launchConfirm;
+    float         boostEma = 0.0f;         // smoothed specific force during BOOST (g)
+    float         boostPeakG = 0.0f;       // peak of the smoothed value
+    bool          boostEmaValid = false;
     // Main deploy debounce (audit #5)
     FreshCounter  mainGate;
     bool          mainFallbackLogged = false;
@@ -249,6 +254,38 @@ static void flightHandleUnknownState() {
         Serial.println(F("Transitioning to ERROR state for safety."));
         g_currentFlightState = ERROR;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Accelerometer access with freshness (audit #4)
+// ---------------------------------------------------------------------------
+struct AccelReading {
+    bool valid;      // initialised, non-zero and delivering fresh samples
+    float mag;       // |specific force| in g (axis / mounting independent)
+    uint32_t seq;    // sample sequence number of the source used
+};
+
+static float vecMag(const float* v) { return sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+static bool vecNonZero(const float* v) { return v[0] != 0.0f || v[1] != 0.0f || v[2] != 0.0f; }
+
+// Choose the accelerometer. preferKx134 selects the high-g part (launch, burnout,
+// high-force veto); otherwise the ICM-20948 is preferred for its better low-g
+// resolution (free-fall detection). A source is only usable if initialised,
+// non-zero and stamped by its driver within ACCEL_STALE_TIMEOUT_MS.
+static AccelReading readAccel(bool preferKx134) {
+    const unsigned long now = millis();
+    AccelReading kx = {false, 0.0f, 0};
+    AccelReading icm = {false, 0.0f, 0};
+    if (g_kx134_initialized_ok && vecNonZero(kx134_accel) && g_kx134Sample.seq > 0 &&
+        (now - g_kx134Sample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
+        kx = {true, vecMag(kx134_accel), g_kx134Sample.seq};
+    }
+    if (g_icm20948_ready && vecNonZero(icm_accel) && g_icmSample.seq > 0 &&
+        (now - g_icmSample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
+        icm = {true, vecMag(icm_accel), g_icmSample.seq};
+    }
+    if (preferKx134) return kx.valid ? kx : icm;
+    return icm.valid ? icm : kx;
 }
 
 void ProcessFlightState() {
@@ -525,6 +562,7 @@ void ProcessFlightState() {
                         Serial.println(F(" m above current launch altitude."));
                     }
                 }
+                g_rt.launchConfirm.reset();   // audit #8: launch confirmation starts from zero
                 // Reset stability monitoring for the upcoming flight
                 reset_max_stability_metrics();
                 #if ENABLE_GUIDANCE == 1
@@ -544,6 +582,10 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("BOOST: Liftoff detected!"));
                 g_maxAltitudeReached = currentAglAlt > 0 ? currentAglAlt : 0;
                 boostEndTime = 0; // Reset boostEndTime, it's set by detectBoostEnd
+                g_rt.coastConfirm.reset();
+                g_rt.boostEmaValid = false;
+                g_rt.boostEma = 0.0f;
+                g_rt.boostPeakG = 0.0f;
                 // reset_max_stability_metrics(); // Already done when transitioning to ARMED, and again from ARMED to BOOST
                 // guidance_reset_stability_status();
                 break;
@@ -730,8 +772,15 @@ void ProcessFlightState() {
             // PAD_IDLE is a stable state - no automatic transitions
             // Transitions to ARMED happen via command processor
             break;
-        case ARMED:
-            if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) > BOOST_ACCEL_THRESHOLD) {
+        case ARMED: {
+            // audit #8: liftoff needs LAUNCH_CONFIRMATION_COUNT consecutive FRESH samples above the
+            // threshold. It used to be a single loop pass over one cached value, so any bump on the
+            // pad (a dropped tool, a door slam) launched the state machine.
+            const AccelReading launchAccel = readAccel(true);
+            if (launchAccel.valid) {
+                g_rt.launchConfirm.feed(launchAccel.seq, launchAccel.mag > BOOST_ACCEL_THRESHOLD);
+            }
+            if (g_rt.launchConfirm.count >= LAUNCH_CONFIRMATION_COUNT) {
                 g_currentFlightState = BOOST;
                 // reset_max_stability_metrics(); // Already done in newStateSignal for ARMED
                 // guidance_reset_stability_status(); // Already done in newStateSignal for ARMED
@@ -743,6 +792,7 @@ void ProcessFlightState() {
                 g_currentFlightState = PAD_IDLE;
             }
             break;
+        }
         case BOOST:
             #if ENABLE_GUIDANCE == 1
             { // Scope for act_x, act_y, act_z
@@ -779,6 +829,13 @@ void ProcessFlightState() {
                  g_maxAltitudeReached = currentAglAlt;
             }
             detectBoostEnd(); // This function internally sets g_currentFlightState = COAST if burnout detected
+            // audit #8: BOOST used to have no timeout, so a missed burnout left the apogee and
+            // backup-timer logic (COAST only) unreachable forever.
+            if (g_currentFlightState == BOOST && millis() - g_stateEntryTime > BOOST_TIMEOUT_MS) {
+                Serial.println(F("WARNING: BOOST timeout - burnout not detected. Assuming burnout; entering COAST."));
+                boostEndTime = millis();
+                g_currentFlightState = COAST;
+            }
             break;
 
         case COAST:
@@ -1218,38 +1275,6 @@ void ProcessFlightState() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Accelerometer access with freshness (audit #4)
-// ---------------------------------------------------------------------------
-struct AccelReading {
-    bool valid;      // initialised, non-zero and delivering fresh samples
-    float mag;       // |specific force| in g (axis / mounting independent)
-    uint32_t seq;    // sample sequence number of the source used
-};
-
-static float vecMag(const float* v) { return sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
-static bool vecNonZero(const float* v) { return v[0] != 0.0f || v[1] != 0.0f || v[2] != 0.0f; }
-
-// Choose the accelerometer. preferKx134 selects the high-g part (launch, burnout,
-// high-force veto); otherwise the ICM-20948 is preferred for its better low-g
-// resolution (free-fall detection). A source is only usable if initialised,
-// non-zero and stamped by its driver within ACCEL_STALE_TIMEOUT_MS.
-static AccelReading readAccel(bool preferKx134) {
-    const unsigned long now = millis();
-    AccelReading kx = {false, 0.0f, 0};
-    AccelReading icm = {false, 0.0f, 0};
-    if (g_kx134_initialized_ok && vecNonZero(kx134_accel) && g_kx134Sample.seq > 0 &&
-        (now - g_kx134Sample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
-        kx = {true, vecMag(kx134_accel), g_kx134Sample.seq};
-    }
-    if (g_icm20948_ready && vecNonZero(icm_accel) && g_icmSample.seq > 0 &&
-        (now - g_icmSample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
-        icm = {true, vecMag(icm_accel), g_icmSample.seq};
-    }
-    if (preferKx134) return kx.valid ? kx : icm;
-    return icm.valid ? icm : kx;
-}
-
 // audit #7: evidence that the vehicle is at rest on the ground, used to authorise reset_flight.
 // Unlike flight_is_provably_on_ground() this does not compare against the launch altitude
 // (a vehicle can land tens of metres above/below the pad); it uses stationarity instead:
@@ -1282,7 +1307,22 @@ void detectBoostEnd() {
     const AccelReading a = readAccel(true);
     if (!a.valid) return; // no fresh data: neither confirm nor reset
 
-    g_rt.coastConfirm.feed(a.seq, a.mag < COAST_ACCEL_THRESHOLD);
+    const bool fresh = !g_rt.coastConfirm.primed || a.seq != g_rt.coastConfirm.lastSeq;
+    if (!fresh) return;
+
+    // Track the boost level (smoothed, to ignore single-sample shocks) for the relative test.
+    if (!g_rt.boostEmaValid) { g_rt.boostEma = a.mag; g_rt.boostEmaValid = true; }
+    else g_rt.boostEma += BOOST_ACCEL_EMA_ALPHA * (a.mag - g_rt.boostEma);
+    if (g_rt.boostEma > g_rt.boostPeakG) g_rt.boostPeakG = g_rt.boostEma;
+
+    // audit #8: burnout = specific force collapsed absolutely (low-drag vehicles) OR collapsed
+    // relative to the boost level (high-drag vehicles, whose post-burnout drag deceleration stays
+    // above COAST_ACCEL_THRESHOLD). No ignition-transient hold-off is needed: liftoff already
+    // took LAUNCH_CONFIRMATION_COUNT fresh samples and burnout needs COAST_CONFIRMATION_COUNT more.
+    const bool absoluteLow = a.mag < COAST_ACCEL_THRESHOLD;
+    const bool relativeLow = g_rt.boostPeakG >= BOOST_ACCEL_THRESHOLD &&
+                             a.mag < g_rt.boostPeakG * BOOST_BURNOUT_PEAK_FRACTION;
+    g_rt.coastConfirm.feed(a.seq, absoluteLow || relativeLow);
     if (g_rt.coastConfirm.count >= COAST_CONFIRMATION_COUNT) {
         boostEndTime = millis();
         g_currentFlightState = COAST;

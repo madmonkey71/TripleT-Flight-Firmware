@@ -225,7 +225,7 @@ void test_boost_entry_sets_and_persists_flight_in_progress() {
   harness_pass();
   TEST_ASSERT_FALSE(g_flightInProgress);
   harness_set_accel_g(4.0f);
-  harness_run_ms(100);
+  harness_run_ms(LAUNCH_CONFIRMATION_COUNT * 100 + 100);
   TEST_ASSERT_EQUAL(BOOST, g_currentFlightState);
   TEST_ASSERT_TRUE(g_flightInProgress);
   FlightStateData r = read_record();

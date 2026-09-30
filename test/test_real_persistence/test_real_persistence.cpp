@@ -46,7 +46,7 @@ void test_every_state_change_is_saved_immediately() {
   TEST_ASSERT_EQUAL(ARMED, read_record().state);
   harness_pass();
   harness_set_accel_g(4.0f);
-  harness_run_ms(200);
+  harness_run_ms(LAUNCH_CONFIRMATION_COUNT * 100 + 100);
   TEST_ASSERT_EQUAL(BOOST, g_currentFlightState);
   TEST_ASSERT_EQUAL(BOOST, read_record().state);      // < 1 s after the previous save
   harness_set_accel_g(0.1f);

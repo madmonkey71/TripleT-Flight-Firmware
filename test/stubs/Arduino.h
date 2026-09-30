@@ -94,19 +94,25 @@ public:
   void clear() { out.clear(); }
   bool contains(const char* needle) const { return out.find(needle) != std::string::npos; }
   size_t write(const uint8_t*, size_t n) { return n; }
-  size_t print(const char* s) { if (s) out += s; return s ? strlen(s) : 0; }
+  // The capture is bounded (keeps the most recent kMaxCapture bytes) so a runaway print loop in
+  // code under test cannot exhaust memory.
+  static constexpr size_t kMaxCapture = 1 << 20;
+  size_t print(const char* s) {
+    if (s) { out += s; if (out.size() > kMaxCapture) out.erase(0, out.size() - kMaxCapture / 2); }
+    return s ? strlen(s) : 0;
+  }
   size_t print(const __FlashStringHelper* s) { return print(reinterpret_cast<const char*>(s)); }
-  size_t print(char c) { out += c; return 1; }
+  size_t print(char c) { return print(std::string(1, c).c_str()); }
   size_t print(int v, int base = 10) { return printInt((long)v, base); }
   size_t print(unsigned int v, int base = 10) { return printInt((long)v, base); }
   size_t print(long v, int base = 10) { return printInt(v, base); }
   size_t print(unsigned long v, int base = 10) { return printInt((long)v, base); }
   size_t print(unsigned char v, int base = 10) { return printInt((long)v, base); }
   size_t print(double v, int digits = 2) { char b[48]; snprintf(b, sizeof b, "%.*f", digits, v); return print(b); }
-  size_t println() { out += "\n"; return 1; }
-  template <typename T> size_t println(T v) { size_t n = print(v); out += "\n"; return n + 1; }
-  size_t println(double v, int digits) { size_t n = print(v, digits); out += "\n"; return n + 1; }
-  size_t println(int v, int base) { size_t n = print(v, base); out += "\n"; return n + 1; }
+  size_t println() { return print("\n"); }
+  template <typename T> size_t println(T v) { size_t n = print(v); print("\n"); return n + 1; }
+  size_t println(double v, int digits) { size_t n = print(v, digits); print("\n"); return n + 1; }
+  size_t println(int v, int base) { size_t n = print(v, base); print("\n"); return n + 1; }
   int printf(const char* fmt, ...) {
     char b[512]; va_list ap; va_start(ap, fmt); int n = vsnprintf(b, sizeof b, fmt, ap); va_end(ap); print(b); return n;
   }

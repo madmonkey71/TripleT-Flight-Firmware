@@ -134,6 +134,7 @@ struct FlightStateData {
   uint8_t flightInProgress; // 1 once BOOST was entered; cleared only by an explicit reset_flight (audit #3)
   uint8_t pyroFiredMask;    // bit0 = drogue fire window completed, bit1 = main (audit #1)
   uint8_t resumeCount;      // times an in-flight state was resumed after a reset (audit #1)
+  uint32_t burnoutAgeMs;    // ms since motor burnout at save time; 0 before burnout (audit #6)
   unsigned long timestamp;  // Uptime (ms) at last save. NOT comparable across reboots; debug only.
   uint16_t signature;       // Validation signature
 };

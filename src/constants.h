@@ -18,7 +18,8 @@ static constexpr uint32_t ACCEL_POLL_INTERVAL        = 100;   // Poll accelerome
 static constexpr uint32_t DISPLAY_INTERVAL           = 100;   // Update display/serial CSV at 10Hz (if enabled)
 static constexpr uint32_t GPS_CHECK_INTERVAL         = 10000; // Check GPS connection status
 static constexpr uint32_t STORAGE_CHECK_INTERVAL     = 30000; // Check storage space
-static constexpr uint32_t EEPROM_UPDATE_INTERVAL     = 60000; // Save state to EEPROM
+// EEPROM_UPDATE_INTERVAL (60 s save throttle) was removed in audit #6: state changes are always saved
+// (put-if-changed); see EEPROM_PROGRESS_SAVE_INTERVAL_MS in config.h for the in-flight refresh.
 
 // State Machine & Processing
 static constexpr uint32_t STATE_TIMEOUT_MS           = 30000; // Timeout for critical flight states

@@ -217,6 +217,12 @@
 // A vehicle that reset in flight is moving vertically; one sitting on the pad with a
 // stale record is not. Recovery therefore watches the fresh barometer for a short
 // window and requires a real vertical rate before it will resume.
+// The backup apogee timer is restored from the burnout age persisted at the last save, plus this
+// allowance for the time lost to the reset itself (watchdog timeout + boot). Restoring a slightly
+// LARGER age fires the backup timer slightly EARLIER than nominal: the safe direction (audit #6).
+#define RECOVERY_BACKUP_TIMER_ALLOWANCE_MS 3000
+// While in BOOST/COAST the flight record is refreshed at this interval (max altitude, burnout age).
+#define EEPROM_PROGRESS_SAVE_INTERVAL_MS 1000
 #define RECOVERY_MIN_VERTICAL_RATE_MPS 2.0f   // |dz/dt| needed to count as airborne
 #define RECOVERY_EVIDENCE_WINDOW_MS 800       // Observe the baro at least this long...
 #define RECOVERY_EVIDENCE_MIN_SAMPLES 5       // ...and collect at least this many fresh samples

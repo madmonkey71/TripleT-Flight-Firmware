@@ -535,7 +535,7 @@ void ProcessFlightState() {
                 // audit #1/#3: from liftoff until an explicit reset_flight the vehicle counts
                 // as "in flight". Persist immediately so a reset a moment later still knows.
                 g_flightInProgress = true;
-                saveStateToEEPROMForced();
+                saveStateToEEPROM();
                 if (g_useKalmanFilter && !g_icm20948_ready) {
                     // audit #2: this used to send a launched vehicle to ERROR, which stops apogee,
                     // backup-timer and main-deploy logic. Guidance needs the ICM; deployment does not.
@@ -879,7 +879,7 @@ void ProcessFlightState() {
                     // audit #1: record completion BEFORE anything else can reset us, so a
                     // reset during descent does not fire this channel again.
                     g_pyroFiredMask |= PYRO_FIRED_DROGUE;
-                    saveStateToEEPROMForced();
+                    saveStateToEEPROM();
                 }
             } else {
                  g_rt.drogueHasFired = false;
@@ -962,7 +962,7 @@ void ProcessFlightState() {
                      g_currentFlightState = MAIN_DESCENT;
                      // audit #1: persist completion so a reset never re-fires the main.
                      g_pyroFiredMask |= PYRO_FIRED_MAIN;
-                     saveStateToEEPROMForced();
+                     saveStateToEEPROM();
                  }
             } else {
                 g_rt.mainHasFired = false;

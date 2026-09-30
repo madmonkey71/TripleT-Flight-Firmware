@@ -55,27 +55,46 @@ void stateManagementResetRuntime() {
   s_evCount = 0;
 }
 
-void saveStateToEEPROMForced() {
-  unsigned long currentTimeMillis = millis();
+// Every persisted field except the uptime timestamp (which changes on every save and is not
+// comparable across reboots) - used for put-if-changed.
+static bool sameRecord(const FlightStateData& a, const FlightStateData& b) {
+  return a.state == b.state && a.launchAltitude == b.launchAltitude && a.maxAltitude == b.maxAltitude &&
+         a.currentAltitude == b.currentAltitude && a.mainDeployAltitudeAgl == b.mainDeployAltitudeAgl &&
+         a.baroAltitudeOffset == b.baroAltitudeOffset && a.baroCalibrated == b.baroCalibrated &&
+         a.flightInProgress == b.flightInProgress && a.pyroFiredMask == b.pyroFiredMask &&
+         a.resumeCount == b.resumeCount && a.burnoutAgeMs == b.burnoutAgeMs && a.signature == b.signature;
+}
 
-  // Update state data from global variables
-  stateData.state = static_cast<uint8_t>(g_currentFlightState); // Cast enum to uint8_t
-  stateData.launchAltitude = g_launchAltitude;
-  stateData.maxAltitude = g_maxAltitudeReached;
-  stateData.currentAltitude = g_currentAltitude; // This should be the latest available altitude
-  stateData.mainDeployAltitudeAgl = g_main_deploy_altitude_m_agl; // Save new field
-  stateData.baroAltitudeOffset = baro_altitude_offset;
-  stateData.baroCalibrated = g_baroCalibrated ? 1 : 0;
-  stateData.flightInProgress = g_flightInProgress ? 1 : 0;
-  stateData.pyroFiredMask = g_pyroFiredMask;
-  stateData.resumeCount = s_resumeCount;
-  stateData.timestamp = currentTimeMillis;
-  stateData.signature = EEPROM_SIGNATURE_VALUE;
+void saveStateToEEPROM() {
+  const unsigned long now = millis();
 
-  // Write to EEPROM
-  EEPROM.put(EEPROM_STATE_ADDR, stateData);
+  FlightStateData rec;
+  memset(&rec, 0, sizeof rec);
+  rec.state = static_cast<uint8_t>(g_currentFlightState); // Cast enum to uint8_t
+  rec.launchAltitude = g_launchAltitude;
+  rec.maxAltitude = g_maxAltitudeReached;
+  rec.currentAltitude = g_currentAltitude; // This should be the latest available altitude
+  rec.mainDeployAltitudeAgl = g_main_deploy_altitude_m_agl;
+  rec.baroAltitudeOffset = baro_altitude_offset;
+  rec.baroCalibrated = g_baroCalibrated ? 1 : 0;
+  rec.flightInProgress = g_flightInProgress ? 1 : 0;
+  rec.pyroFiredMask = g_pyroFiredMask;
+  rec.resumeCount = s_resumeCount;
+  // Time since burnout (0 before burnout / outside COAST) so the backup timer survives a reset.
+  rec.burnoutAgeMs = (g_currentFlightState == COAST && boostEndTime > 0) ? static_cast<uint32_t>(now - boostEndTime) : 0;
+  rec.signature = EEPROM_SIGNATURE_VALUE;
 
-  lastStateSaveTime = currentTimeMillis;
+  lastStateSaveTime = now;
+
+  FlightStateData stored;
+  EEPROM.get(EEPROM_STATE_ADDR, stored);
+  if (sameRecord(stored, rec)) {
+    return; // identical to what is already stored: no flash write
+  }
+
+  rec.timestamp = now;
+  EEPROM.put(EEPROM_STATE_ADDR, rec);
+  stateData = rec;
 
   if (g_debugFlags.enableSystemDebug) {
     Serial.print(F("Flight state saved to EEPROM: "));
@@ -83,16 +102,10 @@ void saveStateToEEPROMForced() {
   }
 }
 
-void saveStateToEEPROM() {
-  unsigned long currentTimeMillis = millis();
-
-  // Only save periodically to reduce wear, unless in critical phases
-  if (currentTimeMillis - lastStateSaveTime < EEPROM_UPDATE_INTERVAL &&
-      g_currentFlightState != APOGEE && g_currentFlightState != DROGUE_DEPLOY &&
-      g_currentFlightState != MAIN_DEPLOY && g_currentFlightState != LANDED) { // Added LANDED as a critical save point
-    return;
-  }
-  saveStateToEEPROMForced();
+void saveFlightProgressPeriodic() {
+  if (g_currentFlightState != BOOST && g_currentFlightState != COAST) return;
+  if (millis() - lastStateSaveTime < EEPROM_PROGRESS_SAVE_INTERVAL_MS) return;
+  saveStateToEEPROM();
 }
 
 static bool loadStateFromEEPROM() { // Changed to static
@@ -113,6 +126,7 @@ static bool loadStateFromEEPROM() { // Changed to static
     stateData.flightInProgress = 0;
     stateData.pyroFiredMask = 0;
     stateData.resumeCount = 0;
+    stateData.burnoutAgeMs = 0;
     stateData.timestamp = 0;
     // Do not set signature here, as it indicates invalid data
     return false;
@@ -144,7 +158,8 @@ static bool loadStateFromEEPROM() { // Changed to static
 //  --------------------------  -------------------  ------------------------------------
 //  STARTUP/CALIBRATION/PAD_IDLE  n/a                STARTUP (normal boot sequence)
 //  ARMED                         n/a                PAD_IDLE (disarmed)
-//  BOOST, COAST                  plausible          COAST  (apogee detection re-armed)
+//  BOOST, COAST                  plausible          COAST  (apogee detection re-armed; backup timer restored from
+//                                                   the persisted burnout age + RECOVERY_BACKUP_TIMER_ALLOWANCE_MS)
 //  APOGEE, DROGUE_DEPLOY         plausible          drogue already fired ? DROGUE_DESCENT : APOGEE
 //  DROGUE_DESCENT                plausible          DROGUE_DESCENT
 //  MAIN_DEPLOY                   plausible          main already fired ? MAIN_DESCENT : DROGUE_DESCENT
@@ -244,9 +259,12 @@ static void applyRecoveryDecision(const RecoveryDecision& d, const FlightStateDa
     g_baroCalibrated = true;
     s_resumeCount = static_cast<uint8_t>(rec.resumeCount + 1);
     if (d.state == COAST) {
-      // Re-arm the backup apogee timer relative to now (never 0: 0 means "unset").
-      unsigned long now = millis();
-      boostEndTime = now > 0 ? now : 1;
+      // Re-arm the backup apogee timer from the burnout age persisted at the last save (0 if the
+      // reset happened during BOOST), plus an allowance for the time the reset itself cost. The
+      // restored age is therefore >= the true age, so the timer never fires LATER than nominal.
+      const unsigned long now = millis();
+      const unsigned long age = (saved == COAST ? rec.burnoutAgeMs : 0UL) + RECOVERY_BACKUP_TIMER_ALLOWANCE_MS;
+      boostEndTime = now > age ? now - age : 1; // never 0: 0 means "unset"
     }
   }
 
@@ -259,7 +277,7 @@ static void applyRecoveryDecision(const RecoveryDecision& d, const FlightStateDa
   }
 
   if (d.state != STARTUP || g_flightInProgress) {
-    saveStateToEEPROMForced(); // persist the decision (resume count, RECOVERY, flight flag)
+    saveStateToEEPROM(); // persist the decision (resume count, RECOVERY, flight flag)
   }
 }
 

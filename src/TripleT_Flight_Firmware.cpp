@@ -955,6 +955,7 @@ void loop() {
 
   // --- Flight State Processing ---
   ProcessFlightState(); // Handle flight state machine logic
+  saveFlightProgressPeriodic(); // BOOST/COAST: refresh max altitude / burnout age in EEPROM (audit #6)
 
   // --- Periodic Battery Voltage Printout ---
   #if ENABLE_BATTERY_MONITORING == 1

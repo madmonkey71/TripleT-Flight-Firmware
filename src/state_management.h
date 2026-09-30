@@ -25,11 +25,15 @@ extern uint8_t g_pyroFiredMask;
 // reset_flight command (which then saves) and by unit tests.
 void stateManagementResetRuntime();
 
-// Save the live flight record to EEPROM.
+// Save the live flight record to EEPROM. Never throttled (audit #6): call it on every state
+// change and every safety-flag change. Put-if-changed: if nothing but the uptime timestamp
+// differs from what is stored, nothing is written (flash wear).
 void saveStateToEEPROM();
-// Same, but never throttled. Use for events that must survive an immediate reset
-// (pyro fired, BOOST entered, recovery decisions).
-void saveStateToEEPROMForced();
+
+// Call every main-loop pass: during BOOST/COAST refreshes the record every
+// EEPROM_PROGRESS_SAVE_INTERVAL_MS so a reset resumes with a current max altitude and
+// burnout age. Does nothing in other states.
+void saveFlightProgressPeriodic();
 
 // Phase 1 of boot recovery (call early in setup(), before sensors are up):
 // loads the record, restores the pyro-fired mask and flight-in-progress flag,

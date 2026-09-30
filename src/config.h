@@ -175,6 +175,21 @@
   120000 // Milliseconds in CALIBRATION before fallback calibration (2 mins)
 #endif
 
+// --- Boot-time recovery plausibility (audit #1) ---
+// After a reset the saved flight state is only RESUMED in flight if the live
+// barometer proves the vehicle is really up in the air. Otherwise the vehicle
+// restarts into a safe, pyro-inert state. See wiki/concepts/state-management.
+#define RECOVERY_MIN_AGL_M 30.0f       // Must be at least this far above the saved launch altitude to resume
+#define RECOVERY_ALT_MARGIN_M 300.0f   // ...and no higher than saved max altitude + this margin
+#define RECOVERY_MAX_RESUMES 3         // Give up resuming after this many resets in one flight
+// A vehicle that reset in flight is moving vertically; one sitting on the pad with a
+// stale record is not. Recovery therefore watches the fresh barometer for a short
+// window and requires a real vertical rate before it will resume.
+#define RECOVERY_MIN_VERTICAL_RATE_MPS 2.0f   // |dz/dt| needed to count as airborne
+#define RECOVERY_EVIDENCE_WINDOW_MS 800       // Observe the baro at least this long...
+#define RECOVERY_EVIDENCE_MIN_SAMPLES 5       // ...and collect at least this many fresh samples
+#define RECOVERY_EVIDENCE_TIMEOUT_MS 3000     // No usable baro by then -> treat evidence as absent
+
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \
   3 // Maximum number of consecutive sensor failures before error state

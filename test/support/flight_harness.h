@@ -47,6 +47,8 @@ float g_kalmanRoll = 0, g_kalmanPitch = 0, g_kalmanYaw = 0;
 float g_kalmanRollRate = 0, g_kalmanPitchRate = 0, g_kalmanYawRate = 0;
 bool g_guidance_active = true;
 float g_battery_voltage = 0.0f;
+bool g_sdCardAvailable = true;
+bool g_loggingEnabled = true;
 
 // ---- Sensor-driver globals (ms5611_/icm_/kx134_/gps_functions.cpp) -----------
 bool ms5611_initialized_ok = true;

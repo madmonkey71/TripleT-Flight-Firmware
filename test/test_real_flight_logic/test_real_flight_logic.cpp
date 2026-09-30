@@ -2,9 +2,7 @@
 // See test/support/flight_harness.h for what is faked at the hardware boundary.
 #include <unity.h>
 #include "../support/flight_harness.h"
-#include "../../src/state_management.cpp"
-#include "../../src/flight_logic.cpp"
-#include "../support/flight_harness_post.h"
+#include "../support/real_sources.h"
 
 void setUp() { harness_reset(); }
 void tearDown() {}

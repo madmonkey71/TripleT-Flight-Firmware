@@ -131,7 +131,10 @@ struct FlightStateData {
   float mainDeployAltitudeAgl; // New field
   float baroAltitudeOffset; // GPS-referenced barometer calibration offset (m)
   uint8_t baroCalibrated;   // 1 if barometer was calibrated when this record was saved
-  unsigned long timestamp;  // Timestamp of last save
+  uint8_t flightInProgress; // 1 once BOOST was entered; cleared only by an explicit reset_flight (audit #3)
+  uint8_t pyroFiredMask;    // bit0 = drogue fire window completed, bit1 = main (audit #1)
+  uint8_t resumeCount;      // times an in-flight state was resumed after a reset (audit #1)
+  unsigned long timestamp;  // Uptime (ms) at last save. NOT comparable across reboots; debug only.
   uint16_t signature;       // Validation signature
 };
 // NOTE: changing this layout shifts the signature offset, which intentionally

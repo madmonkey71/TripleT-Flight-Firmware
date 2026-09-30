@@ -37,7 +37,13 @@ inline void harness_reset() {
   g_test_guidance_center_calls = 0;
   g_test_stability_compromised = false;
   g_pixels = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+  g_sdCardAvailable = true;
+  g_loggingEnabled = true;
+  g_baroSample = {0, 0}; g_icmSample = {0, 0}; g_kx134Sample = {0, 0}; g_gpsSample = {0, 0};
+  pressure = 1013.25f;
   flightLogicReset();
+  stateManagementResetRuntime();
+  handleInitialStateManagementReset();
 }
 
 // --- Sensor injection -------------------------------------------------------
@@ -49,8 +55,14 @@ inline void harness_set_accel_g(float mag_g) {
   kx134_accel[0] = 0; kx134_accel[1] = 0; kx134_accel[2] = mag_g;
 }
 
-// One pass of the firmware main loop's flight-logic call.
-inline void harness_pass() { ProcessFlightState(); }
+// One pass of the firmware main loop's flight-logic calls (same order as loop()).
+inline void harness_pass() {
+  handleInitialStateManagement();
+  ProcessFlightState();
+}
+
+// Deliver one fresh barometer sample (what ms5611_read() does on success).
+inline void harness_new_baro_sample() { sample_mark(g_baroSample, millis()); }
 
 // Advance `ms` of simulated time in 10 ms loop passes.
 inline void harness_run_ms(unsigned long ms) {

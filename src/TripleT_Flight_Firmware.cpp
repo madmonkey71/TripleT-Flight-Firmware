@@ -67,6 +67,8 @@ WDT_T4<WDT1> wdt;
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
 #include "telemetry.h"       // For ENABLE_TELEMETRY packing & framing
+#include "startup_state.h"    // For handleInitialStateManagement()
+#include "pyro_control.h"     // For pyro_init_safe()
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
 // Define variables declared as extern in utility_functions.h
@@ -598,6 +600,11 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
 // - getOrientationFilterStatus (part of processCommand)
 
 void setup() {
+  // audit #1: the very first action. Drive both pyro channels LOW before the
+  // Serial wait, watchdog, SD or sensor bring-up so nothing can leave them
+  // floating (or HIGH) while the rest of setup() runs.
+  pyro_init_safe();
+
   // Wait for the Serial monitor to be opened.
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {
@@ -633,11 +640,8 @@ void setup() {
   // Initialize NeoPixel
   initNeoPixel(g_pixels);
 
-  // Initialize pyro channels (safety first - ensure they're off)
-  pinMode(PYRO_CHANNEL_1, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_1, LOW);
-  pinMode(PYRO_CHANNEL_2, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_2, LOW);
+  // Re-assert the pyro channels LOW now that the watchdog is running (first done at the top of setup()).
+  pyro_init_safe();
 
   // Initialize servo objects
 #if ENABLE_GUIDANCE == 1
@@ -655,8 +659,12 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // Load flight state from EEPROM (for power-loss recovery)
-  recoverFromPowerLoss(); // This sets g_currentFlightState appropriately
+  // Load flight state from EEPROM (for power-loss recovery). Phase 1 only: the
+  // pyro-fired mask / flight-in-progress flag are restored and pre-flight states
+  // resolved; an in-flight saved state stays PENDING (vehicle stays in the
+  // pyro-inert STARTUP state) until handleInitialStateManagement() has live
+  // barometer evidence to judge it with (audit #1).
+  recoverFromPowerLoss();
 
   // Initialize SD card
   g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
@@ -704,92 +712,6 @@ void setup() {
   }
 
   Serial.println(F("Setup complete. Starting main loop..."));
-}
-
-// Function to handle initial state management after setup
-void handleInitialStateManagement() {
-  static bool initialStateHandled = false;
-  if (initialStateHandled) {
-    return; // Only run this logic once
-  }
-
-  // Check system health using the same criteria as the setup function used to
-  bool systemHealthy = true;
-  
-  if (!g_sdCardAvailable && g_loggingEnabled) {
-    Serial.println(F("INIT: Logging enabled but SD card not available. System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
-    Serial.println(F("INIT: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!ms5611_initialized_ok) {
-    // Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy.")); // Keep systemHealthy = true
-    // systemHealthy = false; // Allow proceeding to CALIBRATION/PAD_IDLE with a warning
-    if (g_debugFlags.enableSystemDebug) { // Still print a warning if debug is enabled
-        Serial.println(F("INIT_WARNING: MS5611 barometer not initialized. Functionality will be limited."));
-    }
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.println(F("=== Initial State Management ==="));
-    Serial.print(F("System Health: ")); Serial.println(systemHealthy ? F("HEALTHY") : F("UNHEALTHY"));
-    Serial.print(F("Current State: ")); Serial.println(getStateName(g_currentFlightState));
-  }
-
-  // Handle state transitions based on current state and system health
-  if (g_currentFlightState == STARTUP) {
-    if (systemHealthy) {
-      // Check if barometer is already calibrated to skip CALIBRATION state
-      if (g_baroCalibrated) {
-        Serial.println(F("Fresh start, system healthy and barometer calibrated, proceeding to PAD_IDLE state."));
-        g_currentFlightState = PAD_IDLE;
-        g_stateEntryTime = millis();
-      } else {
-        Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
-        g_currentFlightState = CALIBRATION;
-        g_stateEntryTime = millis();
-      }
-    } else {
-      Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
-      g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error if identifiable here
-      g_currentFlightState = ERROR;
-      g_stateEntryTime = millis();
-      saveStateToEEPROM(); // Save state
-      WriteLogData(true);  // Log error immediately
-    }
-  } else if (g_currentFlightState == ERROR && systemHealthy) {
-    // Check if barometer is already calibrated to skip CALIBRATION state
-    if (g_baroCalibrated) {
-      Serial.println(F("ERROR state recovered, all systems healthy and barometer calibrated, transitioning to PAD_IDLE."));
-      g_currentFlightState = PAD_IDLE;
-      g_stateEntryTime = millis();
-    } else {
-      Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
-      g_currentFlightState = CALIBRATION;
-      g_stateEntryTime = millis();
-    }
-    g_last_error_code = NO_ERROR; // Clear the latched error along with the state
-    Serial.println(F("ERROR state cleared - starting grace period for health checks"));
-    saveStateToEEPROM();
-  } else if (!systemHealthy && g_currentFlightState != ERROR) {
-    Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
-    g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error
-    g_currentFlightState = ERROR;
-    g_stateEntryTime = millis();
-    saveStateToEEPROM(); // Save state
-    WriteLogData(true);  // Log error immediately
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.print(F("Final State: ")); Serial.println(getStateName(g_currentFlightState));
-    Serial.println(F("=============================="));
-  }
-
-  initialStateHandled = true;
 }
 
 void loop() {

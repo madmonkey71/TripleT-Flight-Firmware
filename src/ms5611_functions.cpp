@@ -1,5 +1,6 @@
 #include "ms5611_functions.h"
 #include "gps_functions.h"  // Include GPS functions for calibration
+#include "sensor_samples.h" // Fresh-sample sequence numbers (audit #1/#4)
 
 // Named constants for magic numbers used in this file
 static const double HYPSOMETRIC_CONSTANT_A = 44330.0;
@@ -48,6 +49,7 @@ int ms5611_read() {
     if (result == MS5611_READ_OK) {
         pressure = ms5611Sensor.getPressure();
         temperature = ms5611Sensor.getTemperature();
+        sample_mark(g_baroSample, millis()); // a genuinely new sample
     }
     return result;
 }

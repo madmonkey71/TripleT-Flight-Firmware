@@ -4,7 +4,7 @@
 #include "config.h"   // For configuration constants
 #include "ms5611_functions.h" // For ms5611_get_altitude()
 #include "utility_functions.h" // For get_accel_magnitude(), getStateName(), isSensorSuiteHealthy()
-#include "state_management.h" // For saveStateToEEPROM()
+#include "state_management.h" // For saveStateToEEPROM(), pyro-fired mask, flight-in-progress flag
 #include "constants.h"     // For timing constants like BACKUP_APOGEE_TIME
 #if ENABLE_GUIDANCE == 1
 #include "guidance_control.h" // For guidance functions and g_guidance_active
@@ -147,6 +147,10 @@ void setFlightStateLED(FlightState state) {
 }
 
 void ProcessFlightState() {
+    // audit #1: an in-flight saved state is still awaiting barometer evidence. Do
+    // nothing (in particular: no health-check ERROR, no pyro) until it is settled.
+    if (recoveryPending()) return;
+
     float currentAbsoluteBaroAlt = 0.0f;
     float currentAglAlt = 0.0f;
     bool newStateSignal = false;
@@ -359,6 +363,8 @@ void ProcessFlightState() {
 
     if (newStateSignal) {
         switch (g_currentFlightState) {
+            case STARTUP:
+                break;
             case CALIBRATION:
                 // Initial message when entering CALIBRATION state
                 if (g_debugFlags.enableSystemDebug) {
@@ -401,6 +407,10 @@ void ProcessFlightState() {
                 #endif
                 break;
             case BOOST:
+                // audit #1/#3: from liftoff until an explicit reset_flight the vehicle counts
+                // as "in flight". Persist immediately so a reset a moment later still knows.
+                g_flightInProgress = true;
+                saveStateToEEPROMForced();
                 if (g_useKalmanFilter && !g_icm20948_ready) {
                     g_last_error_code = SENSOR_INIT_FAIL_ICM20948; // Or a more specific "guidance sensor missing"
                     g_currentFlightState = ERROR;
@@ -523,6 +533,9 @@ void ProcessFlightState() {
     }
 
     switch (g_currentFlightState) {
+        case STARTUP:
+            // Waiting for handleInitialStateManagement() to pick the first real state.
+            break;
         case CALIBRATION:
             if (g_baroCalibrated) {
                 g_currentFlightState = PAD_IDLE;
@@ -718,6 +731,15 @@ void ProcessFlightState() {
             if (DROGUE_PRESENT) {
                 unsigned long timeInState = millis() - g_stateEntryTime;
 
+                if (g_pyroFiredMask & PYRO_FIRED_DROGUE) {
+                    // audit #1: this channel already completed its fire window (possibly
+                    // before a reset). Never fire it again.
+                    digitalWrite(PYRO_CHANNEL_1, LOW);
+                    g_rt.drogueHasFired = false;
+                    g_currentFlightState = DROGUE_DESCENT;
+                    break;
+                }
+
                 if (!g_rt.drogueHasFired) {
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
                     digitalWrite(PYRO_CHANNEL_1, HIGH);
@@ -729,6 +751,10 @@ void ProcessFlightState() {
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
                     g_rt.drogueHasFired = false;
                     g_currentFlightState = DROGUE_DESCENT;
+                    // audit #1: record completion BEFORE anything else can reset us, so a
+                    // reset during descent does not fire this channel again.
+                    g_pyroFiredMask |= PYRO_FIRED_DROGUE;
+                    saveStateToEEPROMForced();
                 }
             } else {
                  g_rt.drogueHasFired = false;
@@ -753,6 +779,14 @@ void ProcessFlightState() {
             if (MAIN_PRESENT) {
                  unsigned long timeInState = millis() - g_stateEntryTime;
 
+                 if (g_pyroFiredMask & PYRO_FIRED_MAIN) {
+                     // audit #1: already fired (possibly before a reset). Never fire again.
+                     digitalWrite(PYRO_CHANNEL_2, LOW);
+                     g_rt.mainHasFired = false;
+                     g_currentFlightState = MAIN_DESCENT;
+                     break;
+                 }
+
                  if (!g_rt.mainHasFired) {
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
                      digitalWrite(PYRO_CHANNEL_2, HIGH);
@@ -764,6 +798,9 @@ void ProcessFlightState() {
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
                      g_rt.mainHasFired = false;
                      g_currentFlightState = MAIN_DESCENT;
+                     // audit #1: persist completion so a reset never re-fires the main.
+                     g_pyroFiredMask |= PYRO_FIRED_MAIN;
+                     saveStateToEEPROMForced();
                  }
             } else {
                 g_rt.mainHasFired = false;

@@ -162,4 +162,6 @@ Append-only chronological record of all wiki operations.
 **Not changed in this pass**:
 - No source code edits. The trajectory + telemetry implementation work is the next step (see [[queries/v1-release-gate-2026-05]] for the action list).
 
-
+## [2026-09-30] audit | flight-logic audit beta-0.58 (in progress)
+- New page `queries/flight-logic-audit-2026-09.md` (finding → fix → test per item, added item by item).
+- Item 1 landed: two-phase boot recovery, pyro-fired mask, `pyro_init_safe()`; native real-code harness (`test/stubs`, `test/support`).

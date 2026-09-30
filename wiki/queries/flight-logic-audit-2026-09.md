@@ -57,3 +57,13 @@ Verification caveat for this branch: the authoring sandbox blocked the PlatformI
   - The barometer is "usable" iff calibrated **and** fresh (`BARO_STALE_TIMEOUT_MS`); the per-pass `g_ms5611Sensor.isConnected()` I2C ping in the flight loop is gone.
   - Removed `APOGEE_ACCEL_CONFIRMATION_COUNT` and `APOGEE_ACCEL_THRESHOLD`; `APOGEE_ACCEL_SAMPLES` is now used.
 - **Tests.** `test_real_apogee` (15): thousands of loop passes on one cached sample never confirm baro or burnout; exactly N fresh samples do; non-consecutive GPS drops don't accumulate; an upside-down IMU at 1.2 g never fires; free fall on three different axes fires only after the min time + window; climbing baro vetoes free-fall and GPS; high force vetoes baro; transonic spike can't poison the reference; min-altitude gate; ungated backup timer with no sensors; nominal latency bounds. Mutation-checked: removing the fresh-sample check, the lockout, the min-time gate, or restoring `icm_accel[2] < 0` each fails tests.
+
+### #5 Main deploy depends on the baro alone with no debounce (critical)
+
+- **Finding.** `DROGUE_DESCENT` fired the main on `baro AGL < g_main_deploy_altitude_m_agl` read from one cached value — a single glitchy sample deployed it, and with the barometer stale/disconnected (`isConnected()` gate) there was no path to `MAIN_DEPLOY` at all, so the vehicle sat in `DROGUE_DESCENT` forever. `MAIN_PRESENT` builds had no landing check or timeout in that state.
+- **Fix.**
+  - Debounce: `MAIN_DEPLOY_CONFIRMATION_COUNT` consecutive **fresh** samples below the deploy altitude (`FreshCounter`).
+  - Baro unavailable (stale/uncalibrated): deploy after an *estimated descent time* `(max AGL − main altitude) / MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS × MAIN_DEPLOY_FALLBACK_MARGIN`, floored at `MAIN_DEPLOY_FALLBACK_MIN_MS` and capped by `MAIN_DEPLOY_FALLBACK_TIME_MS` (fixed cap when the apogee is unknown). The margin is < 1 on purpose: an early main is survivable, a late one is not (decision D-5).
+  - Baro alive but wrong (stuck high): hard limit `MAIN_DEPLOY_MAX_DROGUE_TIME_MS` since drogue descent began.
+  - `detectLanding()` now also runs in `DROGUE_DESCENT`; both descent states are forced to `LANDED` after `DESCENT_STATE_TIMEOUT_MS`.
+- **Tests.** `test_real_main_deploy` (9): thousands of passes on one low cached sample never deploy; a short glitch resets the count; N fresh low samples deploy and reach MAIN_DESCENT; dead barometer → estimated-time fallback (not before, fires after); unknown apogee → fixed fallback; stuck-high baro → hard limit; touchdown in DROGUE_DESCENT → LANDED; both descent states time out. Mutation-checked (debounce, fallback and hard-limit each removed ⇒ failures).

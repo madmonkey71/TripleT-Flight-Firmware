@@ -99,6 +99,9 @@ struct FlightRuntime {
     // In-flight sensor degradation (audit #2)
     bool          degraded = false;
     unsigned long lastDegradeLogMs = 0;
+    // Main deploy debounce (audit #5)
+    FreshCounter  mainGate;
+    bool          mainFallbackLogged = false;
     // Detector state (all confirmation counters advance on FRESH samples only)
     FreshCounter  coastConfirm;
     FreshCounter  apogeeBaro;
@@ -595,6 +598,8 @@ void ProcessFlightState() {
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("DROGUE_DEPLOY: Initiating drogue parachute deployment."));
                 break;
             case DROGUE_DESCENT:
+                g_rt.mainGate.reset();          // audit #5: debounce restarts on entry
+                g_rt.mainFallbackLogged = false;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("DROGUE_DESCENT: Descending under drogue parachute."));
                 if (!MAIN_PRESENT) {
                     lastLandingCheckAltitudeAgl = currentAglAlt;
@@ -884,14 +889,51 @@ void ProcessFlightState() {
         }
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
-                if (baroUsable && currentAglAlt < g_main_deploy_altitude_m_agl) {
+                // audit #5: the main deploy used to be `baro AGL < altitude` on ONE cached value with
+                // no debounce and no fallback. Now: N consecutive FRESH samples below the deploy
+                // altitude, else time-based fallbacks so a dead or lying barometer cannot strand the vehicle.
+                const unsigned long timeInDescent = millis() - g_stateEntryTime;
+                bool deployMain = false;
+                const char* why = "";
+                if (baroUsable) {
+                    g_rt.mainGate.feed(g_baroSample.seq, currentAglAlt < g_main_deploy_altitude_m_agl);
+                    if (g_rt.mainGate.count >= MAIN_DEPLOY_CONFIRMATION_COUNT) { deployMain = true; why = "baro altitude"; }
+                } else {
+                    // Barometer unavailable/stale: fall back on an estimated descent time.
+                    unsigned long deadline = MAIN_DEPLOY_FALLBACK_TIME_MS;
+                    if (g_maxAltitudeReached > g_main_deploy_altitude_m_agl) {
+                        const float est_ms = (g_maxAltitudeReached - g_main_deploy_altitude_m_agl) /
+                                             MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS * 1000.0f * MAIN_DEPLOY_FALLBACK_MARGIN;
+                        unsigned long est = est_ms > (float)MAIN_DEPLOY_FALLBACK_MIN_MS ? (unsigned long)est_ms : (unsigned long)MAIN_DEPLOY_FALLBACK_MIN_MS;
+                        if (est < deadline) deadline = est;
+                    }
+                    if (!g_rt.mainFallbackLogged) {
+                        g_rt.mainFallbackLogged = true;
+                        Serial.print(F("WARNING: barometer unavailable in DROGUE_DESCENT - main deploys by timer in <= "));
+                        Serial.print(deadline / 1000.0, 1);
+                        Serial.println(F(" s after drogue descent began."));
+                    }
+                    if (timeInDescent >= deadline) { deployMain = true; why = "fallback timer (no barometer)"; }
+                }
+                if (!deployMain && timeInDescent >= MAIN_DEPLOY_MAX_DROGUE_TIME_MS) {
+                    deployMain = true; why = "maximum drogue time exceeded";
+                }
+                if (deployMain) {
+                    Serial.print(F("MAIN DEPLOY triggered by: "));
+                    Serial.println(why);
                     g_currentFlightState = MAIN_DEPLOY;
                     g_stateEntryTime = millis(); // Initialize timer for MAIN_DEPLOY
+                } else if (detectLanding()) {
+                    // Touched down without main ever deploying (e.g. low apogee): do not sit here forever.
+                    g_currentFlightState = LANDED;
                 }
             } else {
                 if (detectLanding()) {
                     g_currentFlightState = LANDED;
                 }
+            }
+            if (g_currentFlightState == DROGUE_DESCENT && millis() - g_stateEntryTime > DESCENT_STATE_TIMEOUT_MS) {
+                g_currentFlightState = LANDED; // last resort: this state must not persist indefinitely
             }
             break;
         case MAIN_DEPLOY: {
@@ -929,7 +971,7 @@ void ProcessFlightState() {
             break;
         }
         case MAIN_DESCENT:
-            if (detectLanding()) {
+            if (detectLanding() || millis() - g_stateEntryTime > DESCENT_STATE_TIMEOUT_MS) {
                 g_currentFlightState = LANDED;
             }
             break;

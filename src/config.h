@@ -116,6 +116,21 @@
     // produced a new sample (see sensor_samples.h), so 5 = 5 sensor periods.
 #define LANDING_CONFIRMATION_COUNT                                             \
   10 // Number of consecutive readings required to confirm landing.
+// --- Main deployment safeguards (audit #5) ---
+#define MAIN_DEPLOY_CONFIRMATION_COUNT 3  // Consecutive FRESH baro samples below the deploy altitude
+// If the barometer stops delivering fresh samples during drogue descent, deploy main after an
+// estimated descent time, capped by MAIN_DEPLOY_FALLBACK_TIME_MS. The estimate is
+// (last max AGL - main altitude) / assumed drogue rate * margin, floored at MAIN_DEPLOY_FALLBACK_MIN_MS.
+// Deploying a little early is survivable; deploying after ground impact is not, hence the margin < 1.
+#define MAIN_DEPLOY_FALLBACK_TIME_MS 30000
+#define MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS 25.0f
+#define MAIN_DEPLOY_FALLBACK_MARGIN 0.8f
+#define MAIN_DEPLOY_FALLBACK_MIN_MS 3000
+// Even with a barometer that keeps delivering (possibly wrong) data, main is deployed once this
+// long has passed since drogue descent began.
+#define MAIN_DEPLOY_MAX_DROGUE_TIME_MS 240000UL
+// A descent state that never sees touchdown is forced to LANDED after this long.
+#define DESCENT_STATE_TIMEOUT_MS 600000UL
 #define BACKUP_APOGEE_TIME_MS                                                  \
   20000 // Failsafe time in ms after motor burnout to trigger apogee.
 #define APOGEE_GPS_CONFIRMATION_COUNT                                          \

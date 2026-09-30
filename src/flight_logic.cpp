@@ -106,6 +106,8 @@ struct FlightRuntime {
     float         boostEma = 0.0f;         // smoothed specific force during BOOST (g)
     float         boostPeakG = 0.0f;       // peak of the smoothed value
     bool          boostEmaValid = false;
+    float         boostMagHist[4] = {0, 0, 0, 0};   // last 4 fresh |a| samples (ring) for the "settled" test
+    int           boostMagCount = 0;
     // Main deploy debounce (audit #5)
     FreshCounter  mainGate;
     bool          mainFallbackLogged = false;
@@ -599,6 +601,7 @@ void ProcessFlightState() {
                 g_rt.boostEmaValid = false;
                 g_rt.boostEma = 0.0f;
                 g_rt.boostPeakG = 0.0f;
+                g_rt.boostMagCount = 0;
                 // reset_max_stability_metrics(); // Already done when transitioning to ARMED, and again from ARMED to BOOST
                 // guidance_reset_stability_status();
                 break;
@@ -1340,9 +1343,17 @@ void detectBoostEnd() {
     // relative to the boost level (high-drag vehicles, whose post-burnout drag deceleration stays
     // above COAST_ACCEL_THRESHOLD). No ignition-transient hold-off is needed: liftoff already
     // took LAUNCH_CONFIRMATION_COUNT fresh samples and burnout needs COAST_CONFIRMATION_COUNT more.
+    // The drop must also have SETTLED: a gradual thrust tail-off crosses the fraction while still
+    // falling steeply (the H125W's tail-off does, ~1 s before burnout); drag-only coast is steady.
+    const int slot = g_rt.boostMagCount % 4;
+    const bool haveHistory = g_rt.boostMagCount >= 4;
+    const float threeAgo = g_rt.boostMagHist[slot];          // oldest of the last 4 (3 samples ago)
+    const bool settled = haveHistory && fabsf(a.mag - threeAgo) <= BOOST_BURNOUT_SETTLE_FRACTION * g_rt.boostPeakG;
+    g_rt.boostMagHist[slot] = a.mag;
+    g_rt.boostMagCount++;
     const bool absoluteLow = a.mag < COAST_ACCEL_THRESHOLD;
     const bool relativeLow = g_rt.boostPeakG >= BOOST_ACCEL_THRESHOLD &&
-                             a.mag < g_rt.boostPeakG * BOOST_BURNOUT_PEAK_FRACTION;
+                             a.mag < g_rt.boostPeakG * BOOST_BURNOUT_PEAK_FRACTION && settled;
     g_rt.coastConfirm.feed(a.seq, absoluteLow || relativeLow);
     if (g_rt.coastConfirm.count >= COAST_CONFIRMATION_COUNT) {
         boostEndTime = millis();
@@ -1376,6 +1387,7 @@ static void resetFlightDetectors() {
     g_rt.boostEma = 0.0f;
     g_rt.boostPeakG = 0.0f;
     g_rt.boostEmaValid = false;
+    g_rt.boostMagCount = 0;
     g_rt.degraded = false;
     resetApogeeDetectionCounters();
 }

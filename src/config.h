@@ -119,6 +119,11 @@
 // therefore also declared when the specific force magnitude falls below this fraction of the
 // peak (smoothed) boost level. Axis-independent on purpose: the IMU mounting is not assumed.
 #define BOOST_BURNOUT_PEAK_FRACTION 0.35f
+// ...and only once the drop has SETTLED: the reading must be within this fraction of the peak of
+// what it was 3 fresh samples earlier. A motor's gradual tail-off (the H125W's thrust falls from 150 N to
+// 0 over 1.7 s) crosses the fraction long before burnout but is still falling steeply, so it is
+// not mistaken for burnout; drag-only coast after a real burnout is steady.
+#define BOOST_BURNOUT_SETTLE_FRACTION 0.05f
 #define BOOST_ACCEL_EMA_ALPHA 0.3f                   // smoothing of the boost-level tracker (per fresh sample)
 #define COAST_CONFIRMATION_COUNT                                               \
   3 // Consecutive FRESH accelerometer samples below COAST_ACCEL_THRESHOLD to

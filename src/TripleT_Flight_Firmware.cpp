@@ -173,7 +173,7 @@ const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS (usua
 char g_logFileName[64] = ""; // Current log file name (matches the 64-byte name buffer in createNewLogFile; was 32, which truncated timestamped names)
 
 // Guidance Control Update Interval
-const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
+// GUIDANCE_UPDATE_INTERVAL_MS (50 Hz control loop) now lives in config.h (audit #12)
 
 // Instantiate global debug flags struct
 // Forward declare SdFat and FsFile if they are used in function signatures before full definition/include
@@ -903,16 +903,12 @@ void loop() {
 
   // --- Guidance Control Update ---
   #if ENABLE_GUIDANCE == 1
-  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT) and guidance is active
-  if (g_guidance_active && (g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
-      static unsigned long g_lastGuidanceUpdateTime = 0;
-      if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-          float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
-          if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
-              dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
-          }
-          g_lastGuidanceUpdateTime = millis();
-
+  // audit #12: flightGuidanceStep() decides. Guidance (and servo commands) run only in COAST while
+  // enabled and not stationary; in every later state it centres the fins once and never steers them.
+  // The first step after (re)entry gets the nominal dt, not `millis() - 0`.
+  {
+      float dt_guidance = GUIDANCE_UPDATE_INTERVAL_MS / 1000.0f;
+      if (flightGuidanceStep(millis(), isStationary, dt_guidance)) {
           // Use Kalman filter rates instead of raw gyro to avoid timing mismatches
           // g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate are already calculated and filtered
           guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
@@ -936,7 +932,7 @@ void loop() {
           roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
           yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
 
-          // Command servos (we're already in the correct state check above)
+          // Command servos (flightGuidanceStep already established we are in COAST)
           g_servo_pitch.write(pitch_servo_angle);
           g_servo_roll.write(roll_servo_angle);
           g_servo_yaw.write(yaw_servo_angle);

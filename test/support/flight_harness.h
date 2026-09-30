@@ -76,6 +76,8 @@ float g_test_gps_alt_m = 0.0f;        // what getGPSAltitude() reports
 int g_test_log_writes = 0;            // WriteLogData() call count
 int g_test_guidance_center_calls = 0; // guidance_center_servos() call count
 int g_test_guidance_target_sets = 0;
+int g_test_guidance_run_steps = 0;    // times the loop's guidance step would have run guidance_update()
+float g_test_guidance_last_dt = 0;
 bool g_test_stability_compromised = false;
 
 // ---- Stubs for functions the real sources call across module boundaries -----

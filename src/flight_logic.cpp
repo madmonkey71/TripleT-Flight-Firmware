@@ -97,6 +97,10 @@ struct FlightRuntime {
     // In-flight sensor degradation (audit #2)
     bool          degraded = false;
     unsigned long lastDegradeLogMs = 0;
+    // Guidance servo policy (audit #12)
+    bool          guidanceTimerPrimed = false;
+    unsigned long guidanceLastMs = 0;
+    bool          servosCentered = false;
     // Launch / burnout detection (audit #8)
     FreshCounter  launchConfirm;
     float         boostEma = 0.0f;         // smoothed specific force during BOOST (g)
@@ -1271,6 +1275,49 @@ bool flight_is_stationary_on_ground() {
     }
     if (evidence) return true;
     return g_currentFlightState == LANDED || g_currentFlightState == RECOVERY;
+}
+
+// ---------------------------------------------------------------------------
+// Guidance servo policy (audit #12)
+// ---------------------------------------------------------------------------
+// The main loop used to run guidance (and write the servos) in COAST, DROGUE_DESCENT and
+// MAIN_DESCENT, so the fins kept being steered under a parachute, and the first dt of a run was
+// computed as `millis() - 0`. Now:
+//   * only COAST, with guidance enabled and the vehicle not stationary, runs guidance;
+//   * every state after COAST (and COAST with guidance disabled) centres the fins once and
+//     never commands them;
+//   * the guidance timer is (re)initialised on every entry into the running condition, and dt is
+//     clamped so a stalled loop cannot inject a huge step into the PID.
+bool flightGuidanceStep(unsigned long nowMs, bool stationary, float& dt) {
+    dt = GUIDANCE_UPDATE_INTERVAL_MS / 1000.0f;
+#if ENABLE_GUIDANCE == 1
+    const FlightState st = g_currentFlightState;
+    const bool run = (st == COAST) && g_guidance_active && !stationary;
+    if (run) {
+        g_rt.servosCentered = false;              // will need centring again after this run ends
+        if (!g_rt.guidanceTimerPrimed) {          // first entry: start the clock now, use the nominal dt
+            g_rt.guidanceTimerPrimed = true;
+            g_rt.guidanceLastMs = nowMs;
+            return true;
+        }
+        const unsigned long elapsed = nowMs - g_rt.guidanceLastMs;
+        if (elapsed < GUIDANCE_UPDATE_INTERVAL_MS) return false;
+        dt = elapsed / 1000.0f;
+        if (dt > GUIDANCE_MAX_DT_S) dt = GUIDANCE_MAX_DT_S;
+        g_rt.guidanceLastMs = nowMs;
+        return true;
+    }
+    g_rt.guidanceTimerPrimed = false;             // re-prime on the next entry
+    const bool centre = (st >= APOGEE && st <= ERROR) || (st == COAST && !g_guidance_active);
+    if (centre && !g_rt.servosCentered) {
+        guidance_center_servos();
+        g_rt.servosCentered = true;
+    }
+    if (st < APOGEE && st != COAST) g_rt.servosCentered = false;   // pre-flight / boost: re-arm for the next flight
+#else
+    (void)nowMs; (void)stationary;
+#endif
+    return false;
 }
 
 void detectBoostEnd() {

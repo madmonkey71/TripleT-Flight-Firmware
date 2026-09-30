@@ -309,6 +309,10 @@
 // Kalman filter is now the only option.
 #define KALMAN_FILTER_ACTIVE_BY_DEFAULT true
 
+// --- Guidance loop timing / authority (audit #12) ---
+#define GUIDANCE_UPDATE_INTERVAL_MS 20   // 50 Hz control loop
+#define GUIDANCE_MAX_DT_S 0.1f           // Clamp for a stalled loop so PID integrators/derivatives are not kicked
+
 // --- Kalman filter accelerometer gating (audit #9) ---
 // The accelerometer is only a valid tilt (gravity) reference when the vehicle is not accelerating:
 // |a| ~ 1 g and not rotating fast. Under thrust, drag or in free fall the "gravity" vector points

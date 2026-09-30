@@ -35,6 +35,8 @@ inline void harness_reset() {
   g_test_gps_alt_m = 0.0f;
   g_test_log_writes = 0;
   g_test_guidance_center_calls = 0;
+  g_test_guidance_run_steps = 0;
+  g_test_guidance_last_dt = 0;
   g_test_stability_compromised = false;
   g_pixels = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
   g_sdCardAvailable = true;
@@ -64,6 +66,11 @@ inline void harness_set_accel_g(float mag_g) {
 inline void harness_pass() {
   pyro_service();                       // loop(): owns the pyro pins on every pass (audit #10)
   handleInitialStateManagement();
+  float dt;
+  if (flightGuidanceStep(millis(), isStationary, dt)) {   // loop(): guidance step (audit #12)
+    g_test_guidance_run_steps++;
+    g_test_guidance_last_dt = dt;
+  }
   ProcessFlightState();
 }
 

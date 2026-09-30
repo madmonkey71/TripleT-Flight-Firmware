@@ -69,6 +69,43 @@ static float max_roll_att_err_current_state_rad = 0.0f;
 static float max_yaw_att_err_current_state_rad = 0.0f;
 static uint8_t current_stability_flags = 0; // Bitfield: 1=Rate, 2=Att, 4=Sat
 
+// ---------------------------------------------------------------------------
+// Resettable runtime state
+// ---------------------------------------------------------------------------
+// All flight-logic bookkeeping that used to live in function-local `static`
+// variables is gathered here so it can be reset explicitly between flights
+// (PAD_IDLE entry, post-recovery resume) and between unit tests. Function-local
+// statics could not be reset, so state from one flight leaked into the next.
+struct FlightRuntime {
+    // Health monitor / error auto-recovery timers
+    unsigned long lastErrorCheckTime = 0;
+    unsigned long lastErrorClearTime = 0;      // Track when errors were last cleared
+    unsigned long lastHealthOkTime = 0;
+    unsigned long lastGraceMsg = 0;
+    unsigned long lastAutoRecoveryCheckTime = 0;
+    unsigned long lastErrorDebugTime = 0;
+    FlightState   lastRecordedState = STARTUP;
+    // CALIBRATION auto-calibration bookkeeping
+    unsigned long lastCalibWaitMsgTime = 0;
+    bool          autoCalibAttempted = false;
+    // COAST entry bookkeeping
+    FlightState   lastCoastState = STARTUP;
+    bool          coastCountersReset = false;
+    // Pyro fire-window flags (see DROGUE_DEPLOY / MAIN_DEPLOY)
+    bool          drogueHasFired = false;
+    bool          mainHasFired = false;
+    // Detector state
+    int           coastConfirmCount = 0;
+    // Landing detector (moving average of altitude + confirmation timer)
+    static const int kLandingReadings = 10;
+    float         landingAlt[kLandingReadings] = {0};
+    int           landingIndex = 0;
+    float         landingTotal = 0.0f;
+    bool          landingFirstRun = true;
+    unsigned long landingFirstLandedTime = 0;
+};
+static FlightRuntime g_rt;
+
 
 // Helper function to convert radians to degrees for logging max values
 static inline float rad_to_deg_local(float rad) {
@@ -113,8 +150,6 @@ void ProcessFlightState() {
     float currentAbsoluteBaroAlt = 0.0f;
     float currentAglAlt = 0.0f;
     bool newStateSignal = false;
-    static unsigned long lastErrorCheckTime = 0;
-    static unsigned long lastErrorClearTime = 0; // Track when errors were last cleared
     const unsigned long errorCheckInterval = 1000; // 1 second
     const unsigned long errorClearGracePeriod = 5000; // 5 seconds grace period after clearing errors
     const unsigned long stateBroadcastInterval = 1000; // 1 second
@@ -137,20 +172,20 @@ void ProcessFlightState() {
     // after a manual `clear_errors` command.
     if (g_currentFlightState != LANDED && g_currentFlightState != RECOVERY && g_currentFlightState != ERROR) {
         // Add grace period check - don't run health checks immediately after clearing errors
-        bool withinGracePeriod = (millis() - lastErrorClearTime < errorClearGracePeriod);
+        bool withinGracePeriod = (millis() - g_rt.lastErrorClearTime < errorClearGracePeriod);
         
-        if (millis() - lastErrorCheckTime > errorCheckInterval && !withinGracePeriod) {
-            lastErrorCheckTime = millis();
+        if (millis() - g_rt.lastErrorCheckTime > errorCheckInterval && !withinGracePeriod) {
+            g_rt.lastErrorCheckTime = millis();
             if (!isSensorSuiteHealthy(g_currentFlightState)) { // isSensorSuiteHealthy uses g_baroCalibrated, g_icm20948_ready, g_kx134_initialized_ok, myGNSS
                 // ALWAYS log detailed sensor status before transitioning to ERROR (regardless of debug flags)
                 Serial.println(F("--- CRITICAL: Sensor Suite Health Check Failed ---"));
                 Serial.print(F("Current State: "));
                 Serial.println(getStateName(g_currentFlightState));
                 Serial.print(F("Time since last error clear: "));
-                Serial.print((millis() - lastErrorClearTime) / 1000.0, 1);
+                Serial.print((millis() - g_rt.lastErrorClearTime) / 1000.0, 1);
                 Serial.println(F(" seconds"));
                 Serial.print(F("Grace period remaining: "));
-                Serial.print((errorClearGracePeriod - (millis() - lastErrorClearTime)) / 1000.0, 1);
+                Serial.print((errorClearGracePeriod - (millis() - g_rt.lastErrorClearTime)) / 1000.0, 1);
                 Serial.println(F(" seconds"));
                 Serial.println(F(""));
                 isSensorSuiteHealthy(g_currentFlightState, true); // Call with verbose=true
@@ -178,9 +213,8 @@ void ProcessFlightState() {
                 return; // Avoid further processing this cycle
             } else {
                 // Add periodic health status when things are OK
-                static unsigned long lastHealthOkTime = 0;
-                if (millis() - lastHealthOkTime > 10000) { // Every 10 seconds (reduced frequency)
-                    lastHealthOkTime = millis();
+                if (millis() - g_rt.lastHealthOkTime > 10000) { // Every 10 seconds (reduced frequency)
+                    g_rt.lastHealthOkTime = millis();
                     if (g_debugFlags.enableSystemDebug) {
                         Serial.print(F("Health check OK for state: "));
                         Serial.println(getStateName(g_currentFlightState));
@@ -189,21 +223,19 @@ void ProcessFlightState() {
             }
         } else if (withinGracePeriod && g_debugFlags.enableSystemDebug) {
             // Debug message about grace period
-            static unsigned long lastGraceMsg = 0;
-            if (millis() - lastGraceMsg > 2000) { // Every 2 seconds during grace period
-                lastGraceMsg = millis();
+            if (millis() - g_rt.lastGraceMsg > 2000) { // Every 2 seconds during grace period
+                g_rt.lastGraceMsg = millis();
                 Serial.print(F("Grace period active: "));
-                Serial.print((errorClearGracePeriod - (millis() - lastErrorClearTime)) / 1000.0, 1);
+                Serial.print((errorClearGracePeriod - (millis() - g_rt.lastErrorClearTime)) / 1000.0, 1);
                 Serial.println(F(" seconds remaining"));
             }
         }
     } else if (g_currentFlightState == ERROR) {
         // Add automatic error recovery logic - check if system has become healthy
-        static unsigned long lastAutoRecoveryCheckTime = 0;
         const unsigned long autoRecoveryCheckInterval = 2000; // Check every 2 seconds
         
-        if (millis() - lastAutoRecoveryCheckTime > autoRecoveryCheckInterval) {
-            lastAutoRecoveryCheckTime = millis();
+        if (millis() - g_rt.lastAutoRecoveryCheckTime > autoRecoveryCheckInterval) {
+            g_rt.lastAutoRecoveryCheckTime = millis();
             
             // Check if we can recover to PAD_IDLE state
             if (isSensorSuiteHealthy(PAD_IDLE)) {
@@ -226,7 +258,7 @@ void ProcessFlightState() {
                     return; // Don't transition out of ERROR
                 }
                 
-                lastErrorClearTime = millis(); // Set grace period for future health checks
+                g_rt.lastErrorClearTime = millis(); // Set grace period for future health checks
                 g_stateEntryTime = millis();
                 g_last_error_code = NO_ERROR; // Clear the latched error now that health is restored
                 Serial.println(F("ERROR state automatically cleared - starting grace period for health checks"));
@@ -239,9 +271,8 @@ void ProcessFlightState() {
         
         // Add periodic debugging for ERROR state (only if we didn't auto-recover)
         if (g_debugFlags.enableSystemDebug) {
-            static unsigned long lastErrorDebugTime = 0;
-            if (millis() - lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
-                lastErrorDebugTime = millis();
+            if (millis() - g_rt.lastErrorDebugTime > 5000) { // Every 5 seconds (reduced frequency)
+                g_rt.lastErrorDebugTime = millis();
                 Serial.println(F("--- Currently in ERROR state ---"));
                 Serial.println(F("Use 'clear_errors' command to manually clear if all systems are working."));
                 Serial.println(F("Or check sensor health with detailed report:"));
@@ -252,12 +283,11 @@ void ProcessFlightState() {
     }
 
     // Record when we transition OUT of ERROR state (for grace period tracking)
-    static FlightState lastRecordedState = STARTUP;
-    if (lastRecordedState == ERROR && g_currentFlightState != ERROR) {
-        lastErrorClearTime = millis();
+    if (g_rt.lastRecordedState == ERROR && g_currentFlightState != ERROR) {
+        g_rt.lastErrorClearTime = millis();
         Serial.println(F("ERROR state cleared - starting grace period for health checks"));
     }
-    lastRecordedState = g_currentFlightState;
+    g_rt.lastRecordedState = g_currentFlightState;
 
     if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();
@@ -501,14 +531,12 @@ void ProcessFlightState() {
                 }
             } else {
                 // Auto-calibrate when GPS fix becomes available (non-blocking)
-                static unsigned long lastCalibWaitMsgTime = 0;
-                static bool autoCalibAttempted = false;
 
                 unsigned long timeInCalibration = millis() - g_stateEntryTime;
 
                 // Try auto-calibration if GPS has a good fix
-                if (!autoCalibAttempted && GPS_fixType >= 3 && pDOP < 300 && ms5611_initialized_ok) {
-                    autoCalibAttempted = true;
+                if (!g_rt.autoCalibAttempted && GPS_fixType >= 3 && pDOP < 300 && ms5611_initialized_ok) {
+                    g_rt.autoCalibAttempted = true;
                     Serial.println(F("CALIBRATION: GPS fix acquired, attempting auto-calibration..."));
 
                     // Read fresh pressure
@@ -529,7 +557,7 @@ void ProcessFlightState() {
                         Serial.print(baro_altitude_offset);
                         Serial.println(F("m"));
                     } else {
-                        autoCalibAttempted = false; // Retry on next loop if reading failed
+                        g_rt.autoCalibAttempted = false; // Retry on next loop if reading failed
                         if (g_debugFlags.enableSystemDebug) {
                             Serial.println(F("CALIBRATION: Auto-calibration reading failed, will retry..."));
                         }
@@ -546,8 +574,8 @@ void ProcessFlightState() {
                 }
 
                 // Periodic status message
-                if (!g_baroCalibrated && (millis() - lastCalibWaitMsgTime > 5000)) {
-                    lastCalibWaitMsgTime = millis();
+                if (!g_baroCalibrated && (millis() - g_rt.lastCalibWaitMsgTime > 5000)) {
+                    g_rt.lastCalibWaitMsgTime = millis();
                     unsigned long remaining = 0;
                     if (timeInCalibration < CALIBRATION_AUTO_TIMEOUT_MS) {
                         remaining = (CALIBRATION_AUTO_TIMEOUT_MS - timeInCalibration) / 1000;
@@ -621,20 +649,17 @@ void ProcessFlightState() {
             // Reset apogee detection counters on first entry to COAST state
             // This prevents false apogee detection from stale counter values on flight reuse
             {
-                static FlightState lastCoastState = STARTUP;
-                static bool coastCountersReset = false;
-
-                if (lastCoastState != COAST && !coastCountersReset) {
+                if (g_rt.lastCoastState != COAST && !g_rt.coastCountersReset) {
                     // First entry into COAST - reset all apogee detection static counters
                     resetApogeeDetectionCounters();
-                    coastCountersReset = true;
+                    g_rt.coastCountersReset = true;
                 }
 
-                lastCoastState = g_currentFlightState;
+                g_rt.lastCoastState = g_currentFlightState;
 
                 // Reset flag when leaving COAST so it triggers again on next COAST entry
                 if (g_currentFlightState != COAST) {
-                    coastCountersReset = false;
+                    g_rt.coastCountersReset = false;
                 }
             }
 
@@ -690,24 +715,23 @@ void ProcessFlightState() {
             break;
         case DROGUE_DEPLOY: {
             // Non-blocking Pyro Logic
-            static bool drogueHasFired = false;
             if (DROGUE_PRESENT) {
                 unsigned long timeInState = millis() - g_stateEntryTime;
 
-                if (!drogueHasFired) {
+                if (!g_rt.drogueHasFired) {
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
                     digitalWrite(PYRO_CHANNEL_1, HIGH);
-                    drogueHasFired = true;
+                    g_rt.drogueHasFired = true;
                 }
 
                 if (timeInState >= PYRO_FIRE_DURATION) {
                     digitalWrite(PYRO_CHANNEL_1, LOW);
                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
-                    drogueHasFired = false;
+                    g_rt.drogueHasFired = false;
                     g_currentFlightState = DROGUE_DESCENT;
                 }
             } else {
-                 drogueHasFired = false;
+                 g_rt.drogueHasFired = false;
                  g_currentFlightState = DROGUE_DESCENT;
             }
             break;
@@ -726,24 +750,23 @@ void ProcessFlightState() {
             break;
         case MAIN_DEPLOY: {
             // Non-blocking Pyro Logic
-            static bool mainHasFired = false;
             if (MAIN_PRESENT) {
                  unsigned long timeInState = millis() - g_stateEntryTime;
 
-                 if (!mainHasFired) {
+                 if (!g_rt.mainHasFired) {
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
                      digitalWrite(PYRO_CHANNEL_2, HIGH);
-                     mainHasFired = true;
+                     g_rt.mainHasFired = true;
                  }
 
                  if (timeInState >= PYRO_FIRE_DURATION) {
                      digitalWrite(PYRO_CHANNEL_2, LOW);
                      if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
-                     mainHasFired = false;
+                     g_rt.mainHasFired = false;
                      g_currentFlightState = MAIN_DESCENT;
                  }
             } else {
-                mainHasFired = false;
+                g_rt.mainHasFired = false;
                 g_currentFlightState = MAIN_DESCENT;
             }
             break;
@@ -1002,17 +1025,15 @@ void ProcessFlightState() {
 void detectBoostEnd() {
     if (g_currentFlightState != BOOST) return;
 
-    static int coastConfirmCount = 0;
-
     if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
-        coastConfirmCount++;
-        if (coastConfirmCount >= COAST_CONFIRMATION_COUNT) {
+        g_rt.coastConfirmCount++;
+        if (g_rt.coastConfirmCount >= COAST_CONFIRMATION_COUNT) {
             boostEndTime = millis();
             g_currentFlightState = COAST;
-            coastConfirmCount = 0;
+            g_rt.coastConfirmCount = 0;
         }
     } else {
-        coastConfirmCount = 0;
+        g_rt.coastConfirmCount = 0;
     }
 }
 
@@ -1030,6 +1051,22 @@ void resetApogeeDetectionCounters() {
     s_accel_negative_count = 0;
     s_gps_descending_count = 0;
     s_maxGpsAltitude = 0.0f;
+}
+
+// Reset every piece of flight-logic bookkeeping that must not leak from one
+// flight (or one unit test) into the next: detector counters, confirmation
+// timers, landing averager, pyro fire-window flags and health-monitor timers.
+// Does NOT touch the persisted flight record (see state_management.cpp).
+void flightLogicReset() {
+    g_rt = FlightRuntime();
+    resetApogeeDetectionCounters();
+    boostEndTime = 0;
+    landingDetectedFlag = false;
+    previousApogeeDetectAltitude = 0.0f;
+    lastLandingCheckAltitudeAgl = 0.0f;
+    descendingCount = 0;
+    lastStateBroadcastTime = 0;
+    reset_max_stability_metrics();
 }
 
 bool detectApogee() {
@@ -1102,14 +1139,13 @@ bool detectLanding() {
     if (g_currentFlightState != DROGUE_DESCENT && g_currentFlightState != MAIN_DESCENT) return false;
 
     // Use a moving average of altitude to smooth out readings
-    const int numReadings = 10;
-    static float altReadings[numReadings];
-    static int readIndex = 0;
-    static float total = 0;
-    static bool firstRun = true;
-    if (firstRun) {
+    const int numReadings = FlightRuntime::kLandingReadings;
+    float* altReadings = g_rt.landingAlt;
+    int& readIndex = g_rt.landingIndex;
+    float& total = g_rt.landingTotal;
+    if (g_rt.landingFirstRun) {
         for (int i = 0; i < numReadings; i++) altReadings[i] = 0;
-        firstRun = false;
+        g_rt.landingFirstRun = false;
     }
 
     total -= altReadings[readIndex];
@@ -1118,7 +1154,7 @@ bool detectLanding() {
     readIndex = (readIndex + 1) % numReadings;
     float avgAlt = total / numReadings;
 
-    static unsigned long firstLandedTime = 0; // Moved to function scope
+    unsigned long& firstLandedTime = g_rt.landingFirstLandedTime;
     
     // Check for landing conditions
     if (fabs(avgAlt - g_launchAltitude) < LANDING_ALTITUDE_STABLE_THRESHOLD) {

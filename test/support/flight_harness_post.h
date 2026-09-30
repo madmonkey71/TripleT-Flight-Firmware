@@ -43,6 +43,8 @@ inline void harness_reset() {
   GPS_fixType = 0;
   pressure = 1013.25f;
   flightLogicReset();
+  pyro_init_safe();            // abort any fire window left over from a previous test
+  test_pins_reset();
   stateManagementResetRuntime();
   handleInitialStateManagementReset();
   s_resetToken = 0;            // flight_commands.cpp: no reset_flight token outstanding
@@ -60,6 +62,7 @@ inline void harness_set_accel_g(float mag_g) {
 
 // One pass of the firmware main loop's flight-logic calls (same order as loop()).
 inline void harness_pass() {
+  pyro_service();                       // loop(): owns the pyro pins on every pass (audit #10)
   handleInitialStateManagement();
   ProcessFlightState();
 }

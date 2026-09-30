@@ -15,6 +15,7 @@
 #include <MS5611.h>
 #include "debug_flags.h" // For g_debugFlags
 #include "sensor_samples.h" // Fresh-sample sequence numbers / timestamps
+#include "pyro_control.h"  // pyro_request_fire() / pyro_fire_complete() (audit #10)
 #include "kx134_functions.h"
 #include "icm_20948_functions.h"
 
@@ -91,9 +92,6 @@ struct FlightRuntime {
     // COAST entry bookkeeping
     FlightState   lastCoastState = STARTUP;
     bool          coastCountersReset = false;
-    // Pyro fire-window flags (see DROGUE_DEPLOY / MAIN_DEPLOY)
-    bool          drogueHasFired = false;
-    bool          mainHasFired = false;
     // g_launchAltitude is only a trustworthy ground reference once PAD_IDLE was entered (or a flight resumed)
     bool          launchAltValid = false;
     // In-flight sensor degradation (audit #2)
@@ -542,8 +540,8 @@ void ProcessFlightState() {
                 descendingCount = 0;
                 previousApogeeDetectAltitude = g_launchAltitude;
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("PAD_IDLE: System initialized. Launch altitude set."));
-                pinMode(PYRO_CHANNEL_1, OUTPUT); digitalWrite(PYRO_CHANNEL_1, LOW);
-                pinMode(PYRO_CHANNEL_2, OUTPUT); digitalWrite(PYRO_CHANNEL_2, LOW);
+                // Pyro pins: nothing to do here. pyro_service() drives every idle channel LOW on every
+                // pass and completes any fire window still open (audit #10), whatever the state.
                 break;
             case ARMED:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("ARMED: System armed and ready for launch."));
@@ -909,38 +907,17 @@ void ProcessFlightState() {
             }
             break;
         case DROGUE_DEPLOY: {
-            // Non-blocking Pyro Logic
+            // audit #10: the state machine only REQUESTS the fire; pyro_service() (called every loop
+            // pass, whatever the state) owns the pin, ends the window after PYRO_FIRE_DURATION and
+            // records completion. A request for a channel that already completed is refused
+            // (audit #1: never re-fire).
             if (DROGUE_PRESENT) {
-                unsigned long timeInState = millis() - g_stateEntryTime;
-
-                if (g_pyroFiredMask & PYRO_FIRED_DROGUE) {
-                    // audit #1: this channel already completed its fire window (possibly
-                    // before a reset). Never fire it again.
-                    digitalWrite(PYRO_CHANNEL_1, LOW);
-                    g_rt.drogueHasFired = false;
+                pyro_request_fire(PYRO_CH_DROGUE);
+                if (pyro_fire_complete(PYRO_CH_DROGUE)) {
                     g_currentFlightState = DROGUE_DESCENT;
-                    break;
-                }
-
-                if (!g_rt.drogueHasFired) {
-                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 1 (Drogue)"));
-                    digitalWrite(PYRO_CHANNEL_1, HIGH);
-                    g_rt.drogueHasFired = true;
-                }
-
-                if (timeInState >= PYRO_FIRE_DURATION) {
-                    digitalWrite(PYRO_CHANNEL_1, LOW);
-                    if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 1 (Drogue) Fired."));
-                    g_rt.drogueHasFired = false;
-                    g_currentFlightState = DROGUE_DESCENT;
-                    // audit #1: record completion BEFORE anything else can reset us, so a
-                    // reset during descent does not fire this channel again.
-                    g_pyroFiredMask |= PYRO_FIRED_DROGUE;
-                    saveStateToEEPROM();
                 }
             } else {
-                 g_rt.drogueHasFired = false;
-                 g_currentFlightState = DROGUE_DESCENT;
+                g_currentFlightState = DROGUE_DESCENT;
             }
             break;
         }
@@ -994,35 +971,12 @@ void ProcessFlightState() {
             }
             break;
         case MAIN_DEPLOY: {
-            // Non-blocking Pyro Logic
             if (MAIN_PRESENT) {
-                 unsigned long timeInState = millis() - g_stateEntryTime;
-
-                 if (g_pyroFiredMask & PYRO_FIRED_MAIN) {
-                     // audit #1: already fired (possibly before a reset). Never fire again.
-                     digitalWrite(PYRO_CHANNEL_2, LOW);
-                     g_rt.mainHasFired = false;
-                     g_currentFlightState = MAIN_DESCENT;
-                     break;
-                 }
-
-                 if (!g_rt.mainHasFired) {
-                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Firing Pyro Channel 2 (Main)"));
-                     digitalWrite(PYRO_CHANNEL_2, HIGH);
-                     g_rt.mainHasFired = true;
-                 }
-
-                 if (timeInState >= PYRO_FIRE_DURATION) {
-                     digitalWrite(PYRO_CHANNEL_2, LOW);
-                     if (g_debugFlags.enableSystemDebug) Serial.println(F("Pyro Channel 2 (Main) Fired."));
-                     g_rt.mainHasFired = false;
-                     g_currentFlightState = MAIN_DESCENT;
-                     // audit #1: persist completion so a reset never re-fires the main.
-                     g_pyroFiredMask |= PYRO_FIRED_MAIN;
-                     saveStateToEEPROM();
-                 }
+                pyro_request_fire(PYRO_CH_MAIN);
+                if (pyro_fire_complete(PYRO_CH_MAIN)) {
+                    g_currentFlightState = MAIN_DESCENT;
+                }
             } else {
-                g_rt.mainHasFired = false;
                 g_currentFlightState = MAIN_DESCENT;
             }
             break;

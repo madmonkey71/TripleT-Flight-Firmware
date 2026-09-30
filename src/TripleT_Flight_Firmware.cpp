@@ -716,6 +716,7 @@ void setup() {
 
 void loop() {
   wdt.feed(); // Feed the watchdog every loop iteration
+  pyro_service(); // audit #10: owns the pyro pins on EVERY pass, whatever the flight state
 
   // Handle initial state management (runs once after setup)
   handleInitialStateManagement();

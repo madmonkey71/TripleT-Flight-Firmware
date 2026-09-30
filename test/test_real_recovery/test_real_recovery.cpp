@@ -156,7 +156,7 @@ void test_reset_mid_drogue_window_fires_drogue_again_but_only_once() {
   // is to fire (a second pulse into an already-fired channel is harmless; a missed drogue is not).
   boot_and_run(make_record(DROGUE_DEPLOY, 0), 500.0f, -1.0f * 3.0f, 5000);   // slow descent from apogee
   TEST_ASSERT_TRUE(g_pin_ever_high[PYRO_CHANNEL_1]);
-  TEST_ASSERT_EQUAL(1u, g_pin_high_writes[PYRO_CHANNEL_1]);
+  TEST_ASSERT_EQUAL(1u, g_pin_rising_edges[PYRO_CHANNEL_1]);   // exactly one fire window
   TEST_ASSERT_EQUAL(PYRO_FIRED_DROGUE, g_pyroFiredMask & PYRO_FIRED_DROGUE);
 
   // ... and a second reset after completion must not fire it again.

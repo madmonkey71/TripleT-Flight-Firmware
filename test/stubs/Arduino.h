@@ -63,16 +63,19 @@ inline int g_pin_mode[TEST_NUM_PINS];          // last pinMode()
 inline int g_pin_level[TEST_NUM_PINS];         // last digitalWrite()
 inline bool g_pin_ever_high[TEST_NUM_PINS];    // any digitalWrite(pin, HIGH) since test_pins_reset()
 inline unsigned g_pin_high_writes[TEST_NUM_PINS];
+inline unsigned g_pin_rising_edges[TEST_NUM_PINS];   // LOW -> HIGH transitions (= distinct fire windows)
+inline unsigned long g_pin_high_ms[TEST_NUM_PINS];   // total time spent HIGH (advanced on each write while HIGH)
 inline unsigned long g_pin_last_high_ms[TEST_NUM_PINS];
 inline void test_pins_reset() {
   for (int i = 0; i < TEST_NUM_PINS; i++) {
     g_pin_mode[i] = INPUT; g_pin_level[i] = LOW; g_pin_ever_high[i] = false;
-    g_pin_high_writes[i] = 0; g_pin_last_high_ms[i] = 0;
+    g_pin_high_writes[i] = 0; g_pin_last_high_ms[i] = 0; g_pin_rising_edges[i] = 0; g_pin_high_ms[i] = 0;
   }
 }
 inline void pinMode(uint8_t pin, uint8_t mode) { if (pin < TEST_NUM_PINS) g_pin_mode[pin] = mode; }
 inline void digitalWrite(uint8_t pin, uint8_t val) {
   if (pin >= TEST_NUM_PINS) return;
+  if (val == HIGH && g_pin_level[pin] == LOW) g_pin_rising_edges[pin]++;
   g_pin_level[pin] = val;
   if (val == HIGH) { g_pin_ever_high[pin] = true; g_pin_high_writes[pin]++; g_pin_last_high_ms[pin] = g_test_millis; }
 }

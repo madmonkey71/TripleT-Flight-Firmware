@@ -68,6 +68,7 @@ WDT_T4<WDT1> wdt;
 #include "kalman_filter.h"   // For Kalman filter functions
 #include "telemetry.h"       // For ENABLE_TELEMETRY packing & framing
 #include "startup_state.h"    // For handleInitialStateManagement()
+#include "setup_sequence.h"   // For runSetupSteps() (audit #14)
 #include "pyro_control.h"     // For pyro_init_safe()
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
@@ -599,6 +600,59 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
 // - setOrientationFilter (part of processCommand)
 // - getOrientationFilterStatus (part of processCommand)
 
+// ---- setup() steps (audit #14) -------------------------------------------------------------------
+// Each slow bring-up step is a function so runSetupSteps() can feed the watchdog before and after
+// it. Bring-up order is unchanged from before.
+static void setupFeedWatchdog() { wdt.feed(); }
+
+static bool setupStepRecovery(void*) {
+  // Load flight state from EEPROM (for power-loss recovery). Phase 1 only: the
+  // pyro-fired mask / flight-in-progress flag are restored and pre-flight states
+  // resolved; an in-flight saved state stays PENDING (vehicle stays in the
+  // pyro-inert STARTUP state) until handleInitialStateManagement() has live
+  // barometer evidence to judge it with (audit #1).
+  recoverFromPowerLoss();
+  return true;
+}
+
+static bool setupStepSdCard(void*) {
+  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
+  if (g_sdCardAvailable) {
+    checkStorageSpace(g_SD, g_availableSpace);
+    Serial.println(F("SD Card initialization successful."));
+  } else {
+    Serial.println(F("SD Card initialization failed."));
+  }
+  return g_sdCardAvailable;
+}
+
+static bool setupStepGps(void*) { gps_init(); return true; }   // This should set up the GPS module
+static bool setupStepBaro(void*) { ms5611_init(); return ms5611_initialized_ok; }   // sets ms5611_initialized_ok
+static bool setupStepIcm(void*) { ICM_20948_init(); return g_icm20948_ready; }       // sets g_icm20948_ready
+static bool setupStepKx134(void*) {
+  if (USE_KX134) {
+    g_kx134_initialized_ok = kx134_init(); // This sets g_kx134_initialized_ok
+    return g_kx134_initialized_ok;
+  }
+  return true;
+}
+static bool setupStepFilters(void*) {
+  // Initialize Kalman filter
+  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
+  // Initialize guidance system
+#if ENABLE_GUIDANCE == 1
+  guidance_init(); // Reset PID controllers and guidance state
+#endif
+  return true;
+}
+static bool setupStepLogFile(void*) {
+  // Create initial log file (file create + CSV header write + flush: can block on a slow card)
+  if (g_sdCardAvailable) {
+    return createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName));
+  }
+  return true;
+}
+
 void setup() {
   // audit #1: the very first action. Drive both pyro channels LOW before the
   // Serial wait, watchdog, SD or sensor bring-up so nothing can leave them
@@ -629,6 +683,7 @@ void setup() {
   config.trigger = 2;                          // seconds (pre-warning, unused)
   config.timeout = WATCHDOG_TIMEOUT_MS / 1000; // seconds until hardware reset
   wdt.begin(config);
+  wdt.feed(); // start the first window fresh
 
   Serial.print(F("Board: "));
   Serial.println(BOARD_NAME);
@@ -659,44 +714,20 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // Load flight state from EEPROM (for power-loss recovery). Phase 1 only: the
-  // pyro-fired mask / flight-in-progress flag are restored and pre-flight states
-  // resolved; an in-flight saved state stays PENDING (vehicle stays in the
-  // pyro-inert STARTUP state) until handleInitialStateManagement() has live
-  // barometer evidence to judge it with (audit #1).
-  recoverFromPowerLoss();
-
-  // Initialize SD card
-  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
-  if (g_sdCardAvailable) {
-    checkStorageSpace(g_SD, g_availableSpace);
-    Serial.println(F("SD Card initialization successful."));
-  } else {
-    Serial.println(F("SD Card initialization failed."));
-  }
-
-  // Initialize GPS
-  gps_init(); // This should set up the GPS module
-
-  // Initialize sensors
-  ms5611_init(); // This sets ms5611_initialized_ok
-  ICM_20948_init(); // This sets g_icm20948_ready
-  if (USE_KX134) {
-    g_kx134_initialized_ok = kx134_init(); // This sets g_kx134_initialized_ok
-  }
-
-  // Initialize Kalman filter
-  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
-
-  // Initialize guidance system
-#if ENABLE_GUIDANCE == 1
-  guidance_init(); // Reset PID controllers and guidance state
-#endif
-
-  // Create initial log file
-  if (g_sdCardAvailable) {
-    createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName));
-  }
+  // Slow bring-up, in the original order, with the watchdog fed before and after EVERY step so its
+  // 5 s window only ever has to cover one step (audit #14). The SD init and log-file creation used
+  // to run unfed inside the window.
+  static const SetupStep kSetupSteps[] = {
+    {"recover state", setupStepRecovery, nullptr},
+    {"sd card",       setupStepSdCard,   nullptr},
+    {"gps",           setupStepGps,      nullptr},
+    {"barometer",     setupStepBaro,     nullptr},
+    {"icm20948",      setupStepIcm,      nullptr},
+    {"kx134",         setupStepKx134,    nullptr},
+    {"filters",       setupStepFilters,  nullptr},
+    {"log file",      setupStepLogFile,  nullptr},
+  };
+  runSetupSteps(kSetupSteps, sizeof(kSetupSteps) / sizeof(kSetupSteps[0]), setupFeedWatchdog);
 
   Serial.println(F("Hardware initialization complete."));
   

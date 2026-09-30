@@ -102,6 +102,21 @@ bool handleFlightStateCommand(const char* command,
                               unsigned long& stateEntryTime_ref,
                               bool& baroCalibrated_ref,
                               bool ms5611_initialized_ok) {
+#if ENABLE_TEST_COMMANDS
+    // Bench-only (audit #13): hang the main loop to prove the watchdog resets the vehicle.
+    // Compiled out of flight builds; even when present, only allowed on the pad.
+    if (strcasecmp(command, "TEST_FREEZE") == 0) {
+        if (currentFlightState_ref != PAD_IDLE) {
+            Serial.print(F("REFUSED: TEST_FREEZE is only allowed in PAD_IDLE. Current state: "));
+            Serial.println(getStateName(currentFlightState_ref));
+            return true;
+        }
+        Serial.println(F("Freezing system for 6 seconds (Watchdog should trigger)..."));
+        delay(6000); // Exceeds 5s watchdog timeout
+        return true;
+    }
+#endif
+
     if (strncasecmp(command, "reset_flight", 12) == 0 && (command[12] == '\0' || command[12] == ' ')) {
         handleResetFlight(command, currentFlightState_ref, previousFlightState_ref, stateEntryTime_ref,
                           baroCalibrated_ref, ms5611_initialized_ok);

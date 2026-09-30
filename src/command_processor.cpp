@@ -561,10 +561,7 @@ void processCommand(const char* command,
         Serial.println(F("  • Use 'clear_to_calibration' if barometer needs calibration"));
         Serial.println(F("==========================================="));
     }
-    else if (strcasecmp(command, "TEST_FREEZE") == 0) {
-        Serial.println(F("Freezing system for 6 seconds (Watchdog should trigger)..."));
-        delay(6000); // Exceeds 5s watchdog timeout
-    }
+    // TEST_FREEZE lives in flight_commands.cpp and only exists when ENABLE_TEST_COMMANDS is set (audit #13).
     else {
         Serial.print(F("Unknown command: "));
         Serial.println(command);

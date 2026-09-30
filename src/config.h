@@ -228,6 +228,15 @@
   120000 // Milliseconds in CALIBRATION before fallback calibration (2 mins)
 #endif
 
+// --- Bench-only test commands (audit #13) ---
+// TEST_FREEZE deliberately hangs the firmware for 6 s to prove the watchdog resets it. A serial
+// command that can freeze the flight computer must not exist in a flight build, so it is compiled
+// out unless this is set to 1 (e.g. `-D ENABLE_TEST_COMMANDS=1` in a bench environment). Even
+// when compiled in it is refused outside PAD_IDLE.
+#ifndef ENABLE_TEST_COMMANDS
+#define ENABLE_TEST_COMMANDS 0
+#endif
+
 // --- Boot-time recovery plausibility (audit #1) ---
 // After a reset the saved flight state is only RESUMED in flight if the live
 // barometer proves the vehicle is really up in the air. Otherwise the vehicle

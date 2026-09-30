@@ -29,7 +29,6 @@ extern float g_launchAltitude;
 extern float g_maxAltitudeReached;
 extern float g_currentAltitude;
 extern bool g_baroCalibrated;
-extern MS5611 g_ms5611Sensor;
 // kx134_accel and icm_accel are defined in their respective _functions.cpp files and externed in their .h files.
 // flight_logic.cpp includes kx134_functions.h and icm_20948_functions.h, so these externs are not needed here.
 // extern float kx134_accel[3];
@@ -100,8 +99,17 @@ struct FlightRuntime {
     // In-flight sensor degradation (audit #2)
     bool          degraded = false;
     unsigned long lastDegradeLogMs = 0;
-    // Detector state
-    int           coastConfirmCount = 0;
+    // Detector state (all confirmation counters advance on FRESH samples only)
+    FreshCounter  coastConfirm;
+    FreshCounter  apogeeBaro;
+    float         apogeeBaroRef = 0.0f;        // peak AGL since the transonic lockout ended
+    bool          apogeeBaroRefValid = false;
+    FreshCounter  apogeeAccel;
+    unsigned long freefallStartMs = 0;         // 0 = not currently in free fall
+    FreshCounter  apogeeGps;
+    float         maxGpsAlt = 0.0f;
+    bool          gpsAltValid = false;
+    BaroTrack     baroTrack;                   // recent fresh baro samples (vertical rate etc.)
     // Landing detector (moving average of altitude + confirmation timer)
     static const int kLandingReadings = 10;
     float         landingAlt[kLandingReadings] = {0};
@@ -402,10 +410,15 @@ void ProcessFlightState() {
     }
     g_rt.lastRecordedState = g_currentFlightState;
 
-    if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
+    // audit #4/#5: the barometer is "usable" if calibrated AND delivering fresh samples. This
+    // replaces g_ms5611Sensor.isConnected(), which pinged the I2C bus on every loop pass and
+    // could not tell a stale cached value from a live one.
+    const bool baroUsable = g_baroCalibrated && baroDataFresh();
+    if (baroUsable) {
         currentAbsoluteBaroAlt = ms5611_get_altitude();
         currentAglAlt = currentAbsoluteBaroAlt - g_launchAltitude;
         g_currentAltitude = currentAbsoluteBaroAlt; // keep the EEPROM snapshot's altitude field meaningful
+        g_rt.baroTrack.push(g_baroSample.seq, millis(), currentAbsoluteBaroAlt); // fresh samples only
     }
 
     if (g_currentFlightState != g_previousFlightState) {
@@ -482,7 +495,7 @@ void ProcessFlightState() {
                 // Actual periodic waiting message and transition logic is in the main switch block below.
                 break;
             case PAD_IDLE:
-                flightSetLaunchAltitude(g_ms5611Sensor.isConnected() && g_baroCalibrated ? ms5611_get_altitude() : 0.0f);
+                flightSetLaunchAltitude(baroUsable ? ms5611_get_altitude() : 0.0f);
                 g_maxAltitudeReached = 0.0f;
                 boostEndTime = 0;
                 landingDetectedFlag = false;
@@ -494,7 +507,7 @@ void ProcessFlightState() {
                 break;
             case ARMED:
                 if (g_debugFlags.enableSystemDebug) Serial.println(F("ARMED: System armed and ready for launch."));
-                if (g_baroCalibrated && g_ms5611Sensor.isConnected()) {
+                if (baroUsable) {
                     g_main_deploy_altitude_m_agl = currentAglAlt + MAIN_DEPLOY_HEIGHT_ABOVE_GROUND_M;
                     if (g_debugFlags.enableSystemDebug) {
                         Serial.print(F("ARMED: Dynamic main deployment altitude set to: "));
@@ -757,7 +770,7 @@ void ProcessFlightState() {
             }
             #endif
 
-            if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt > g_maxAltitudeReached) {
+            if (baroUsable && currentAglAlt > g_maxAltitudeReached) {
                  g_maxAltitudeReached = currentAglAlt;
             }
             detectBoostEnd(); // This function internally sets g_currentFlightState = COAST if burnout detected
@@ -811,11 +824,13 @@ void ProcessFlightState() {
             }
             #endif
 
+            // A COAST without a burnout timestamp would leave the backup timer unarmed.
+            if (boostEndTime == 0) boostEndTime = millis() > 0 ? millis() : 1;
+            if (baroUsable && currentAglAlt > g_maxAltitudeReached) {
+                 g_maxAltitudeReached = currentAglAlt;
+            }
             if (detectApogee()) {
                 g_currentFlightState = APOGEE;
-            }
-            if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt > g_maxAltitudeReached) {
-                 g_maxAltitudeReached = currentAglAlt;
             }
             break;
         case APOGEE:
@@ -869,7 +884,7 @@ void ProcessFlightState() {
         }
         case DROGUE_DESCENT:
             if (MAIN_PRESENT) {
-                if (g_ms5611Sensor.isConnected() && g_baroCalibrated && currentAglAlt < g_main_deploy_altitude_m_agl) {
+                if (baroUsable && currentAglAlt < g_main_deploy_altitude_m_agl) {
                     g_currentFlightState = MAIN_DEPLOY;
                     g_stateEntryTime = millis(); // Initialize timer for MAIN_DEPLOY
                 }
@@ -1161,35 +1176,65 @@ void ProcessFlightState() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Accelerometer access with freshness (audit #4)
+// ---------------------------------------------------------------------------
+struct AccelReading {
+    bool valid;      // initialised, non-zero and delivering fresh samples
+    float mag;       // |specific force| in g (axis / mounting independent)
+    uint32_t seq;    // sample sequence number of the source used
+};
+
+static float vecMag(const float* v) { return sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+static bool vecNonZero(const float* v) { return v[0] != 0.0f || v[1] != 0.0f || v[2] != 0.0f; }
+
+// Choose the accelerometer. preferKx134 selects the high-g part (launch, burnout,
+// high-force veto); otherwise the ICM-20948 is preferred for its better low-g
+// resolution (free-fall detection). A source is only usable if initialised,
+// non-zero and stamped by its driver within ACCEL_STALE_TIMEOUT_MS.
+static AccelReading readAccel(bool preferKx134) {
+    const unsigned long now = millis();
+    AccelReading kx = {false, 0.0f, 0};
+    AccelReading icm = {false, 0.0f, 0};
+    if (g_kx134_initialized_ok && vecNonZero(kx134_accel) && g_kx134Sample.seq > 0 &&
+        (now - g_kx134Sample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
+        kx = {true, vecMag(kx134_accel), g_kx134Sample.seq};
+    }
+    if (g_icm20948_ready && vecNonZero(icm_accel) && g_icmSample.seq > 0 &&
+        (now - g_icmSample.lastMs) <= ACCEL_STALE_TIMEOUT_MS) {
+        icm = {true, vecMag(icm_accel), g_icmSample.seq};
+    }
+    if (preferKx134) return kx.valid ? kx : icm;
+    return icm.valid ? icm : kx;
+}
+
 void detectBoostEnd() {
     if (g_currentFlightState != BOOST) return;
 
-    if (get_accel_magnitude(g_kx134_initialized_ok, kx134_accel, g_icm20948_ready, icm_accel, g_debugFlags.enableSystemDebug) < COAST_ACCEL_THRESHOLD) {
-        g_rt.coastConfirmCount++;
-        if (g_rt.coastConfirmCount >= COAST_CONFIRMATION_COUNT) {
-            boostEndTime = millis();
-            g_currentFlightState = COAST;
-            g_rt.coastConfirmCount = 0;
-        }
-    } else {
-        g_rt.coastConfirmCount = 0;
+    // audit #4: count FRESH samples only. Previously this ran on every loop pass against
+    // a value cached at 10 Hz, so COAST_CONFIRMATION_COUNT passes took about a millisecond.
+    const AccelReading a = readAccel(true);
+    if (!a.valid) return; // no fresh data: neither confirm nor reset
+
+    g_rt.coastConfirm.feed(a.seq, a.mag < COAST_ACCEL_THRESHOLD);
+    if (g_rt.coastConfirm.count >= COAST_CONFIRMATION_COUNT) {
+        boostEndTime = millis();
+        g_currentFlightState = COAST;
+        g_rt.coastConfirm.reset();
     }
 }
-
-// File-scope static variables for apogee detection
-// Moved from function scope to allow proper reset between flights
-static int s_baro_descending_count = 0;
-static int s_accel_negative_count = 0;
-static int s_gps_descending_count = 0;
-static float s_maxGpsAltitude = 0.0f;
 
 // Helper function to reset apogee detection counters
 // Called when entering COAST state to prevent false apogee from stale values
 void resetApogeeDetectionCounters() {
-    s_baro_descending_count = 0;
-    s_accel_negative_count = 0;
-    s_gps_descending_count = 0;
-    s_maxGpsAltitude = 0.0f;
+    g_rt.apogeeBaro.reset();
+    g_rt.apogeeBaroRef = 0.0f;
+    g_rt.apogeeBaroRefValid = false;
+    g_rt.apogeeAccel.reset();
+    g_rt.freefallStartMs = 0;
+    g_rt.apogeeGps.reset();
+    g_rt.maxGpsAlt = 0.0f;
+    g_rt.gpsAltValid = false;
 }
 
 // Reset every piece of flight-logic bookkeeping that must not leak from one
@@ -1208,64 +1253,113 @@ void flightLogicReset() {
     reset_max_stability_metrics();
 }
 
+// ---------------------------------------------------------------------------
+// Apogee detection (audit #4)
+//
+// OR / first-match semantics are kept (baro -> accelerometer -> GPS -> backup timer),
+// but no sensor method can fire on its own without:
+//   * FRESH-sample confirmation (counts advance only when the sensor produced a new
+//     sample, so N counts = N sensor periods),
+//   * the common gates: at least APOGEE_MIN_TIME_AFTER_BURNOUT_MS since burnout and
+//     (with a working barometer) at least APOGEE_MIN_ALTITUDE_GAIN_M of climb, and
+//   * an INDEPENDENT cross-check that cannot be fooled by the same fault:
+//       baro  : vetoed while the accelerometer still shows hard deceleration
+//               (specific force > APOGEE_HIGH_FORCE_VETO_G) and locked out for
+//               APOGEE_BARO_TRANSONIC_LOCKOUT_MS after burnout (its descent
+//               reference restarts when the lockout ends);
+//       accel : magnitude of specific force below APOGEE_ACCEL_FREEFALL_G (near
+//               free fall) sustained for a window, vetoed while the barometer is
+//               still climbing faster than APOGEE_CLIMB_VETO_MPS;
+//       GPS   : vetoed by either check above.
+//   A missing / stale cross-check sensor never vetoes, so a single sensor failure
+//   cannot block deployment. The backup timer is ungated: it is the last resort.
+// ---------------------------------------------------------------------------
 bool detectApogee() {
+    const unsigned long now = millis();
+    const bool haveBurnout = boostEndTime > 0;
+    const unsigned long sinceBurnout = haveBurnout ? now - boostEndTime : 0;
+    const bool baroUsable = g_baroCalibrated && baroDataFresh();
+
+    // Cross-check inputs (absent data never vetoes).
+    float vs = 0.0f;
+    const bool haveVs = baroUsable && g_rt.baroTrack.verticalSpeed(10, 5, 300, vs);
+    const bool baroClimbing = haveVs && vs > APOGEE_CLIMB_VETO_MPS;
+    const AccelReading hi = readAccel(true);
+    const bool highForce = hi.valid && hi.mag > APOGEE_HIGH_FORCE_VETO_G;
+
+    const bool gatesOk = haveBurnout && sinceBurnout >= APOGEE_MIN_TIME_AFTER_BURNOUT_MS &&
+                         (!baroUsable || g_maxAltitudeReached >= APOGEE_MIN_ALTITUDE_GAIN_M);
+
     bool apogeeDetected = false;
 
     // Method 1: Barometric Detection (Primary)
-    // Compare AGL to AGL: g_maxAltitudeReached is tracked in metres above
-    // ground level, so the absolute altitude must have the launch elevation
-    // subtracted before comparison. (Comparing the absolute altitude directly
-    // — as this method previously did — meant the condition was almost never
-    // true at launch sites above sea level, silently disabling the primary
-    // apogee detector.)
-    if (g_ms5611Sensor.isConnected() && g_baroCalibrated) {
-        float currentBaroAglAlt = ms5611_get_altitude() - g_launchAltitude;
-        if (currentBaroAglAlt < g_maxAltitudeReached - APOGEE_BARO_DESCENT_THRESHOLD) {
-            s_baro_descending_count++;
+    // AGL is compared with AGL: g_maxAltitudeReached is tracked in metres above ground
+    // level. The descent reference is the peak AGL seen AFTER the transonic lockout.
+    if (baroUsable) {
+        const float agl = ms5611_get_altitude() - g_launchAltitude;
+        if (haveBurnout && sinceBurnout < APOGEE_BARO_TRANSONIC_LOCKOUT_MS) {
+            g_rt.apogeeBaro.reset();
+            g_rt.apogeeBaroRef = agl;          // reference restarts when the lockout ends
+            g_rt.apogeeBaroRefValid = true;
         } else {
-            s_baro_descending_count = 0;
+            if (!g_rt.apogeeBaroRefValid || agl > g_rt.apogeeBaroRef) {
+                g_rt.apogeeBaroRef = agl;
+                g_rt.apogeeBaroRefValid = true;
+            }
+            g_rt.apogeeBaro.feed(g_baroSample.seq, agl < g_rt.apogeeBaroRef - APOGEE_BARO_DESCENT_THRESHOLD);
         }
 
-        if (s_baro_descending_count >= APOGEE_CONFIRMATION_COUNT) {
+        if (g_rt.apogeeBaro.count >= APOGEE_CONFIRMATION_COUNT && gatesOk && !highForce) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Barometer)"));
             apogeeDetected = true;
         }
     }
 
-    // Method 2: Accelerometer Detection (Secondary)
-    if (!apogeeDetected && g_icm20948_ready) {
-        if (icm_accel[2] < 0.0f) {
-            s_accel_negative_count++;
-        } else {
-            s_accel_negative_count = 0;
-        }
-
-        if (s_accel_negative_count >= APOGEE_ACCEL_CONFIRMATION_COUNT) {
-            if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Accelerometer)"));
-            apogeeDetected = true;
-        }
-    }
-
-    // Method 3: GPS Altitude Detection (Tertiary)
-    if (!apogeeDetected && getFixType() > 0) {
-        float currentGpsAlt = getGPSAltitude();
-
-        if (currentGpsAlt > s_maxGpsAltitude) {
-            s_maxGpsAltitude = currentGpsAlt;
-            s_gps_descending_count = 0;
-        } else if (currentGpsAlt < s_maxGpsAltitude - 5.0) {
-            s_gps_descending_count++;
-        }
-
-        if (s_gps_descending_count >= APOGEE_GPS_CONFIRMATION_COUNT) {
-            if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (GPS)"));
-            apogeeDetected = true;
+    // Method 2: Accelerometer free-fall Detection (Secondary)
+    if (!apogeeDetected) {
+        const AccelReading a = readAccel(false);
+        if (a.valid) {
+            const bool inFreefall = a.mag < APOGEE_ACCEL_FREEFALL_G;
+            if (g_rt.apogeeAccel.feed(a.seq, inFreefall)) {
+                if (inFreefall) {
+                    if (g_rt.freefallStartMs == 0) g_rt.freefallStartMs = now > 0 ? now : 1;
+                } else {
+                    g_rt.freefallStartMs = 0;
+                }
+            }
+            const unsigned long window = baroUsable ? APOGEE_ACCEL_FREEFALL_WINDOW_MS
+                                                    : APOGEE_ACCEL_FREEFALL_WINDOW_NO_BARO_MS;
+            if (g_rt.apogeeAccel.count >= APOGEE_ACCEL_SAMPLES && g_rt.freefallStartMs != 0 &&
+                (now - g_rt.freefallStartMs) >= window && gatesOk && !baroClimbing) {
+                if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Accelerometer free fall)"));
+                apogeeDetected = true;
+            }
         }
     }
 
-    // Method 4: Backup Timer (Failsafe)
-    if (!apogeeDetected && boostEndTime > 0) {
-        if (millis() - boostEndTime > BACKUP_APOGEE_TIME_MS) {
+    // Method 3: GPS Altitude Detection (Tertiary) - needs a 3D fix and fresh PVT
+    if (!apogeeDetected) {
+        const uint8_t fix = getFixType();
+        if ((fix == 3 || fix == 4) && g_gpsSample.seq > 0 && (now - g_gpsSample.lastMs) <= GPS_STALE_TIMEOUT_MS) {
+            const bool freshGps = !g_rt.apogeeGps.primed || g_gpsSample.seq != g_rt.apogeeGps.lastSeq;
+            if (freshGps) {
+                const float gpsAlt = getGPSAltitude();
+                if (!g_rt.gpsAltValid || gpsAlt > g_rt.maxGpsAlt) {
+                    g_rt.maxGpsAlt = gpsAlt;
+                    g_rt.gpsAltValid = true;
+                }
+                g_rt.apogeeGps.feed(g_gpsSample.seq, gpsAlt < g_rt.maxGpsAlt - APOGEE_GPS_DESCENT_THRESHOLD_M);
+            }
+            if (g_rt.apogeeGps.count >= APOGEE_GPS_CONFIRMATION_COUNT && gatesOk && !baroClimbing && !highForce) {
+                if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (GPS)"));
+                apogeeDetected = true;
+            }
+        }
+    }
+
+    // Method 4: Backup Timer (Failsafe) - ungated by design
+    if (!apogeeDetected && haveBurnout) {
+        if (sinceBurnout > BACKUP_APOGEE_TIME_MS) {
             if (g_debugFlags.enableSystemDebug) Serial.println(F("APOGEE DETECTED (Backup Timer)"));
             apogeeDetected = true;
         }

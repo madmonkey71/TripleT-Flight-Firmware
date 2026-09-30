@@ -5,6 +5,7 @@
 #include "config.h" 
 #include "utility_functions.h" // Added to access convertQuaternionToEuler
 #include "ICM_20948.h"
+#include "sensor_samples.h"
 #include "data_structures.h"
 #include "debug_flags.h"
 
@@ -294,6 +295,7 @@ void ICM_20948_read() {
   
     if (myICM.dataReady()) {
     myICM.getAGMT();  // Get the latest data
+    sample_mark(g_icmSample, millis()); // a genuinely new sample (audit #4)
     
     // Store raw magnetometer data first before calibration
     icm_mag[0] = myICM.magX();

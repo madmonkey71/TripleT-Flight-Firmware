@@ -22,16 +22,17 @@ void test_real_nominal_flight_walk() {
   harness_set_accel_g(4.0f);                 // liftoff
   harness_run_ms(100);
   TEST_ASSERT_EQUAL(BOOST, g_currentFlightState);
+  harness_ramp_baro(160.0f, 1000);           // powered ascent
 
   harness_set_accel_g(0.1f);                 // burnout
-  harness_run_ms(100);
+  harness_run_ms(500);                       // 3+ fresh samples below the threshold
   TEST_ASSERT_EQUAL(COAST, g_currentFlightState);
 
-  harness_set_baro_alt(600.0f);              // apex
-  harness_run_ms(100);
+  harness_set_accel_g(0.8f);
+  harness_ramp_baro(600.0f, 6000);           // coast up to apex (600 m)
   TEST_ASSERT_EQUAL(COAST, g_currentFlightState);
-  harness_set_baro_alt(590.0f);              // now clearly descending
-  harness_run_ms(200);
+  harness_ramp_baro(590.0f, 1000);           // now clearly descending
+  harness_run_ms(500);
   TEST_ASSERT_TRUE(g_currentFlightState >= APOGEE);
 
   harness_run_ms(PYRO_FIRE_DURATION + 100);  // drogue fire window
@@ -39,13 +40,11 @@ void test_real_nominal_flight_walk() {
   TEST_ASSERT_TRUE(g_pin_ever_high[PYRO_CHANNEL_1]);
   TEST_ASSERT_EQUAL(LOW, g_pin_level[PYRO_CHANNEL_1]);
 
-  harness_set_baro_alt(150.0f);              // below main deploy altitude (launch + 100 m)
-  harness_run_ms(100);
-  harness_run_ms(PYRO_FIRE_DURATION + 100);
+  harness_ramp_baro(150.0f, 4000);           // below main deploy altitude (launch + 100 m)
+  harness_run_ms(PYRO_FIRE_DURATION + 300);
   TEST_ASSERT_EQUAL(MAIN_DESCENT, g_currentFlightState);
   TEST_ASSERT_TRUE(g_pin_ever_high[PYRO_CHANNEL_2]);
 }
-
 
 // ---- helpers ---------------------------------------------------------------
 static const FlightState kAirborneStates[] = {BOOST, COAST, APOGEE, DROGUE_DEPLOY, DROGUE_DESCENT, MAIN_DEPLOY, MAIN_DESCENT};

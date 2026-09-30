@@ -2,6 +2,7 @@
 #include "gps_functions.h"
 #include "config.h"
 #include "gps_config.h"
+#include "sensor_samples.h"
 #include "debug_flags.h"
 #include <Arduino.h>
 #include <SPI.h>
@@ -166,6 +167,7 @@ bool gps_read() {
 
   // Update GPS data if available
   if (myGNSS.getPVT()) {
+    sample_mark(g_gpsSample, millis()); // a genuinely new PVT solution (audit #4)
     // Get basic positioning data
     GPS_latitude = myGNSS.getLatitude();
     GPS_longitude = myGNSS.getLongitude();

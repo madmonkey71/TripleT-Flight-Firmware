@@ -108,18 +108,18 @@
   0.5f // Acceleration threshold (in g) to detect the end of the boost phase
        // (motor burnout).
 #define COAST_CONFIRMATION_COUNT                                               \
-  3 // Consecutive readings below COAST_ACCEL_THRESHOLD to confirm burnout.
+  3 // Consecutive FRESH accelerometer samples below COAST_ACCEL_THRESHOLD to
+    // confirm burnout (sensor samples, not main-loop passes - audit #4).
 #define APOGEE_CONFIRMATION_COUNT                                              \
-  5 // Number of consecutive barometer readings required to confirm apogee.
+  5 // Consecutive FRESH barometer samples required to confirm apogee.
+    // Confirmation counts everywhere now advance only when the sensor has
+    // produced a new sample (see sensor_samples.h), so 5 = 5 sensor periods.
 #define LANDING_CONFIRMATION_COUNT                                             \
   10 // Number of consecutive readings required to confirm landing.
 #define BACKUP_APOGEE_TIME_MS                                                  \
   20000 // Failsafe time in ms after motor burnout to trigger apogee.
-#define APOGEE_ACCEL_CONFIRMATION_COUNT                                        \
-  5 // Number of consecutive readings of negative Z-axis acceleration to confirm
-    // apogee.
 #define APOGEE_GPS_CONFIRMATION_COUNT                                          \
-  3 // Number of consecutive GPS altitude readings showing descent to confirm
+  3 // Consecutive FRESH GPS altitude samples showing descent to confirm
     // apogee.
 
 // Redundant Sensing Apogee Detection
@@ -127,14 +127,31 @@
 #define APOGEE_BARO_DESCENT_THRESHOLD                                          \
   1.0 // Meters change to confirm descent for apogee
 #endif
-#ifndef APOGEE_ACCEL_THRESHOLD
-#define APOGEE_ACCEL_THRESHOLD                                                 \
-  -0.1 // G value for Z-axis accelerometer apogee detection
-#endif
+// Accelerometer (free-fall) apogee method. The old test (`icm_accel[2] < 0`) depended on
+// the IMU's mounting/axis sign and on noise around zero. Near apogee drag ~ 0, so the
+// MAGNITUDE of specific force collapses towards 0 g whichever way the IMU is mounted.
+#define APOGEE_ACCEL_FREEFALL_G 0.3f  // |a| below this (g) counts as free fall
 #ifndef APOGEE_ACCEL_SAMPLES
 #define APOGEE_ACCEL_SAMPLES                                                   \
-  5 // Consecutive samples for accelerometer apogee detection
+  5 // Consecutive FRESH accelerometer samples in free fall required
 #endif
+#define APOGEE_ACCEL_FREEFALL_WINDOW_MS 500          // ...sustained at least this long
+#define APOGEE_ACCEL_FREEFALL_WINDOW_NO_BARO_MS 1500 // ...and this long when no fresh barometer can corroborate
+
+// Independent plausibility gates for the sensor-based apogee methods (audit #4).
+// The backup timer is deliberately NOT gated by any of them.
+#define APOGEE_MIN_TIME_AFTER_BURNOUT_MS 2000   // No sensor method may fire earlier than this after burnout
+#define APOGEE_MIN_ALTITUDE_GAIN_M 15.0f        // ...nor before max AGL has reached this (only checked with a working baro)
+// Barometric method: ignore the pressure disturbance while the vehicle may still be
+// transonic (shock over the static ports gives false "descents"). The descent
+// reference restarts when the lockout ends, so a spike during it cannot poison it.
+#define APOGEE_BARO_TRANSONIC_LOCKOUT_MS 3000
+#define APOGEE_CLIMB_VETO_MPS 10.0f     // Baro still climbing faster than this vetoes the accel/GPS methods
+#define APOGEE_HIGH_FORCE_VETO_G 1.5f   // Specific force above this (still decelerating hard) vetoes the baro/GPS methods
+#define APOGEE_GPS_DESCENT_THRESHOLD_M 5.0f // GPS altitude drop from its max that counts as descent
+// Sensor freshness: data older than this is treated as unavailable.
+#define ACCEL_STALE_TIMEOUT_MS 500
+#define GPS_STALE_TIMEOUT_MS 2000
 
 // Redundant Sensing Landing Detection
 #ifndef LANDING_ACCEL_MIN_G

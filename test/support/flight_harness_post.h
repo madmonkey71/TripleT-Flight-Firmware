@@ -40,6 +40,7 @@ inline void harness_reset() {
   g_sdCardAvailable = true;
   g_loggingEnabled = true;
   g_baroSample = {0, 0}; g_icmSample = {0, 0}; g_kx134Sample = {0, 0}; g_gpsSample = {0, 0};
+  GPS_fixType = 0;
   pressure = 1013.25f;
   flightLogicReset();
   stateManagementResetRuntime();
@@ -61,8 +62,17 @@ inline void harness_pass() {
   ProcessFlightState();
 }
 
-// Deliver one fresh barometer sample (what ms5611_read() does on success).
+// Deliver one fresh sample from a sensor (what its driver does when it stores new data).
 inline void harness_new_baro_sample() { sample_mark(g_baroSample, millis()); }
+inline void harness_new_accel_samples() { sample_mark(g_icmSample, millis()); sample_mark(g_kx134Sample, millis()); }
+inline void harness_new_gps_sample() { sample_mark(g_gpsSample, millis()); }
+// All sensors at once (10 Hz cadence). GPS only delivers with a 3D fix.
+inline void harness_new_samples() {
+  harness_new_baro_sample();
+  harness_new_accel_samples();
+  if (GPS_fixType >= 3) harness_new_gps_sample();
+}
+inline float harness_baro_alt() { return g_test_raw_alt + baro_altitude_offset; }
 
 // Advance `ms` of simulated time in 10 ms loop passes. Like the firmware, the
 // sensors deliver a FRESH sample every 100 ms (10 Hz) while the loop runs 10x
@@ -72,8 +82,19 @@ inline void harness_run_ms(unsigned long ms) {
   static unsigned long phase = 0;
   for (unsigned long t = 0; t < ms; t += 10) {
     test_advance_ms(10);
-    if ((++phase % 10) == 0) harness_new_baro_sample();
+    if ((++phase % 10) == 0) harness_new_samples();
     harness_pass();
+  }
+}
+
+// Move the barometric altitude linearly to `to_alt` over `ms`, delivering fresh
+// samples every 100 ms, running the flight logic on every 10 ms pass.
+inline void harness_ramp_baro(float to_alt, unsigned long ms) {
+  const float from = harness_baro_alt();
+  const unsigned long steps = ms / 10;
+  for (unsigned long i = 1; i <= steps; i++) {
+    harness_set_baro_alt(from + (to_alt - from) * (float)i / (float)steps);
+    harness_run_ms(10);
   }
 }
 
@@ -83,7 +104,7 @@ inline void harness_on_pad(float launch_alt = 100.0f) {
   baro_calibration_done = true;
   harness_set_baro_alt(launch_alt);
   harness_set_accel_g(1.0f);
-  harness_new_baro_sample();
+  harness_new_samples();
   g_currentFlightState = PAD_IDLE;
   harness_pass();          // state-entry actions (launch altitude capture, pins LOW)
 }

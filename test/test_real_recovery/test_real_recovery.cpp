@@ -49,7 +49,7 @@ static void boot_and_run(const FlightStateData& rec, float start_alt, float vs, 
     test_advance_ms(10);
     alt += vs * 0.01f;
     harness_set_baro_alt(alt);
-    if (((t / 10) % 10) == 0) harness_new_baro_sample();
+    if (((t / 10) % 10) == 0) harness_new_samples();
     harness_pass();
   }
 }

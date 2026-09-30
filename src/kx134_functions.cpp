@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "sensor_samples.h"
 #include "kx134_functions.h" // Click here to get the library: http://librarymanager/All#SparkFun_KX13X
 
 // Global variable definitions
@@ -65,6 +66,7 @@ void kx134_read(){
     kx134_accel[0] = kx134AccelData.xData;
     kx134_accel[1] = kx134AccelData.yData;
     kx134_accel[2] = kx134AccelData.zData;
+    sample_mark(g_kx134Sample, millis()); // a genuinely new sample (audit #4)
   }
 }
 

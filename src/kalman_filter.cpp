@@ -1,5 +1,6 @@
 #include "kalman_filter.h"
 #include <math.h> // For atan2, sqrt, etc.
+#include "config.h" // KALMAN_ACCEL_GATE_* (audit #9)
 
 // --- Internal State Variables ---
 // Simplified state: roll, pitch, yaw. A more complete filter would also estimate gyro biases.
@@ -29,6 +30,10 @@ static float R_accel[2] = {0.03f, 0.03f}; // Measurement noise for roll and pitc
 // R_mag = [[R_mag_x, 0], [0, R_mag_y]]
 static float R_mag = 0.03f; // Measurement noise for magnetometer-based yaw
 
+// Gate bookkeeping (audit #9)
+static float kf_last_gyro_mag = 0.0f;            // |gyro| (rad/s) seen by the most recent kalman_predict()
+static unsigned long kf_accel_skipped = 0;       // accelerometer updates rejected by the gate
+
 // --- Kalman Filter Functions ---
 
 void kalman_init(float initial_roll, float initial_pitch, float initial_yaw) {
@@ -41,6 +46,8 @@ void kalman_init(float initial_roll, float initial_pitch, float initial_yaw) {
     P_diag[0] = 1.0f; // Uncertainty in roll
     P_diag[1] = 1.0f; // Uncertainty in pitch
     P_diag[2] = 1.0f; // Uncertainty in yaw
+    kf_last_gyro_mag = 0.0f;
+    kf_accel_skipped = 0;
 
     // Q and R are set to default values above, but could also be initialized here if needed.
 }
@@ -59,6 +66,7 @@ void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt) {
     //  kf_yaw   += dt * (sin(kf_roll) / cos(kf_pitch) * gyro_y + cos(kf_roll) / cos(kf_pitch) * gyro_z);
     // For this initial simplified version, let's use direct integration, assuming gyro provides dRoll, dPitch, dYaw
 
+    kf_last_gyro_mag = sqrtf(gyro_x * gyro_x + gyro_y * gyro_y + gyro_z * gyro_z); // for the accel gate
     kf_roll += gyro_x * dt;
     kf_pitch += gyro_y * dt;
     kf_yaw += gyro_z * dt; // Yaw is simple gyro integration for now
@@ -79,27 +87,39 @@ void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt) {
     P_diag[2] += Q_angle[2] * dt; // Yaw uncertainty also grows
 }
 
-void kalman_update_accel(float accel_x, float accel_y, float accel_z) {
+bool kalman_update_accel(float accel_x, float accel_y, float accel_z) {
+    // --- Gate (audit #9) ---
+    // The accelerometer measures specific force, which equals gravity only when the vehicle is
+    // not accelerating. Under thrust (several g), drag, or in free fall (~0 g) the vector's
+    // direction says nothing about "down", and a fast rotation makes the sample unrepresentative
+    // of the filter's (gyro-propagated) attitude. Skip the update outside the band and let the
+    // covariance keep growing; the predict step already inflates P by Q*dt.
+    if (!isfinite(accel_x) || !isfinite(accel_y) || !isfinite(accel_z)) {
+        kf_accel_skipped++;
+        return false;
+    }
+    const float mag = sqrtf(accel_x * accel_x + accel_y * accel_y + accel_z * accel_z);
+    if (mag < KALMAN_ACCEL_GATE_LOW_G || mag > KALMAN_ACCEL_GATE_HIGH_G ||
+        kf_last_gyro_mag > KALMAN_ACCEL_GATE_MAX_GYRO_RPS) {
+        kf_accel_skipped++;
+        return false;
+    }
+
     // --- Calculate Roll and Pitch from Accelerometer ---
     // These are the "measurements" for the Kalman filter.
-    // atan2 is generally preferred over atan for robustness.
-    // Ensure accel_z is not zero to avoid division by zero, though atan2 handles it.
-    float measured_roll = atan2(accel_y, accel_z);
-    // Pitch calculation: using sqrt(accel_y^2 + accel_z^2) can be problematic if accel_y and accel_z are zero.
-    // A common alternative is atan2(accel_x, sqrt(accel_y*accel_y + accel_z*accel_z)).
-    // Or, if roll is small: atan(-accel_x / (accel_y * sin(measured_roll) + accel_z * cos(measured_roll)))
-    // For simplicity and to avoid issues if Z is near zero when horizontal:
-    float measured_pitch = atan2(-accel_x, sqrt(accel_y * accel_y + accel_z * accel_z));
+    // Pitch: atan2(-ax, sqrt(ay^2 + az^2)) is well defined for any non-zero vector.
+    // Roll: atan2(ay, az) is undefined when both are ~0 (nose straight up/down, gimbal lock):
+    // in that case only the pitch measurement is applied instead of feeding atan2(0,0) = 0.
+    const float yz2 = accel_y * accel_y + accel_z * accel_z;
+    const bool rollObservable = yz2 > 1e-6f;
+    const float measured_roll = rollObservable ? atan2f(accel_y, accel_z) : kf_roll;
+    const float measured_pitch = atan2f(-accel_x, sqrtf(yz2));
 
     // --- Kalman Gain K calculation (simplified for diagonal P and R) ---
-    // K_roll = P_roll / (P_roll + R_accel_roll)
-    // K_pitch = P_pitch / (P_pitch + R_accel_pitch)
-    float K_roll = P_diag[0] / (P_diag[0] + R_accel[0]);
+    float K_roll = rollObservable ? P_diag[0] / (P_diag[0] + R_accel[0]) : 0.0f;
     float K_pitch = P_diag[1] / (P_diag[1] + R_accel[1]);
 
     // --- Update state estimate with measurement ---
-    // roll_k = roll_{k-} + K_roll * (measured_roll - roll_{k-})
-    // pitch_k = pitch_{k-} + K_pitch * (measured_pitch - pitch_{k-})
     kf_roll = kf_roll + K_roll * (measured_roll - kf_roll);
     kf_pitch = kf_pitch + K_pitch * (measured_pitch - kf_pitch);
 
@@ -107,11 +127,10 @@ void kalman_update_accel(float accel_x, float accel_y, float accel_z) {
     // Magnetometer would be needed for yaw correction.
 
     // --- Update error covariance matrix P ---
-    // P_k_roll = (1 - K_roll) * P_{k-}_roll
-    // P_k_pitch = (1 - K_pitch) * P_{k-}_pitch
     P_diag[0] = (1 - K_roll) * P_diag[0];
     P_diag[1] = (1 - K_pitch) * P_diag[1];
     // P_diag[2] for yaw remains unchanged as yaw is not updated by accelerometer.
+    return true;
 }
 
 /**
@@ -144,6 +163,10 @@ void kalman_update_mag(float mag_x, float mag_y, float mag_z) {
     // Update Yaw error covariance
     P_diag[2] = (1 - K_yaw) * P_diag[2];
 }
+
+float kalman_get_variance(int axis) { return (axis >= 0 && axis < 3) ? P_diag[axis] : 0.0f; }
+
+unsigned long kalman_accel_updates_skipped() { return kf_accel_skipped; }
 
 void kalman_get_orientation(float &roll, float &pitch, float &yaw) {
     roll = kf_roll;

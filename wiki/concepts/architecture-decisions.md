@@ -3,8 +3,8 @@ title: Architecture Decision Records
 type: concept
 tags: [adr, architecture, decisions, history]
 created: 2026-05-25
-updated: 2026-07-02
-related_files: [src/hal/hal_interfaces.h, src/sensors/imu_interface.h, src/flight_logic.cpp, src/state_management.cpp, src/kalman_filter.cpp]
+updated: 2026-09-30
+related_files: [src/hal/hal_interfaces.h, src/sensors/imu_interface.h, src/flight_logic.cpp, src/state_management.cpp, src/kalman_filter.cpp, src/pyro_control.cpp]
 ---
 
 Major architectural decisions and their rationale. Each ADR records *what was chosen*, *why*, *what alternatives were rejected*, and *the resulting trade-offs*. Source code is the final truth; this page exists so future contributors don't relitigate decisions whose context has decayed.
@@ -65,6 +65,8 @@ Major architectural decisions and their rationale. Each ADR records *what was ch
 - Noisy data is filtered by the consensus requirement.
 - Backup timer guarantees deployment even if every sensor degrades.
 
+**beta-0.58 update:** the live OR chain now confirms on fresh sensor samples, applies common gates (min time after burnout, min climb, transonic lockout) and an independent cross-check per method (a cross-check sensor that is absent or stale never vetoes), which recovers most of the plausibility a vote would give without its latency — see [[concepts/apogee-detection]] and decision D-4 in [[queries/flight-logic-audit-2026-09]]. Wiring the vote in remains an option.
+
 **Implementation:** The 2-of-3 voting `ApogeeDetector` class exists in `src/apogee_detector.h` but is never instantiated. What actually runs is `detectApogee()` in `src/flight_logic.cpp`: baro, accel, GPS, and the 20 s backup timer are checked in sequence and **any single method** fires the transition — the "any-1-of-3 (OR)" alternative this ADR rejected. Wiring the voting class in remains outstanding. See [[concepts/apogee-detection]] and [[queries/system-workflow-audit-2026-07]] §4.2.
 
 **Alternatives considered:**
@@ -82,6 +84,8 @@ Major architectural decisions and their rationale. Each ADR records *what was ch
 
 **Date:** 2026-02-15
 **Status:** ACCEPTED (shipped in v0.10.0; save/restore path repaired 2026-07 — it now operates on the live `g_` state globals rather than never-synced alias variables)
+
+**beta-0.58 update:** saves are unthrottled and put-if-changed; the record gained `flightInProgress`, `pyroFiredMask`, `resumeCount`, `burnoutAgeMs`; boot recovery is two-phase and only *resumes* an in-flight state with live barometer evidence (never restores `DROGUE_DEPLOY`/`MAIN_DEPLOY` directly). See [[entities/state-management]] and [[queries/flight-logic-audit-2026-09]].
 
 **Decision:** Save flight state to EEPROM on every state transition.
 

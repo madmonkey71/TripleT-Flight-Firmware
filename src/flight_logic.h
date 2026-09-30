@@ -13,6 +13,19 @@ enum FlightState : uint8_t;
 // Function declarations
 bool detectApogee();
 void resetApogeeDetectionCounters(); // Reset apogee detection counters when entering COAST state
+bool flight_is_airborne_state(FlightState s); // BOOST .. MAIN_DESCENT
+bool flight_error_allowed(FlightState s);     // ERROR may only be entered from pre-flight states (audit #2)
+bool flight_is_provably_on_ground();          // never flew AND (if the baro can tell) near the launch altitude (audit #3)
+void flightSetLaunchAltitude(float alt_m);    // set g_launchAltitude and mark it valid as a ground reference
+bool flight_is_stationary_on_ground();        // stationary evidence for reset_flight (audit #7)
+bool flightIsDegraded();
+// Guidance servo policy (audit #12). Call every main-loop pass with millis(). Returns true when the
+// caller should run ONE guidance_update() step now, with `dt` (seconds) filled in. Guidance runs only
+// in COAST (and only while enabled and the vehicle is not stationary). In every state from APOGEE on
+// the fins are centred exactly once and never commanded. The first step after (re)entry uses the
+// nominal interval as dt instead of "now minus 0".
+bool flightGuidanceStep(unsigned long nowMs, bool stationary, float& dt);                      // a sensor-health failure is being ridden out in flight
+void flightLogicReset();             // Reset all flight-logic bookkeeping (new flight / resume / unit tests)
 bool detectLanding();
 void detectBoostEnd();
 bool IsStable(); // Check if rocket is stable (related to landing) - Kept as it was existing

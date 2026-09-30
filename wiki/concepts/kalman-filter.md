@@ -3,8 +3,8 @@ title: Kalman Filter — AHRS Orientation Estimation
 type: concept
 tags: [kalman, ahrs, orientation, sensor-fusion]
 created: 2026-04-15
-updated: 2026-07-02
-related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, .archived/docs/QUATERNION_MIGRATION_PLAN.md]
+updated: 2026-09-30
+related_files: [src/kalman_filter.cpp, src/kalman_filter.h, src/ukf.cpp, src/config.h, .archived/docs/QUATERNION_MIGRATION_PLAN.md]
 ---
 
 Custom Kalman filter that fuses gyroscope, accelerometer, and magnetometer data to estimate orientation. Outputs both a quaternion and Euler angles (the quaternion is converted from Euler at log time). Replaced the deprecated Madgwick complementary filter. Runs at ~10 Hz (the IMU poll cadence). This filter is **attitude-only** — barometer and GPS are not fused, and no altitude/velocity estimator runs in the live build.
@@ -26,8 +26,11 @@ void kalman_init(float roll_rad, float pitch_rad, float yaw_rad);
 // Gyro prediction step — call each IMU read cycle
 void kalman_predict(float gx, float gy, float gz, float dt_sec);
 
-// Accelerometer correction — call when accel data available
-void kalman_update_accel(float ax, float ay, float az);  // live code passes g; atan2 ratios make units cancel
+// Accelerometer correction — GATED (beta-0.58, audit #9): applied only when |a| is within
+// [KALMAN_ACCEL_GATE_LOW_G, KALMAN_ACCEL_GATE_HIGH_G] (0.9-1.1 g) and the gyro rate from the last
+// kalman_predict() is below KALMAN_ACCEL_GATE_MAX_GYRO_RPS. Otherwise skipped (returns false); P keeps
+// growing. NaN/Inf rejected; ay=az=0 applies pitch only (no atan2(0,0)).
+bool kalman_update_accel(float ax, float ay, float az);  // live code passes g
 
 // Magnetometer correction — call when mag data available
 // (tilt-compensated heading; yaw innovation is wrap-normalized at ±π)
@@ -35,7 +38,13 @@ void kalman_update_mag(float mx, float my, float mz);
 
 // Read current estimate
 void kalman_get_orientation(float& roll, float& pitch, float& yaw);  // radians
+float kalman_get_variance(int axis);                  // 0 roll, 1 pitch, 2 yaw (diagnostics/tests)
+unsigned long kalman_accel_updates_skipped();
 ```
+
+## Accelerometer gating (beta-0.58)
+
+The accelerometer is a valid tilt (gravity) reference only when the vehicle is not accelerating. Before beta-0.58 every sample was fused, so 4-5 g of thrust, drag or ~0 g free fall dragged roll/pitch towards the net-force direction. The gate skips the update outside 0.9-1.1 g or while rotating faster than `KALMAN_ACCEL_GATE_MAX_GYRO_RPS`; the covariance grows during the skip (predict adds `Q·dt`), so the filter re-converges quickly when the gate reopens (pad, landing, parachute descent). The quaternion migration is unchanged and still deferred. Tests: `test/test_real_kalman` ([[queries/flight-logic-audit-2026-09]] #9).
 
 ## Covariance & Noise Parameters
 

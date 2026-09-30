@@ -6,7 +6,7 @@
 // ============================================================================
 // FIRMWARE VERSION - Update on each release
 // ============================================================================
-#define FIRMWARE_VERSION "v0.10.0" // Safety Features complete
+#define FIRMWARE_VERSION "v0.58.0-beta" // beta-0.58: flight-logic safety audit fixes (bench-test before flight)
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
@@ -107,19 +107,66 @@
 #define COAST_ACCEL_THRESHOLD                                                  \
   0.5f // Acceleration threshold (in g) to detect the end of the boost phase
        // (motor burnout).
+#define LAUNCH_CONFIRMATION_COUNT                                              \
+  5 // Consecutive FRESH accelerometer samples above BOOST_ACCEL_THRESHOLD to
+    // detect liftoff (audit #8). A pad bump shorter than this cannot launch.
+// BOOST timeout: if burnout is never detected the state machine is forced to COAST after this
+// long, with the burnout timestamp set, so the sensor gates and the backup apogee timer are
+// always reachable (audit #8). Set above your longest motor burn.
+#define BOOST_TIMEOUT_MS 12000
+// Burnout on high-drag vehicles: after burnout the specific force is drag deceleration, which
+// can stay above COAST_ACCEL_THRESHOLD, so the absolute test alone never fires. Burnout is
+// therefore also declared when the specific force magnitude falls below this fraction of the
+// peak (smoothed) boost level. Axis-independent on purpose: the IMU mounting is not assumed.
+#define BOOST_BURNOUT_PEAK_FRACTION 0.35f
+// ...and only once the drop has SETTLED: the reading must be within this fraction of the peak of
+// what it was 3 fresh samples earlier. A motor's gradual tail-off (the H125W's thrust falls from 150 N to
+// 0 over 1.7 s) crosses the fraction long before burnout but is still falling steeply, so it is
+// not mistaken for burnout; drag-only coast after a real burnout is steady.
+#define BOOST_BURNOUT_SETTLE_FRACTION 0.05f
+#define BOOST_ACCEL_EMA_ALPHA 0.3f                   // smoothing of the boost-level tracker (per fresh sample)
 #define COAST_CONFIRMATION_COUNT                                               \
-  3 // Consecutive readings below COAST_ACCEL_THRESHOLD to confirm burnout.
+  3 // Consecutive FRESH accelerometer samples below COAST_ACCEL_THRESHOLD to
+    // confirm burnout (sensor samples, not main-loop passes - audit #4).
 #define APOGEE_CONFIRMATION_COUNT                                              \
-  5 // Number of consecutive barometer readings required to confirm apogee.
+  5 // Consecutive FRESH barometer samples required to confirm apogee.
+    // Confirmation counts everywhere now advance only when the sensor has
+    // produced a new sample (see sensor_samples.h), so 5 = 5 sensor periods.
 #define LANDING_CONFIRMATION_COUNT                                             \
-  10 // Number of consecutive readings required to confirm landing.
+  10 // Consecutive FRESH barometer samples of stationarity required to confirm landing.
+// Launch altitude / ground reference (audit #11): the mean of the last LAUNCH_ALT_AVG_SAMPLES
+// fresh barometer samples on the pad, re-zeroed when ARMED is entered (needs at least
+// LAUNCH_ALT_MIN_SAMPLES, otherwise the previous reference is kept).
+#define LAUNCH_ALT_AVG_SAMPLES 20
+#define LAUNCH_ALT_MIN_SAMPLES 5
+// Stationarity window for landing detection: the newest N fresh baro samples must span less
+// than LANDING_ALTITUDE_STABLE_THRESHOLD metres.
+#define LANDING_WINDOW_SAMPLES 10
+// --- Main deployment safeguards (audit #5) ---
+#define MAIN_DEPLOY_CONFIRMATION_COUNT 3  // Consecutive FRESH baro samples below the deploy altitude
+// If the barometer stops delivering fresh samples during drogue descent, main is deployed after an
+// ESTIMATED descent time: (last max AGL - main altitude) / assumed drogue rate * margin, floored at
+// MAIN_DEPLOY_FALLBACK_MIN_MS. If the apogee is unknown (baro dead all flight) the fixed
+// MAIN_DEPLOY_FALLBACK_TIME_MS is used instead. Deploying a little early is survivable; deploying after
+// ground impact is not, hence margin < 1 and an assumed rate above the real one.
+// TUNE PER AIRFRAME. Defaults suit the H125W flight in flight_simulation_h125w.py (drogue ~8.5 m/s,
+// apogee ~1900 m AGL, ~216 s from apogee to 100 m AGL, ~272 s total): the estimate is then ~147 s,
+// i.e. main at roughly 690 m AGL if the barometer fails - early, but well clear of the ground.
+#define MAIN_DEPLOY_FALLBACK_TIME_MS 60000
+#define MAIN_DEPLOY_ASSUMED_DROGUE_RATE_MPS 10.0f
+#define MAIN_DEPLOY_FALLBACK_MARGIN 0.8f
+#define MAIN_DEPLOY_FALLBACK_MIN_MS 3000
+// Even with a barometer that keeps delivering (possibly wrong) data, main is deployed once this long
+// has passed since drogue descent began. It must lie BETWEEN the nominal time from apogee to the main
+// altitude (216 s for the H125W flight) and the time to landing (~260 s), or it either fires early on a
+// slow-but-healthy descent (harmless: main early) or can never help. TUNE PER AIRFRAME.
+#define MAIN_DEPLOY_MAX_DROGUE_TIME_MS 240000UL
+// A descent state that never sees touchdown is forced to LANDED after this long.
+#define DESCENT_STATE_TIMEOUT_MS 600000UL
 #define BACKUP_APOGEE_TIME_MS                                                  \
   20000 // Failsafe time in ms after motor burnout to trigger apogee.
-#define APOGEE_ACCEL_CONFIRMATION_COUNT                                        \
-  5 // Number of consecutive readings of negative Z-axis acceleration to confirm
-    // apogee.
 #define APOGEE_GPS_CONFIRMATION_COUNT                                          \
-  3 // Number of consecutive GPS altitude readings showing descent to confirm
+  3 // Consecutive FRESH GPS altitude samples showing descent to confirm
     // apogee.
 
 // Redundant Sensing Apogee Detection
@@ -127,14 +174,31 @@
 #define APOGEE_BARO_DESCENT_THRESHOLD                                          \
   1.0 // Meters change to confirm descent for apogee
 #endif
-#ifndef APOGEE_ACCEL_THRESHOLD
-#define APOGEE_ACCEL_THRESHOLD                                                 \
-  -0.1 // G value for Z-axis accelerometer apogee detection
-#endif
+// Accelerometer (free-fall) apogee method. The old test (`icm_accel[2] < 0`) depended on
+// the IMU's mounting/axis sign and on noise around zero. Near apogee drag ~ 0, so the
+// MAGNITUDE of specific force collapses towards 0 g whichever way the IMU is mounted.
+#define APOGEE_ACCEL_FREEFALL_G 0.3f  // |a| below this (g) counts as free fall
 #ifndef APOGEE_ACCEL_SAMPLES
 #define APOGEE_ACCEL_SAMPLES                                                   \
-  5 // Consecutive samples for accelerometer apogee detection
+  5 // Consecutive FRESH accelerometer samples in free fall required
 #endif
+#define APOGEE_ACCEL_FREEFALL_WINDOW_MS 500          // ...sustained at least this long
+#define APOGEE_ACCEL_FREEFALL_WINDOW_NO_BARO_MS 1500 // ...and this long when no fresh barometer can corroborate
+
+// Independent plausibility gates for the sensor-based apogee methods (audit #4).
+// The backup timer is deliberately NOT gated by any of them.
+#define APOGEE_MIN_TIME_AFTER_BURNOUT_MS 2000   // No sensor method may fire earlier than this after burnout
+#define APOGEE_MIN_ALTITUDE_GAIN_M 15.0f        // ...nor before max AGL has reached this (only checked with a working baro)
+// Barometric method: ignore the pressure disturbance while the vehicle may still be
+// transonic (shock over the static ports gives false "descents"). The descent
+// reference restarts when the lockout ends, so a spike during it cannot poison it.
+#define APOGEE_BARO_TRANSONIC_LOCKOUT_MS 3000
+#define APOGEE_CLIMB_VETO_MPS 10.0f     // Baro still climbing faster than this vetoes the accel/GPS methods
+#define APOGEE_HIGH_FORCE_VETO_G 1.5f   // Specific force above this (still decelerating hard) vetoes the baro/GPS methods
+#define APOGEE_GPS_DESCENT_THRESHOLD_M 5.0f // GPS altitude drop from its max that counts as descent
+// Sensor freshness: data older than this is treated as unavailable.
+#define ACCEL_STALE_TIMEOUT_MS 500
+#define GPS_STALE_TIMEOUT_MS 2000
 
 // Redundant Sensing Landing Detection
 #ifndef LANDING_ACCEL_MIN_G
@@ -151,7 +215,7 @@
 #endif
 #ifndef LANDING_ALTITUDE_STABLE_THRESHOLD
 #define LANDING_ALTITUDE_STABLE_THRESHOLD                                      \
-  1.0 // Meters altitude change for landing stability
+  1.0 // Metres: max-min of the barometric altitude over the landing window (stationarity)
 #endif
 
 // --- State Machine Timeouts & Durations ---
@@ -174,6 +238,48 @@
 #define CALIBRATION_AUTO_TIMEOUT_MS                                            \
   120000 // Milliseconds in CALIBRATION before fallback calibration (2 mins)
 #endif
+
+// --- Bench-only test commands (audit #13) ---
+// TEST_FREEZE deliberately hangs the firmware for 6 s to prove the watchdog resets it. A serial
+// command that can freeze the flight computer must not exist in a flight build, so it is compiled
+// out unless this is set to 1 (e.g. `-D ENABLE_TEST_COMMANDS=1` in a bench environment). Even
+// when compiled in it is refused outside PAD_IDLE.
+#ifndef ENABLE_TEST_COMMANDS
+#define ENABLE_TEST_COMMANDS 0
+#endif
+
+// --- Boot-time recovery plausibility (audit #1) ---
+// After a reset the saved flight state is only RESUMED in flight if the live
+// barometer proves the vehicle is really up in the air. Otherwise the vehicle
+// restarts into a safe, pyro-inert state. See wiki/concepts/state-management.
+#define RECOVERY_MIN_AGL_M 30.0f       // Must be at least this far above the saved launch altitude to resume
+#define RECOVERY_ALT_MARGIN_M 300.0f   // ...and no higher than saved max altitude + this margin
+#define RECOVERY_MAX_RESUMES 3         // Give up resuming after this many resets in one flight
+// A vehicle that reset in flight is moving vertically; one sitting on the pad with a
+// stale record is not. Recovery therefore watches the fresh barometer for a short
+// window and requires a real vertical rate before it will resume.
+// The backup apogee timer is restored from the burnout age persisted at the last save, plus this
+// allowance for the time lost to the reset itself (watchdog timeout + boot). Restoring a slightly
+// LARGER age fires the backup timer slightly EARLIER than nominal: the safe direction (audit #6).
+#define RECOVERY_BACKUP_TIMER_ALLOWANCE_MS 3000
+// While in BOOST/COAST the flight record is refreshed at this interval (max altitude, burnout age).
+#define EEPROM_PROGRESS_SAVE_INTERVAL_MS 1000
+#define RECOVERY_MIN_VERTICAL_RATE_MPS 2.0f   // |dz/dt| needed to count as airborne
+#define RECOVERY_EVIDENCE_WINDOW_MS 800       // Observe the baro at least this long...
+#define RECOVERY_EVIDENCE_MIN_SAMPLES 5       // ...and collect at least this many fresh samples
+#define RECOVERY_EVIDENCE_TIMEOUT_MS 3000     // No usable baro by then -> treat evidence as absent
+
+// --- ERROR state / ground proof (audit #2, #3) ---
+// ERROR may only be entered from pre-flight states. Leaving ERROR automatically (or via
+// clear_errors / clear_to_calibration / skip_calibration) additionally requires proof
+// the vehicle is on the ground: never flown, and (if the barometer is calibrated) within
+// this many metres of the launch altitude.
+#define GROUND_AGL_TOLERANCE_M 30.0f
+// reset_flight (audit #7): clears the persisted "flight in progress" state so a landed vehicle can be re-armed.
+#define RESET_FLIGHT_TOKEN_TIMEOUT_MS 30000    // The confirmation token expires after this long
+#define RESET_FLIGHT_MAX_VERTICAL_SPEED_MPS 1.0f // Baro vertical speed must be below this ("on the ground, not moving")
+// A barometer with no fresh sample for this long is treated as failed/unavailable.
+#define BARO_STALE_TIMEOUT_MS 500
 
 // --- Sensor Error & Timeout Thresholds ---
 #define MAX_SENSOR_FAILURES                                                    \
@@ -222,6 +328,19 @@
 // Determines which orientation system is active at startup.
 // Kalman filter is now the only option.
 #define KALMAN_FILTER_ACTIVE_BY_DEFAULT true
+
+// --- Guidance loop timing / authority (audit #12) ---
+#define GUIDANCE_UPDATE_INTERVAL_MS 20   // 50 Hz control loop
+#define GUIDANCE_MAX_DT_S 0.1f           // Clamp for a stalled loop so PID integrators/derivatives are not kicked
+
+// --- Kalman filter accelerometer gating (audit #9) ---
+// The accelerometer is only a valid tilt (gravity) reference when the vehicle is not accelerating:
+// |a| ~ 1 g and not rotating fast. Under thrust, drag or in free fall the "gravity" vector points
+// wherever the net force does, and feeding it in corrupts roll/pitch. Outside the band the update
+// is SKIPPED and the covariance keeps growing (the gyro integration carries the estimate).
+#define KALMAN_ACCEL_GATE_LOW_G 0.9f            // Accept |a| between these (g)...
+#define KALMAN_ACCEL_GATE_HIGH_G 1.1f
+#define KALMAN_ACCEL_GATE_MAX_GYRO_RPS 2.0f     // ...and only while the angular rate is below this (rad/s)
 
 // --- PID Controller Gains ---
 

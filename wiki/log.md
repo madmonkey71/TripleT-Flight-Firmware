@@ -162,4 +162,8 @@ Append-only chronological record of all wiki operations.
 **Not changed in this pass**:
 - No source code edits. The trajectory + telemetry implementation work is the next step (see [[queries/v1-release-gate-2026-05]] for the action list).
 
-
+## [2026-09-30] audit | flight-logic audit beta-0.58
+- New page `queries/flight-logic-audit-2026-09.md`: findings #1-#14 (finding → fix → test), decisions, H125W replay, HIL note.
+- Rewrote `concepts/apogee-detection.md`, `entities/state-management.md`; updated `concepts/flight-state-transitions.md`, `concepts/kalman-filter.md`, `concepts/architecture-decisions.md` (ADR-003/004 notes), `concepts/testing-strategy.md`, `concepts/developer-workflow.md`, `entities/flight-logic.md`, `entities/command-processor.md`, `entities/configuration-system.md`, `queries/roadmap-2026.md`, `overview.md`.
+- Code: two-phase boot recovery, fresh-sample confirmation, ERROR policy, `reset_flight`, pyro service, Kalman gating, guidance policy, setup watchdog steps; version `v0.58.0-beta`. Native real-code test harness (`test/stubs`, `test/support`, `test_real_*`).
+- Verification: PlatformIO registry blocked in the authoring sandbox, so host g++ + Unity and arm-none-eabi-g++ compile checks were used there. GitHub Actions CI (real `pio test -e native` and `pio run -e teensy41`) passed on head `ef69a72`: 274/274 test cases, Teensy build OK. Not yet checked: flash/RAM versus `develop`; nothing has flown.

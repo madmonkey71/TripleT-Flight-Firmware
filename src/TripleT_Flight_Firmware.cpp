@@ -34,8 +34,7 @@
 #include <Watchdog_t4.h>
 WDT_T4<WDT1> wdt;
 
-// Set the version number
-#define TRIPLET_FLIGHT_VERSION 0.51
+// Version string comes from config.h (FIRMWARE_VERSION); the old numeric TRIPLET_FLIGHT_VERSION (0.51) was stale.
 
 // Define the board type - Teensy 4.1 only
 #ifndef BOARD_TEENSY41
@@ -67,6 +66,9 @@ WDT_T4<WDT1> wdt;
 #include "state_management.h" // For recoverFromPowerLoss()
 #include "kalman_filter.h"   // For Kalman filter functions
 #include "telemetry.h"       // For ENABLE_TELEMETRY packing & framing
+#include "startup_state.h"    // For handleInitialStateManagement()
+#include "setup_sequence.h"   // For runSetupSteps() (audit #14)
+#include "pyro_control.h"     // For pyro_init_safe()
 // #include "sensor_fusion.h"   // REMOVED as sensor_fusion.h and .cpp were deleted
 
 // Define variables declared as extern in utility_functions.h
@@ -171,7 +173,7 @@ const int FLASH_CHIP_SELECT = 5; // Choose an appropriate pin for flash CS (usua
 char g_logFileName[64] = ""; // Current log file name (matches the 64-byte name buffer in createNewLogFile; was 32, which truncated timestamped names)
 
 // Guidance Control Update Interval
-const unsigned long GUIDANCE_UPDATE_INTERVAL_MS = 20; // 50Hz control loop
+// GUIDANCE_UPDATE_INTERVAL_MS (50 Hz control loop) now lives in config.h (audit #12)
 
 // Instantiate global debug flags struct
 // Forward declare SdFat and FsFile if they are used in function signatures before full definition/include
@@ -597,7 +599,65 @@ void printStatusSummary() { // Note: `enableStatusSummary` is now toggled by 'j'
 // - setOrientationFilter (part of processCommand)
 // - getOrientationFilterStatus (part of processCommand)
 
+// ---- setup() steps (audit #14) -------------------------------------------------------------------
+// Each slow bring-up step is a function so runSetupSteps() can feed the watchdog before and after
+// it. Bring-up order is unchanged from before.
+static void setupFeedWatchdog() { wdt.feed(); }
+
+static bool setupStepRecovery(void*) {
+  // Load flight state from EEPROM (for power-loss recovery). Phase 1 only: the
+  // pyro-fired mask / flight-in-progress flag are restored and pre-flight states
+  // resolved; an in-flight saved state stays PENDING (vehicle stays in the
+  // pyro-inert STARTUP state) until handleInitialStateManagement() has live
+  // barometer evidence to judge it with (audit #1).
+  recoverFromPowerLoss();
+  return true;
+}
+
+static bool setupStepSdCard(void*) {
+  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
+  if (g_sdCardAvailable) {
+    checkStorageSpace(g_SD, g_availableSpace);
+    Serial.println(F("SD Card initialization successful."));
+  } else {
+    Serial.println(F("SD Card initialization failed."));
+  }
+  return g_sdCardAvailable;
+}
+
+static bool setupStepGps(void*) { gps_init(); return true; }   // This should set up the GPS module
+static bool setupStepBaro(void*) { ms5611_init(); return ms5611_initialized_ok; }   // sets ms5611_initialized_ok
+static bool setupStepIcm(void*) { ICM_20948_init(); return g_icm20948_ready; }       // sets g_icm20948_ready
+static bool setupStepKx134(void*) {
+  if (USE_KX134) {
+    g_kx134_initialized_ok = kx134_init(); // This sets g_kx134_initialized_ok
+    return g_kx134_initialized_ok;
+  }
+  return true;
+}
+static bool setupStepFilters(void*) {
+  // Initialize Kalman filter
+  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
+  // Initialize guidance system
+#if ENABLE_GUIDANCE == 1
+  guidance_init(); // Reset PID controllers and guidance state
+#endif
+  return true;
+}
+static bool setupStepLogFile(void*) {
+  // Create initial log file (file create + CSV header write + flush: can block on a slow card)
+  if (g_sdCardAvailable) {
+    return createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName));
+  }
+  return true;
+}
+
 void setup() {
+  // audit #1: the very first action. Drive both pyro channels LOW before the
+  // Serial wait, watchdog, SD or sensor bring-up so nothing can leave them
+  // floating (or HIGH) while the rest of setup() runs.
+  pyro_init_safe();
+
   // Wait for the Serial monitor to be opened.
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {
@@ -606,7 +666,7 @@ void setup() {
 
   Serial.println(F("TripleT Flight Firmware Starting..."));
   Serial.print(F("Version: "));
-  Serial.println(TRIPLET_FLIGHT_VERSION);
+  Serial.println(FIRMWARE_VERSION);
 
 #if ENABLE_TELEMETRY
   // Initialise the UART link to the onboard ESP32 telemetry transmitter.
@@ -622,6 +682,7 @@ void setup() {
   config.trigger = 2;                          // seconds (pre-warning, unused)
   config.timeout = WATCHDOG_TIMEOUT_MS / 1000; // seconds until hardware reset
   wdt.begin(config);
+  wdt.feed(); // start the first window fresh
 
   Serial.print(F("Board: "));
   Serial.println(BOARD_NAME);
@@ -633,11 +694,8 @@ void setup() {
   // Initialize NeoPixel
   initNeoPixel(g_pixels);
 
-  // Initialize pyro channels (safety first - ensure they're off)
-  pinMode(PYRO_CHANNEL_1, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_1, LOW);
-  pinMode(PYRO_CHANNEL_2, OUTPUT);
-  digitalWrite(PYRO_CHANNEL_2, LOW);
+  // Re-assert the pyro channels LOW now that the watchdog is running (first done at the top of setup()).
+  pyro_init_safe();
 
   // Initialize servo objects
 #if ENABLE_GUIDANCE == 1
@@ -655,40 +713,20 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // Load flight state from EEPROM (for power-loss recovery)
-  recoverFromPowerLoss(); // This sets g_currentFlightState appropriately
-
-  // Initialize SD card
-  g_sdCardAvailable = initSDCard(g_SD, g_sdCardMounted, g_sdCardPresent);
-  if (g_sdCardAvailable) {
-    checkStorageSpace(g_SD, g_availableSpace);
-    Serial.println(F("SD Card initialization successful."));
-  } else {
-    Serial.println(F("SD Card initialization failed."));
-  }
-
-  // Initialize GPS
-  gps_init(); // This should set up the GPS module
-
-  // Initialize sensors
-  ms5611_init(); // This sets ms5611_initialized_ok
-  ICM_20948_init(); // This sets g_icm20948_ready
-  if (USE_KX134) {
-    g_kx134_initialized_ok = kx134_init(); // This sets g_kx134_initialized_ok
-  }
-
-  // Initialize Kalman filter
-  kalman_init(0.0f, 0.0f, 0.0f); // Initialize with zero initial orientation
-
-  // Initialize guidance system
-#if ENABLE_GUIDANCE == 1
-  guidance_init(); // Reset PID controllers and guidance state
-#endif
-
-  // Create initial log file
-  if (g_sdCardAvailable) {
-    createNewLogFile(g_SD, myGNSS, g_LogDataFile, g_logFileName, sizeof(g_logFileName));
-  }
+  // Slow bring-up, in the original order, with the watchdog fed before and after EVERY step so its
+  // 5 s window only ever has to cover one step (audit #14). The SD init and log-file creation used
+  // to run unfed inside the window.
+  static const SetupStep kSetupSteps[] = {
+    {"recover state", setupStepRecovery, nullptr},
+    {"sd card",       setupStepSdCard,   nullptr},
+    {"gps",           setupStepGps,      nullptr},
+    {"barometer",     setupStepBaro,     nullptr},
+    {"icm20948",      setupStepIcm,      nullptr},
+    {"kx134",         setupStepKx134,    nullptr},
+    {"filters",       setupStepFilters,  nullptr},
+    {"log file",      setupStepLogFile,  nullptr},
+  };
+  runSetupSteps(kSetupSteps, sizeof(kSetupSteps) / sizeof(kSetupSteps[0]), setupFeedWatchdog);
 
   Serial.println(F("Hardware initialization complete."));
   
@@ -706,94 +744,9 @@ void setup() {
   Serial.println(F("Setup complete. Starting main loop..."));
 }
 
-// Function to handle initial state management after setup
-void handleInitialStateManagement() {
-  static bool initialStateHandled = false;
-  if (initialStateHandled) {
-    return; // Only run this logic once
-  }
-
-  // Check system health using the same criteria as the setup function used to
-  bool systemHealthy = true;
-  
-  if (!g_sdCardAvailable && g_loggingEnabled) {
-    Serial.println(F("INIT: Logging enabled but SD card not available. System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!g_kx134_initialized_ok && !g_icm20948_ready) {
-    Serial.println(F("INIT: No IMU available (both KX134 and ICM20948 failed). System unhealthy."));
-    systemHealthy = false;
-  }
-  
-  if (!ms5611_initialized_ok) {
-    // Serial.println(F("INIT: MS5611 barometer not initialized. System unhealthy.")); // Keep systemHealthy = true
-    // systemHealthy = false; // Allow proceeding to CALIBRATION/PAD_IDLE with a warning
-    if (g_debugFlags.enableSystemDebug) { // Still print a warning if debug is enabled
-        Serial.println(F("INIT_WARNING: MS5611 barometer not initialized. Functionality will be limited."));
-    }
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.println(F("=== Initial State Management ==="));
-    Serial.print(F("System Health: ")); Serial.println(systemHealthy ? F("HEALTHY") : F("UNHEALTHY"));
-    Serial.print(F("Current State: ")); Serial.println(getStateName(g_currentFlightState));
-  }
-
-  // Handle state transitions based on current state and system health
-  if (g_currentFlightState == STARTUP) {
-    if (systemHealthy) {
-      // Check if barometer is already calibrated to skip CALIBRATION state
-      if (g_baroCalibrated) {
-        Serial.println(F("Fresh start, system healthy and barometer calibrated, proceeding to PAD_IDLE state."));
-        g_currentFlightState = PAD_IDLE;
-        g_stateEntryTime = millis();
-      } else {
-        Serial.println(F("Fresh start, system healthy, proceeding to CALIBRATION state."));
-        g_currentFlightState = CALIBRATION;
-        g_stateEntryTime = millis();
-      }
-    } else {
-      Serial.println(F("Fresh start but system unhealthy, transitioning to ERROR state."));
-      g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error if identifiable here
-      g_currentFlightState = ERROR;
-      g_stateEntryTime = millis();
-      saveStateToEEPROM(); // Save state
-      WriteLogData(true);  // Log error immediately
-    }
-  } else if (g_currentFlightState == ERROR && systemHealthy) {
-    // Check if barometer is already calibrated to skip CALIBRATION state
-    if (g_baroCalibrated) {
-      Serial.println(F("ERROR state recovered, all systems healthy and barometer calibrated, transitioning to PAD_IDLE."));
-      g_currentFlightState = PAD_IDLE;
-      g_stateEntryTime = millis();
-    } else {
-      Serial.println(F("ERROR state recovered and all systems are healthy. Automatically clearing error and transitioning to CALIBRATION."));
-      g_currentFlightState = CALIBRATION;
-      g_stateEntryTime = millis();
-    }
-    g_last_error_code = NO_ERROR; // Clear the latched error along with the state
-    Serial.println(F("ERROR state cleared - starting grace period for health checks"));
-    saveStateToEEPROM();
-  } else if (!systemHealthy && g_currentFlightState != ERROR) {
-    Serial.println(F("System became unhealthy during initialization, transitioning to ERROR state."));
-    g_last_error_code = STATE_TRANSITION_INVALID_HEALTH; // Or a more specific init error
-    g_currentFlightState = ERROR;
-    g_stateEntryTime = millis();
-    saveStateToEEPROM(); // Save state
-    WriteLogData(true);  // Log error immediately
-  }
-
-  if (g_debugFlags.enableSystemDebug) {
-    Serial.print(F("Final State: ")); Serial.println(getStateName(g_currentFlightState));
-    Serial.println(F("=============================="));
-  }
-
-  initialStateHandled = true;
-}
-
 void loop() {
   wdt.feed(); // Feed the watchdog every loop iteration
+  pyro_service(); // audit #10: owns the pyro pins on EVERY pass, whatever the flight state
 
   // Handle initial state management (runs once after setup)
   handleInitialStateManagement();
@@ -980,16 +933,12 @@ void loop() {
 
   // --- Guidance Control Update ---
   #if ENABLE_GUIDANCE == 1
-  // Only run guidance when actively controlling (COAST, DROGUE_DESCENT, MAIN_DESCENT) and guidance is active
-  if (g_guidance_active && (g_currentFlightState == COAST || g_currentFlightState == DROGUE_DESCENT || g_currentFlightState == MAIN_DESCENT) && !isStationary) {
-      static unsigned long g_lastGuidanceUpdateTime = 0;
-      if (millis() - g_lastGuidanceUpdateTime >= GUIDANCE_UPDATE_INTERVAL_MS) {
-          float dt_guidance = (millis() - g_lastGuidanceUpdateTime) / 1000.0f;
-          if (dt_guidance <= 0.0f) { // Ensure dt is positive, can happen if millis() wraps or interval is too small
-              dt_guidance = 1.0f / (1000.0f / GUIDANCE_UPDATE_INTERVAL_MS); // Use configured rate
-          }
-          g_lastGuidanceUpdateTime = millis();
-
+  // audit #12: flightGuidanceStep() decides. Guidance (and servo commands) run only in COAST while
+  // enabled and not stationary; in every later state it centres the fins once and never steers them.
+  // The first step after (re)entry gets the nominal dt, not `millis() - 0`.
+  {
+      float dt_guidance = GUIDANCE_UPDATE_INTERVAL_MS / 1000.0f;
+      if (flightGuidanceStep(millis(), isStationary, dt_guidance)) {
           // Use Kalman filter rates instead of raw gyro to avoid timing mismatches
           // g_kalmanRollRate, g_kalmanPitchRate, g_kalmanYawRate are already calculated and filtered
           guidance_update(g_kalmanRoll, g_kalmanPitch, g_kalmanYaw,
@@ -1013,7 +962,7 @@ void loop() {
           roll_servo_angle  = constrain(roll_servo_angle, 0, 180);
           yaw_servo_angle   = constrain(yaw_servo_angle, 0, 180);
 
-          // Command servos (we're already in the correct state check above)
+          // Command servos (flightGuidanceStep already established we are in COAST)
           g_servo_pitch.write(pitch_servo_angle);
           g_servo_roll.write(roll_servo_angle);
           g_servo_yaw.write(yaw_servo_angle);
@@ -1033,6 +982,7 @@ void loop() {
 
   // --- Flight State Processing ---
   ProcessFlightState(); // Handle flight state machine logic
+  saveFlightProgressPeriodic(); // BOOST/COAST: refresh max altitude / burnout age in EEPROM (audit #6)
 
   // --- Periodic Battery Voltage Printout ---
   #if ENABLE_BATTERY_MONITORING == 1

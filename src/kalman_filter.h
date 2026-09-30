@@ -24,13 +24,19 @@ void kalman_init(float initial_roll, float initial_pitch, float initial_yaw);
 void kalman_predict(float gyro_x, float gyro_y, float gyro_z, float dt);
 
 /**
- * @brief Updates the state estimate using accelerometer data.
- *        Magnetometer data can be added later for yaw correction.
- * @param accel_x Acceleration along X-axis in m/s^2.
- * @param accel_y Acceleration along Y-axis in m/s^2.
- * @param accel_z Acceleration along Z-axis in m/s^2.
+ * @brief Updates roll/pitch from the accelerometer, treating it as a gravity (tilt) reference.
+ *
+ * The update is GATED (audit #9): it is applied only when the specific-force magnitude is within
+ * [KALMAN_ACCEL_GATE_LOW_G, KALMAN_ACCEL_GATE_HIGH_G] and the gyro rate seen by the last
+ * kalman_predict() is below KALMAN_ACCEL_GATE_MAX_GYRO_RPS. Otherwise it is skipped, the
+ * error covariance keeps growing, and the gyro integration carries the estimate. Non-finite
+ * input is rejected.
+ *
+ * @param accel_x,accel_y,accel_z Specific force in g (only the direction and the magnitude
+ *        relative to 1 g matter).
+ * @return true if the measurement was applied, false if it was skipped.
  */
-void kalman_update_accel(float accel_x, float accel_y, float accel_z);
+bool kalman_update_accel(float accel_x, float accel_y, float accel_z);
 
 /**
  * @brief Updates the state estimate using magnetometer data.
@@ -47,6 +53,12 @@ void kalman_update_mag(float mag_x, float mag_y, float mag_z);
  * @param yaw Output parameter for the estimated yaw angle in radians.
  */
 void kalman_get_orientation(float &roll, float &pitch, float &yaw);
+
+/** @brief Error variance of axis 0=roll, 1=pitch, 2=yaw (diagnostics / tests). */
+float kalman_get_variance(int axis);
+
+/** @brief Number of accelerometer updates skipped by the gate since kalman_init(). */
+unsigned long kalman_accel_updates_skipped();
 
 /*
 Internal state variables for the filter will be defined in kalman_filter.cpp.

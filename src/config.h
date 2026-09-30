@@ -301,6 +301,15 @@
 // Kalman filter is now the only option.
 #define KALMAN_FILTER_ACTIVE_BY_DEFAULT true
 
+// --- Kalman filter accelerometer gating (audit #9) ---
+// The accelerometer is only a valid tilt (gravity) reference when the vehicle is not accelerating:
+// |a| ~ 1 g and not rotating fast. Under thrust, drag or in free fall the "gravity" vector points
+// wherever the net force does, and feeding it in corrupts roll/pitch. Outside the band the update
+// is SKIPPED and the covariance keeps growing (the gyro integration carries the estimate).
+#define KALMAN_ACCEL_GATE_LOW_G 0.9f            // Accept |a| between these (g)...
+#define KALMAN_ACCEL_GATE_HIGH_G 1.1f
+#define KALMAN_ACCEL_GATE_MAX_GYRO_RPS 2.0f     // ...and only while the angular rate is below this (rad/s)
+
 // --- PID Controller Gains ---
 
 // Roll Axis PID
